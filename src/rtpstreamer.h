@@ -43,7 +43,6 @@ private:
 	std::condition_variable queueSignal;
 	long currentFrameId = 0;
 
-	const AVCodec* codec = nullptr;
 	AVCodecContext* codecCtx = nullptr;
 	AVFormatContext* fmtCtx = nullptr;
 	AVStream* stream = nullptr; //TODO necessary?

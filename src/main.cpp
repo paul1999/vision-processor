@@ -109,8 +109,7 @@ int main() {
 	ImageSource camera(paths);
 #endif
 
-	//RTPStreamer rtpStreamer("rtp://224.5.23.2:10101");
-	RTPStreamer rtpStreamer("rtp://127.0.0.1:10101");
+	RTPStreamer rtpStreamer("rtp://224.5.23.2:10101");
 
 	//cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
 

@@ -37,24 +37,16 @@ void RTPStreamer::sendFrame(std::shared_ptr<Image> image) {
 
 //Adopted from CC BY-SA 3.0 https://stackoverflow.com/q/40825300 DankMemes and https://stackoverflow.com/q/46352604 Gaulois94
 void RTPStreamer::allocResources() {
-	if(codecCtx == nullptr) {
-		bool libx264 = false;
-		bool qsv = false;
-		codec = avcodec_find_encoder_by_name("h264_nvenc");
-		if(codec == nullptr) {
-			codec = avcodec_find_encoder_by_name("h264_qsv");
-			qsv = codec != nullptr;
-		}
-		if(codec == nullptr)
-			codec = avcodec_find_encoder_by_name("h264_vaapi");
-		if(codec == nullptr) {
-			codec = avcodec_find_encoder_by_name("libx264");
-			libx264 = codec != nullptr;
-		}
-		if(codec == nullptr)
-			codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+	if(codecCtx != nullptr)
+		return;
 
-		std::cout << "Using codec: " << codec->long_name << std::endl;
+	const AVCodec* codec;
+	std::vector<const char*> codecNames {"h264_nvenc", "h264_qsv", "h264_vaapi", "libx264"};
+	for (const auto &codecName : codecNames) {
+		codec = avcodec_find_encoder_by_name(codecName);
+		if(codec == nullptr)
+			continue;
+
 		codecCtx = avcodec_alloc_context3(codec);
 
 		codecCtx->bit_rate = 1500000;
@@ -67,62 +59,63 @@ void RTPStreamer::allocResources() {
 		codecCtx->pix_fmt = AV_PIX_FMT_NV12;
 		codecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
 
-		if(qsv) {
+		if(strcmp(codecName, "h264_qsv") == 0) {
 			av_opt_set(codecCtx->priv_data, "preset", "veryfast", 0);
 		}
-		if(libx264) {
+		if(strcmp(codecName, "libx264") == 0) {
 			av_opt_set(codecCtx->priv_data, "preset", "ultrafast", 0);
 			av_opt_set(codecCtx->priv_data, "tune", "zerolatency", 0);
 		}
 
-		int open = avcodec_open2(codecCtx, codec, nullptr);
-		if(open != 0) {
-			std::cerr << "Failed to open codec: " << codec->name << " " << open << std::endl;
-			exit(1);
-		}
+		if(avcodec_open2(codecCtx, codec, nullptr) == 0)
+			break;
+
+		av_free(codecCtx);
+		codecCtx = nullptr;
 	}
 
-	if(fmtCtx == nullptr) {
-		fmtCtx  = avformat_alloc_context();
-		const AVOutputFormat* format = av_guess_format("rtp", nullptr, nullptr);
-		avformat_alloc_output_context2(&fmtCtx, format, format->name, uri.c_str());
-		avio_open(&fmtCtx->pb, uri.c_str(), AVIO_FLAG_WRITE);
-
-		stream = avformat_new_stream(fmtCtx, codec);
-		avcodec_parameters_from_context(stream->codecpar, codecCtx);
-		stream->time_base.num = codecCtx->time_base.num;
-		stream->time_base.den = codecCtx->time_base.den;
-
-		int write = avformat_write_header(fmtCtx, nullptr);
-		if(write < 0) {
-			std::cerr << "Failed to write header: " << write << std::endl;
-			exit(1);
-		}
-
-		//TODO SDP file transmission
-		char buf[200000];
-		AVFormatContext *ac[] = { fmtCtx };
-		av_sdp_create(ac, 1, buf, 20000);
-		FILE* fsdp = fopen("test.sdp", "w");
-		fprintf(fsdp, "%s", buf);
-		fclose(fsdp);
+	if(codecCtx == nullptr) {
+		std::cerr << "Failed to find suitable encoder." << std::endl;
+		exit(1);
 	}
 
-	if(frame == nullptr) {
-		frame = av_frame_alloc();
-		frame->format = codecCtx->pix_fmt;
-		frame->width  = codecCtx->width;
-		frame->height = codecCtx->height;
-		av_image_alloc(frame->data, frame->linesize, frame->width, frame->height, codecCtx->pix_fmt, 32);
+	std::cout << "Using codec: " << codec->long_name << std::endl;
+
+	fmtCtx  = avformat_alloc_context();
+	const AVOutputFormat* format = av_guess_format("rtp", nullptr, nullptr);
+	avformat_alloc_output_context2(&fmtCtx, format, format->name, uri.c_str());
+	avio_open(&fmtCtx->pb, uri.c_str(), AVIO_FLAG_WRITE);
+
+	stream = avformat_new_stream(fmtCtx, codec);
+	avcodec_parameters_from_context(stream->codecpar, codecCtx);
+	stream->time_base.num = codecCtx->time_base.num;
+	stream->time_base.den = codecCtx->time_base.den;
+
+	int write = avformat_write_header(fmtCtx, nullptr);
+	if(write < 0) {
+		std::cerr << "Failed to write header: " << write << std::endl;
+		exit(1);
 	}
 
-	if(pkt == nullptr) {
-		pkt = av_packet_alloc();
-	}
+	//TODO SDP file transmission
+	char buf[200000];
+	AVFormatContext *ac[] = { fmtCtx };
+	av_sdp_create(ac, 1, buf, 20000);
+	FILE* fsdp = fopen("test.sdp", "w");
+	fprintf(fsdp, "%s", buf);
+	fclose(fsdp);
+
+	frame = av_frame_alloc();
+	frame->format = codecCtx->pix_fmt;
+	frame->width  = codecCtx->width;
+	frame->height = codecCtx->height;
+	av_image_alloc(frame->data, frame->linesize, frame->width, frame->height, codecCtx->pix_fmt, 32);
+
+	pkt = av_packet_alloc();
 }
 
 void RTPStreamer::freeResources() {
-	if(codecCtx != nullptr) { //TODO group
+	if(codecCtx != nullptr) {
 		avcodec_send_frame(codecCtx, nullptr);
 		av_free(codecCtx);
 		codecCtx = nullptr;
