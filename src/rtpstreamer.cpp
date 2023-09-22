@@ -41,8 +41,6 @@ void RTPStreamer::allocResources() {
 		bool libx264 = false;
 		bool qsv = false;
 		codec = avcodec_find_encoder_by_name("h264_nvenc");
-		//codec = avcodec_find_encoder_by_name("libx264");
-		libx264 = codec != nullptr;
 		if(codec == nullptr) {
 			codec = avcodec_find_encoder_by_name("h264_qsv");
 			qsv = codec != nullptr;
@@ -66,7 +64,7 @@ void RTPStreamer::allocResources() {
 		codecCtx->time_base.den = framerate;
 		codecCtx->gop_size = framerate;
 		codecCtx->max_b_frames = 0;
-		codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+		codecCtx->pix_fmt = AV_PIX_FMT_NV12;
 		codecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
 
 		if(qsv) {
@@ -211,14 +209,13 @@ void RTPStreamer::encoderRun() {
 
 			for (int y = 0; y < height / 2; y++) {
 				const uint8_t *__restrict imageRow = image->getData() + 3 * 2 * y * width;
-				uint8_t *__restrict uFrame = frame->data[1] + y * frame->linesize[1];
-				uint8_t *__restrict vFrame = frame->data[2] + y * frame->linesize[2];
+				uint8_t *__restrict uvFrame = frame->data[1] + y * frame->linesize[1];
 #pragma GCC ivdep
-				for (int x = 0; x < width / 2; x++) {
-					int pos = 3 * 2 * x;
-					uFrame[x] = (uint8_t) ((112 * (int16_t) imageRow[pos] + -74 * (int16_t) imageRow[pos + 1] +
+				for (int x = 0; x < width; x+=2) {
+					int pos = 3 * x;
+					uvFrame[x] = (uint8_t) ((112 * (int16_t) imageRow[pos] + -74 * (int16_t) imageRow[pos + 1] +
 											-38 * (int16_t) imageRow[pos + 2]) / 256 + 128);
-					vFrame[x] = (uint8_t) ((-18 * (int16_t) imageRow[pos] + -94 * (int16_t) imageRow[pos + 1] +
+					uvFrame[x+1] = (uint8_t) ((-18 * (int16_t) imageRow[pos] + -94 * (int16_t) imageRow[pos + 1] +
 											112 * (int16_t) imageRow[pos + 2]) / 256 + 128);
 				}
 			}
@@ -238,14 +235,13 @@ void RTPStreamer::encoderRun() {
 			for (int y = 0; y < height / 2; y++) {
 				const uint8_t* imageRow = image->getData() + 4 * 2 * y * width;
 				const uint8_t* imageRow2 = image->getData() + 4 * 2 * y * width + width*2;
-				uint8_t* uFrame = frame->data[1] + y * frame->linesize[1];
-				uint8_t* vFrame = frame->data[2] + y * frame->linesize[2];
+				uint8_t* uvFrame = frame->data[1] + y * frame->linesize[1];
 #pragma GCC ivdep
-				for (int x = 0; x < width / 2; x++) {
-					int pos = 2 * 2 * x;
-					uFrame[x] = (uint8_t) ((-38 * (int16_t) imageRow[pos]  + -37 * (int16_t) imageRow[pos + 1] +
+				for (int x = 0; x < width; x+=2) {
+					int pos = 2 * x;
+					uvFrame[x] = (uint8_t) ((-38 * (int16_t) imageRow[pos]  + -37 * (int16_t) imageRow[pos + 1] +
 											-37 * (int16_t) imageRow2[pos] + 112 * (int16_t) imageRow2[pos+1]) / 256 + 128);
-					vFrame[x] = (uint8_t) ((112 * (int16_t) imageRow[pos]  + -47 * (int16_t) imageRow[pos + 1] +
+					uvFrame[x+1] = (uint8_t) ((112 * (int16_t) imageRow[pos]  + -47 * (int16_t) imageRow[pos + 1] +
 											-47 * (int16_t) imageRow2[pos] + -18 * (int16_t) imageRow2[pos+1]) / 256 + 128);
 				}
 			}
@@ -260,11 +256,9 @@ void RTPStreamer::encoderRun() {
 			}
 
 			for (int y = 0; y < height / 2; y++) {
-				uint8_t* uFrame = frame->data[1] + y * frame->linesize[1];
-				uint8_t* vFrame = frame->data[2] + y * frame->linesize[2];
-				for (int x = 0; x < width / 2; x++) {
-					uFrame[x] = 127;
-					vFrame[x] = 127;
+				uint8_t* uvFrame = frame->data[1] + y * frame->linesize[1];
+				for (int x = 0; x < width; x++) {
+					uvFrame[x] = 127;
 				}
 			}
 		} else if (image->getFormat() == U8) {
@@ -278,12 +272,10 @@ void RTPStreamer::encoderRun() {
 			}
 
 			for (int y = 0; y < height / 2; y++) {
-				uint8_t* uFrame = frame->data[1] + y * frame->linesize[1];
-				uint8_t* vFrame = frame->data[2] + y * frame->linesize[2];
+				uint8_t* uvFrame = frame->data[1] + y * frame->linesize[1];
 #pragma GCC ivdep
-				for (int x = 0; x < width / 2; x++) {
-					uFrame[x] = 127;
-					vFrame[x] = 127;
+				for (int x = 0; x < width; x++) {
+					uvFrame[x] = 127;
 				}
 			}
 		} else {
