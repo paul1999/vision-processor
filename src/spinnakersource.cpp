@@ -34,11 +34,21 @@ SpinnakerSource::SpinnakerSource(int id) {
 	pCam->GammaEnable.SetValue(false);
 	pCam->AcquisitionResultingFrameRate.GetValue(); //TODO
 
-	//width = pCam->WidthMax.GetValue();
-	//height = pCam->HeightMax.GetValue();
+	int width = pCam->WidthMax.GetValue();
+	int height = pCam->HeightMax.GetValue();
+	std::vector<void*> bufferPtrs;
+	for(int i = 0; i < 3; i++) {
+		std::shared_ptr<Image> buffer = BufferImage::create(RGGB8, width/2, height/2);
+		bufferPtrs.push_back(buffer->getData());
+		buffers.push_back(buffer);
+	}
+
+	pCam->SetUserBuffers(bufferPtrs.data(), buffers.size(), width*height);
+
 	/*if (IsWritable(pCam->GevSCPSPacketSize)) {
 		pCam->GevSCPSPacketSize.SetValue(9000);
 	}*/
+
 	pCam->BeginAcquisition();
 }
 

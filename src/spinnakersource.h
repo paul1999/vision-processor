@@ -15,11 +15,12 @@ public:
 private:
 	Spinnaker::SystemPtr pSystem;
 	Spinnaker::CameraPtr pCam;
+
+	std::vector<std::shared_ptr<Image>> buffers;
 };
 
 class SpinnakerImage : public Image {
 public:
-	//TODO image format
 	// Image size halfed (RGB resolution)
 	explicit SpinnakerImage(const Spinnaker::ImagePtr& pImage): Image(RGGB8, (int)pImage->GetWidth() / 2, (int)pImage->GetHeight() / 2, (unsigned char*)pImage->GetData()), pImage(pImage) {}
 	~SpinnakerImage() override { pImage->Release(); }

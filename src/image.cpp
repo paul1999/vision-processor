@@ -2,9 +2,8 @@
 #include <cmath>
 #include "image.h"
 
-BufferImage::BufferImage(PixelFormat format, int linesize, int width, int height, unsigned char* data) : Image(format, linesize, width, height, data) {}
+BufferImage::BufferImage(PixelFormat format, int width, int height, unsigned char* data) : Image(format, width, height, data) {}
 
-static const int VECTOR_ALIGNMENT = 64; // Future proof for AVX-512
 /* TODO
 https://stackoverflow.com/a/3351994 CC BY-SA 2.5
 #include <unistd.h>
@@ -29,12 +28,11 @@ std::shared_ptr<Image> BufferImage::create(PixelFormat format, int width, int he
 			pixelWidthSize = 3;
 			break;
 		case NV12:
-			pixelHeightSize = 2; // 2 Image planes
+			pixelHeightSize = 2; // TODO 1,5 Image planes
 	}
 
-	int linesize = VECTOR_ALIGNMENT * (int)std::ceil((double)(width * pixelWidthSize) / VECTOR_ALIGNMENT);
-	auto* buffer = (unsigned char*)std::aligned_alloc(PAGE_SIZE, linesize * height * pixelHeightSize);
-	return std::make_shared<BufferImage>(format, linesize, width, height, buffer);
+	auto* buffer = (unsigned char*)std::aligned_alloc(PAGE_SIZE, width * height * pixelHeightSize * pixelWidthSize);
+	return std::make_shared<BufferImage>(format, width, height, buffer);
 }
 
 BufferImage::~BufferImage() {
