@@ -208,10 +208,14 @@ void RTPStreamer::encoderRun() {
 		cl::Buffer inBuffer = cl::Buffer(CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, image->getLinesize()*image->getHeight()*image->pixelSize(), image->getData(), nullptr);
 		openCl->run(yConverter, cl::EnqueueArgs(cl::NDRange(image->getLinesize()*image->getHeight())), inBuffer, clBuffer);
 		openCl->run(uvConverter, cl::EnqueueArgs(cl::NDRange(image->getLinesize()/2*image->getHeight())), inBuffer, clBuffer);
+		uint8_t* data = (uint8_t*)cl::enqueueMapBuffer(clBuffer, true, CL_MAP_READ, 0, buffer->pixelSize()*buffer->getLinesize()*buffer->getHeight());
+		frame->data[0] = data;
+		frame->data[1] = data + buffer->getLinesize()*buffer->getHeight();
 		std::cout << "frame_conversion " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0 << " ms" << std::endl;
 
 		frame->pts = currentFrameId++;
 		avcodec_send_frame(codecCtx, frame);
+		cl::enqueueUnmapMemObject(inBuffer, data);
 
 		int status = avcodec_receive_packet(codecCtx, pkt);
 		if(status == 0) {
