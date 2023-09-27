@@ -125,34 +125,34 @@ void RTPStreamer::allocResources() {
 		case RGGB8:
 			//o = get_global_id(0); row = 2*o - o%width + o%width; col = o%width; i1 = row*width+col
 			// 4*o - 2*(o%width)
-			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global const uchar* out) { int o = get_global_id(0); int i1 = 4*o - 2*(o%" + std::to_string(width) + "); int i2 = i1 + 2*" + std::to_string(width) + ";"
+			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global uchar* out) { int o = get_global_id(0); int i1 = 4*o - 2*(o%" + std::to_string(width) + "); int i2 = i1 + 2*" + std::to_string(width) + ";"
 											  "    out[o] = (uchar)((66*(short)in[i1] + 64*(short)in[i1+1] + 65*(short)in[i2] + 25*(short)in[i2+1]) / 256 + 16);"
 											  "}");
-			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global const uchar* out) { int o = 2*get_global_id(0); int i1 = 4*o - 2*(o%" + std::to_string(width) + "); int i2 = i1 + 2*" + std::to_string(width) + ";"
+			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global uchar* out) { int o = 2*get_global_id(0); int i1 = 4*o - 2*(o%" + std::to_string(width) + "); int i2 = i1 + 2*" + std::to_string(width) + ";"
 											    "    out[o] = (uchar)((-38*(short)in[i1] + -37*(short)in[i1+1] + -37*(short)in[i2] + 112*(short)in[i2+1]) / 256 + 128);"
 											    "    out[o+1] = (uchar)((112*(short)in[i1] + -47*(short)in[i1+1] + -47*(short)in[i2] + -18*(short)in[i2+1]) / 256 + 128);"
 											    "}");
 			break;
 		case BGR888:
-			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global const uchar* out) { int i = 3*get_global_id(0); int o = get_global_id(0);"
+			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global uchar* out) { int i = 3*get_global_id(0); int o = get_global_id(0);"
 											  "    out[o] = (uchar)((25*(short)in[i] + 129*(short)in[i+1] + 66*(short)in[i+2]) / 256 + 16);"
 											  "}");
-			uvConverter = openCl->compile("uv", "void kernel y(global const uchar* in, global const uchar* out) { int i = 6*get_global_id(0); int o = 2*get_global_id(0) + " + std::to_string(uvOffset) + ";"
+			uvConverter = openCl->compile("uv", "void kernel y(global const uchar* in, global uchar* out) { int i = 6*get_global_id(0); int o = 2*get_global_id(0) + " + std::to_string(uvOffset) + ";"
 												"    out[o] = (uchar)((112*(short)in[i] + -74*(short)in[i+1] + -38*(short)in[i+2]) / 256 + 128);"
 												"    out[o+1] = (uchar)((-18*(short)in[i] + -94*(short)in[i+1] + 112*(short)in[i+2]) / 256 + 128);"
 												"}");
 			break;
 		case U8:
-			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global const uchar* out) { int i = get_global_id(0); out[i] = in[i]; }");
-			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global const uchar* out) { int i = 2*get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = 127; out[i+1] = 127; }");
+			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global uchar* out) { int i = get_global_id(0); out[i] = in[i]; }");
+			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global uchar* out) { int i = 2*get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = 127; out[i+1] = 127; }");
 			break;
 		case I8:
-			yConverter = openCl->compile("y", "void kernel y(global const char* in, global const uchar* out) { int i = get_global_id(0); out[i] = (uchar)in[i] + 127; }");
-			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global const uchar* out) { int i = 2*get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = 127; out[i+1] = 127; }");
+			yConverter = openCl->compile("y", "void kernel y(global const char* in, global uchar* out) { int i = get_global_id(0); out[i] = (uchar)in[i] + 127; }");
+			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global uchar* out) { int i = 2*get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = 127; out[i+1] = 127; }");
 			break;
 		case NV12:
-			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global const uchar* out) { int i = get_global_id(0); out[i] = in[i]; }");
-			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global const uchar* out) { int i = 2*get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = in[i]; out[i+1] = in[i+1]; }");
+			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global uchar* out) { int i = get_global_id(0); out[i] = in[i]; }");
+			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global uchar* out) { int i = 2*get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = in[i]; out[i+1] = in[i+1]; }");
 			break;
 	}
 }
