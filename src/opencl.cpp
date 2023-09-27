@@ -1,101 +1,67 @@
 #include "opencl.h"
 
 #include <iostream>
+#include <utility>
 
 
 OpenCL::OpenCL() {
-	// get all platforms (drivers), e.g. NVIDIA
-	std::vector<cl::Platform> all_platforms;
-	cl::Platform::get(&all_platforms);
+	std::vector<cl::Platform> platforms;
+	cl::Platform::get(&platforms);
 
-	if (all_platforms.empty()) {
-		std::cout<<" No platforms found. Check OpenCL installation!\n";
-		exit(1);
-	}
-	cl::Platform default_platform=all_platforms[0];
-	std::cout << "Using platform: " << default_platform.getInfo<CL_PLATFORM_NAME>() << "\n";
-
-	// get default device (CPUs, GPUs) of the default platform
-	std::vector<cl::Device> all_devices;
-	default_platform.getDevices(CL_DEVICE_TYPE_ALL, &all_devices);
-	if(all_devices.empty()){
-		std::cout<<" No devices found. Check OpenCL installation!\n";
+	if (platforms.empty()) {
+		std::cerr << "No platforms found. Check OpenCL installation!" << std::endl;
 		exit(1);
 	}
 
-	// use device[1] because that's a GPU; device[0] is the CPU
-	device = all_devices[1];
-	std::cout << "Using device: " << device.getInfo<CL_DEVICE_NAME>() << "\n";
+	bool deviceFound = false;
+	for(const cl::Platform& platform : platforms) {
+		std::vector<cl::Device> devices;
+		platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
 
-	// a context is like a "runtime link" to the device and platform;
-	// i.e. communication is possible
-	context = cl::Context(device); // {device}
-	// create a queue (a queue of commands that the GPU will execute)
+		for(cl::Device& d : devices) {
+			cl_device_type type = d.getInfo<CL_DEVICE_TYPE>();
+			if(type & CL_DEVICE_TYPE_GPU) {
+				deviceFound = true;
+				device = d;
+				std::cout << "Using platform: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
+				std::cout << "Using device: " << device.getInfo<CL_DEVICE_NAME>() << "\n";
+				break;
+			}
+		}
+
+		if(deviceFound)
+			break;
+	}
+
+	if(!deviceFound){
+		std::cerr << "No GPU devices found. Check OpenCL installation!" << std::endl;
+		exit(1);
+	}
+
+	context = cl::Context(device);
+	cl::Context::setDefault(context);
 	queue = cl::CommandQueue(context, device);
+	cl::CommandQueue::setDefault(queue);
+}
 
-
-	// create the program that we want to execute on the device
+cl::Kernel OpenCL::compile(const std::string& name, const std::string& code) {
 	cl::Program::Sources sources;
-
-	// calculates for each element; C = A + B
-	std::string kernel_code=
-			"   void kernel simple_add(global const int* A, global const int* B, global int* C, "
-			"                          global const int* N) {"
-			"       int ID, Nthreads, n, ratio, start, stop;"
-			""
-			"       ID = get_global_id(0);"
-			"       Nthreads = get_global_size(0);"
-			"       n = N[0];"
-			""
-			"       ratio = (n / Nthreads);"  // number of elements for each thread
-			"       start = ratio * ID;"
-			"       stop  = ratio * (ID + 1);"
-			""
-			"       for (int i=start; i<stop; i++)"
-			"           C[i] = A[i] + B[i];"
-			"   }";
-	sources.push_back({kernel_code.c_str(), kernel_code.length()});
+	sources.emplace_back(code.c_str(), code.length());
 
 	cl::Program program(context, sources);
 	if (program.build({device}) != CL_SUCCESS) {
-		std::cout << "Error building: " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device) << std::endl;
+		std::cout << "Error during OpenCL kernel compilation: " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device) << std::endl;
 		exit(1);
 	}
 
-	// apparently OpenCL only likes arrays ...
-	// N holds the number of elements in the vectors we want to add
-	int N[1] = {100};
-	int n = N[0];
+	return {program, name.c_str()};
+}
 
-	// create buffers on device (allocate space on GPU)
-	cl::Buffer buffer_A(context, CL_MEM_READ_WRITE, sizeof(int) * n);
-	cl::Buffer buffer_B(context, CL_MEM_READ_WRITE, sizeof(int) * n);
-	cl::Buffer buffer_C(context, CL_MEM_READ_WRITE, sizeof(int) * n);
-	cl::Buffer buffer_N(context, CL_MEM_READ_ONLY,  sizeof(int));
-
-	// create things on here (CPU)
-	int A[n], B[n];
-	for (int i=0; i<n; i++) {
-		A[i] = i;
-		B[i] = n - i - 1;
-	}
-
-	// push write commands to queue
-	queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, sizeof(int)*n, A);
-	queue.enqueueWriteBuffer(buffer_B, CL_TRUE, 0, sizeof(int)*n, B);
-	queue.enqueueWriteBuffer(buffer_N, CL_TRUE, 0, sizeof(int),   N);
-
-	cl::Kernel kernel(program, "simple_add");
-
-	// RUN ZE KERNEL
-	cl::KernelFunctor simple_add(kernel);
+template<typename... Ts>
+void OpenCL::run(cl::Kernel kernel, const cl::EnqueueArgs& args, Ts... ts) {
+	cl::KernelFunctor functor(std::move(kernel));
 	//queue, cl::NullRange, cl::NDRange(10), cl::NullRange
-	//TODO defaultqueue possible
-	cl::EnqueueArgs args(queue, cl::NDRange(10));
-	//simple_add(args, buffer_A, buffer_B, buffer_C, buffer_N);
-
-	int C[n];
-	// read result from GPU to here
-	queue.enqueueReadBuffer(buffer_C, CL_TRUE, 0, sizeof(int)*n, C);
-
+	//TODO defaultqueue?
+	//cl::EnqueueArgs args(queue, cl::NDRange(10));
+	functor(args, std::forward<Ts>(ts)...).wait();
 }

@@ -1,24 +1,56 @@
 #include <iostream>
+#include <cmath>
 #include "image.h"
 
-BufferImage::BufferImage(PixelFormat format, int width, int height, std::vector<unsigned char*> buffer) : Image(format, width, height, (unsigned char*)buffer.data()), buffer(std::move(buffer)) {}
+BufferImage::BufferImage(PixelFormat format, int linesize, int width, int height, unsigned char* data) : Image(format, linesize, width, height, data) {}
+
+static const int VECTOR_ALIGNMENT = 64; // Future proof for AVX-512
+/* TODO
+https://stackoverflow.com/a/3351994 CC BY-SA 2.5
+#include <unistd.h>
+long sz = sysconf (_SC_PAGESIZE);
+
+https://stackoverflow.com/a/50958005 CC BY-SA 4.0
+SYSTEM_INFO sysInfo;
+GetSystemInfo(&sysInfo);
+printf("%s %d\n\n", "PageSize[Bytes] :", sysInfo.dwPageSize);
+*/
+static const int PAGE_SIZE = 4096; // Required for OpenCL
 
 std::shared_ptr<Image> BufferImage::create(PixelFormat format, int width, int height) {
-	int pixelSize;
+	int pixelWidthSize = 1;
+	int pixelHeightSize = 1;
 	switch(format) {
 		case RGGB8:
-			pixelSize = 4;
+			pixelWidthSize = 2;
+			pixelHeightSize = 2;
 			break;
 		case BGR888:
-			pixelSize = 3;
+			pixelWidthSize = 3;
 			break;
-		case U8:
-		case I8:
-			pixelSize = 1;
-			break;
+		case NV12:
+			pixelHeightSize = 2; // 2 Image planes
 	}
 
-	std::vector<unsigned char*> buffer;
-	buffer.resize(width*height*pixelSize);
-	return std::make_shared<BufferImage>(format, width, height, std::move(buffer));
+	int linesize = VECTOR_ALIGNMENT * (int)std::ceil((double)(width * pixelWidthSize) / VECTOR_ALIGNMENT);
+	auto* buffer = (unsigned char*)std::aligned_alloc(PAGE_SIZE, linesize * height * pixelHeightSize);
+	return std::make_shared<BufferImage>(format, linesize, width, height, buffer);
+}
+
+BufferImage::~BufferImage() {
+	std::free(getData());
+}
+
+int Image::pixelSize() {
+	switch(format) {
+		case RGGB8:
+			return 4;
+		case BGR888:
+			return 3;
+		case NV12:
+			return 2; // 2 Image planes
+		case U8:
+		case I8:
+			return 1;
+	}
 }

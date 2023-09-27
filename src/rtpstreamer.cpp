@@ -11,7 +11,7 @@ extern "C" {
 }
 
 
-RTPStreamer::RTPStreamer(std::string uri, int framerate): uri(std::move(uri)), framerate(framerate), frametime_us(1000000 / framerate), encoder(&RTPStreamer::encoderRun, this) {}
+RTPStreamer::RTPStreamer(std::shared_ptr<OpenCL> openCl, std::string uri, int framerate): openCl(std::move(openCl)), uri(std::move(uri)), framerate(framerate), frametime_us(1000000 / framerate), encoder(&RTPStreamer::encoderRun, this) {}
 
 RTPStreamer::~RTPStreamer() {
 	stopEncoding = true;
@@ -105,13 +105,56 @@ void RTPStreamer::allocResources() {
 	fprintf(fsdp, "%s", buf);
 	fclose(fsdp);
 
+	buffer = BufferImage::create(NV12, width, height);
+	int uvOffset = buffer->getLinesize()*buffer->getHeight();
+
 	frame = av_frame_alloc();
 	frame->format = codecCtx->pix_fmt;
 	frame->width  = codecCtx->width;
 	frame->height = codecCtx->height;
-	av_image_alloc(frame->data, frame->linesize, frame->width, frame->height, codecCtx->pix_fmt, 32);
+	//frame->extended_data = frame->data;
+	frame->data[0] = buffer->getData();
+	frame->data[1] = buffer->getData() + uvOffset;
+	frame->linesize[0] = buffer->getLinesize();
+	frame->linesize[1] = buffer->getLinesize();
 
 	pkt = av_packet_alloc();
+
+	clBuffer = cl::Buffer(CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, buffer->getLinesize()*buffer->getHeight()*2, buffer->getData(), nullptr);
+	switch(this->format) {
+		case RGGB8:
+			//o = get_global_id(0); row = 2*o - o%width + o%width; col = o%width; i1 = row*width+col
+			// 4*o - 2*(o%width)
+			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global const uchar* out) { int o = get_global_id(0); int i1 = 4*o - 2*(o%" + std::to_string(width) + "); int i2 = i1 + 2*" + std::to_string(width) + ";"
+											  "    out[o] = (uchar)((66*(short)in[i1] + 64*(short)in[i1+1] + 65*(short)in[i2] + 25*(short)in[i2+1]) / 256 + 16);"
+											  "}");
+			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global const uchar* out) { int o = 2*get_global_id(0); int i1 = 4*o - 2*(o%" + std::to_string(width) + "); int i2 = i1 + 2*" + std::to_string(width) + ";"
+											    "    out[o] = (uchar)((-38*(short)in[i1] + -37*(short)in[i1+1] + -37*(short)in[i2] + 112*(short)in[i2+1]) / 256 + 128);"
+											    "    out[o+1] = (uchar)((112*(short)in[i1] + -47*(short)in[i1+1] + -47*(short)in[i2] + -18*(short)in[i2+1]) / 256 + 128);"
+											    "}");
+			break;
+		case BGR888:
+			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global const uchar* out) { int i = 3*get_global_id(0); int o = get_global_id(0);"
+											  "    out[o] = (uchar)((25*(short)in[i] + 129*(short)in[i+1] + 66*(short)in[i+2]) / 256 + 16);"
+											  "}");
+			uvConverter = openCl->compile("uv", "void kernel y(global const uchar* in, global const uchar* out) { int i = 6*get_global_id(0); int o = 2*get_global_id(0) + " + std::to_string(uvOffset) + ";"
+												"    out[o] = (uchar)((112*(short)in[i] + -74*(short)in[i+1] + -38*(short)in[i+2]) / 256 + 128);"
+												"    out[o+1] = (uchar)((-18*(short)in[i] + -94*(short)in[i+1] + 112*(short)in[i+2]) / 256 + 128);"
+												"}");
+			break;
+		case U8:
+			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global const uchar* out) { int i = get_global_id(0); out[i] = in[i]; }");
+			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global const uchar* out) { int i = 2*get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = 127; out[i+1] = 127; }");
+			break;
+		case I8:
+			yConverter = openCl->compile("y", "void kernel y(global const char* in, global const uchar* out) { int i = get_global_id(0); out[i] = (uchar)in[i] + 127; }");
+			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global const uchar* out) { int i = 2*get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = 127; out[i+1] = 127; }");
+			break;
+		case NV12:
+			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global const uchar* out) { int i = get_global_id(0); out[i] = in[i]; }");
+			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global const uchar* out) { int i = 2*get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = in[i]; out[i+1] = in[i+1]; }");
+			break;
+	}
 }
 
 void RTPStreamer::freeResources() {
@@ -127,7 +170,6 @@ void RTPStreamer::freeResources() {
 	}
 
 	if(frame != nullptr) {
-		av_freep(&frame->data[0]);
 		av_frame_free(&frame);
 		frame = nullptr;
 	}
@@ -153,128 +195,20 @@ void RTPStreamer::encoderRun() {
 			queue.pop();
 		}
 
-		if(image->getWidth() != width || image->getHeight() != height) {
+		if(image->getWidth() != width || image->getHeight() != height || image->getFormat() != format) {
 			freeResources();
 			width = image->getWidth();
 			height = image->getHeight();
+			format = image->getFormat();
 		}
 
 		allocResources();
 
 		auto startTime = std::chrono::high_resolution_clock::now();
-		//Convert and copy to frame
-		const int width = this->width; //Necessary for gcc autovectorizer
-		const int height = this->height; //Necessary for gcc autovectorizer
-		if(image->getFormat() == BGR888) {
-			/*cv::Mat yuv;
-			cv::cvtColor(img, yuv, cv::COLOR_BGR2YUV);
-
-			const int width = yuv.cols;
-			const int height = yuv.rows;
-			for(int y = 0; y < height; y++) {
-				const uint8_t* __restrict yData = yuv.data + y*width*3;
-				uint8_t* __restrict yFrame = frame->data[0] + y*frame->linesize[0];
-				for(int x = 0; x < width; x++) {
-					yFrame[x] = yData[x*3];
-				}
-			}
-			for(int y = 0; y < height/2; y++) {
-				const uint8_t* __restrict uData = yuv.data + 2*y*width*3 + 1;
-				uint8_t* __restrict uFrame = frame->data[1] + y*frame->linesize[1];
-				const uint8_t* __restrict vData = yuv.data + 2*y*width*3 + 2;
-				uint8_t* __restrict vFrame = frame->data[2] + y*frame->linesize[2];
-				for(int x = 0; x < width/2; x++) {
-					uFrame[x] = uData[2*x*3];
-					vFrame[x] = vData[2*x*3];
-				}
-			}*/
-			//TODO fix autovectorization
-			for (int y = 0; y < height; y++) {
-				const uint8_t *__restrict imageRow = image->getData() + y * width * 3;
-				uint8_t *__restrict yFrame = frame->data[0] + y * frame->linesize[0];
-#pragma GCC ivdep
-				for (int x = 0; x < width; x++) {
-					int pos = 3 * x;
-					yFrame[x] = (uint8_t) ((25 * (int16_t) imageRow[pos] + 129 * (int16_t) imageRow[pos + 1] +
-											66 * (int16_t) imageRow[pos + 2]) / 256 + 16);
-				}
-			}
-
-			for (int y = 0; y < height / 2; y++) {
-				const uint8_t *__restrict imageRow = image->getData() + 3 * 2 * y * width;
-				uint8_t *__restrict uvFrame = frame->data[1] + y * frame->linesize[1];
-#pragma GCC ivdep
-				for (int x = 0; x < width; x+=2) {
-					int pos = 3 * x;
-					uvFrame[x] = (uint8_t) ((112 * (int16_t) imageRow[pos] + -74 * (int16_t) imageRow[pos + 1] +
-											-38 * (int16_t) imageRow[pos + 2]) / 256 + 128);
-					uvFrame[x+1] = (uint8_t) ((-18 * (int16_t) imageRow[pos] + -94 * (int16_t) imageRow[pos + 1] +
-											112 * (int16_t) imageRow[pos + 2]) / 256 + 128);
-				}
-			}
-		} else if (image->getFormat() == RGGB8) {
-			//TODO fix autovectorization
-			for (int y = 0; y < height; y++) {
-				const uint8_t* imageRow = image->getData() + y * width * 4;
-				const uint8_t* imageRow2 = image->getData() + y * width * 4 + width*2;
-				uint8_t* yFrame = frame->data[0] + y * frame->linesize[0];
-#pragma GCC ivdep
-				for (int x = 0; x < width; x++) {
-					int pos = 2 * x;
-					yFrame[x] = (uint8_t) (( 66 * (int16_t) imageRow[pos]  + 64 * (int16_t) imageRow[pos + 1] +
-											 65 * (int16_t) imageRow2[pos] + 25 * (int16_t) imageRow2[pos + 1]) / 256 + 16);
-				}
-			}
-			for (int y = 0; y < height / 2; y++) {
-				const uint8_t* imageRow = image->getData() + 4 * 2 * y * width;
-				const uint8_t* imageRow2 = image->getData() + 4 * 2 * y * width + width*2;
-				uint8_t* uvFrame = frame->data[1] + y * frame->linesize[1];
-#pragma GCC ivdep
-				for (int x = 0; x < width; x+=2) {
-					int pos = 2 * x;
-					uvFrame[x] = (uint8_t) ((-38 * (int16_t) imageRow[pos]  + -37 * (int16_t) imageRow[pos + 1] +
-											-37 * (int16_t) imageRow2[pos] + 112 * (int16_t) imageRow2[pos+1]) / 256 + 128);
-					uvFrame[x+1] = (uint8_t) ((112 * (int16_t) imageRow[pos]  + -47 * (int16_t) imageRow[pos + 1] +
-											-47 * (int16_t) imageRow2[pos] + -18 * (int16_t) imageRow2[pos+1]) / 256 + 128);
-				}
-			}
-		} else if (image->getFormat() == I8) {
-			for (int y = 0; y < height; y++) {
-				const uint8_t* imageRow = image->getData() + y * width;
-				uint8_t* yFrame = frame->data[0] + y * frame->linesize[0];
-#pragma GCC ivdep
-				for (int x = 0; x < width; x++) {
-					yFrame[x] = (uint8_t) (imageRow[x] + 128);
-				}
-			}
-
-			for (int y = 0; y < height / 2; y++) {
-				uint8_t* uvFrame = frame->data[1] + y * frame->linesize[1];
-				for (int x = 0; x < width; x++) {
-					uvFrame[x] = 127;
-				}
-			}
-		} else if (image->getFormat() == U8) {
-			for (int y = 0; y < height; y++) {
-				const uint8_t* imageRow = image->getData() + y * width;
-				uint8_t* yFrame = frame->data[0] + y * frame->linesize[0];
-#pragma GCC ivdep
-				for (int x = 0; x < width; x++) {
-					yFrame[x] = imageRow[x];
-				}
-			}
-
-			for (int y = 0; y < height / 2; y++) {
-				uint8_t* uvFrame = frame->data[1] + y * frame->linesize[1];
-#pragma GCC ivdep
-				for (int x = 0; x < width; x++) {
-					uvFrame[x] = 127;
-				}
-			}
-		} else {
-			std::cerr << "Tried to send frame with unsupported format: " << image->getFormat() << std::endl;
-			return;
-		}
+		cl::Buffer inBuffer = cl::Buffer(CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, image->getLinesize()*image->getHeight()*image->pixelSize(), image->getData(), nullptr);
+		openCl->run(yConverter, cl::EnqueueArgs(cl::NDRange(image->getLinesize()*image->getHeight())), inBuffer, clBuffer);
+		openCl->run(uvConverter, cl::EnqueueArgs(cl::NDRange(image->getLinesize()/2*image->getHeight())), inBuffer, clBuffer);
+		std::cout << "frame_conversion " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0 << " ms" << std::endl;
 
 		frame->pts = currentFrameId++;
 		avcodec_send_frame(codecCtx, frame);

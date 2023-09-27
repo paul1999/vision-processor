@@ -4,6 +4,7 @@
 #include "rtpstreamer.h"
 #include "spinnakersource.h"
 #include "messages_robocup_ssl_detection.pb.h"
+#include "opencl.h"
 
 #include <opencv2/imgproc.hpp>
 //#include <opencv2/opencv.hpp>
@@ -109,7 +110,8 @@ int main() {
 	ImageSource camera(paths);
 #endif
 
-	RTPStreamer rtpStreamer("rtp://224.5.23.2:10101");
+	std::shared_ptr<OpenCL> openCl = std::make_shared<OpenCL>();
+	RTPStreamer rtpStreamer(openCl, "rtp://224.5.23.2:10101");
 
 	//cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
 
