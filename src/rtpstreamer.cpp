@@ -125,7 +125,7 @@ void RTPStreamer::allocResources() {
 		case RGGB8:
 			//o = get_global_id(0); row = 2*o - o%width + o%width; col = o%width; i1 = row*width+col
 			// 4*o - 2*(o%width)
-			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global uchar* out) { int o = get_global_id(0); int i1 = 4*o - 2*(o%" + std::to_string(width) + "); int i2 = i1 + 2*" + std::to_string(width) + ";"
+			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global uchar* out) { int i = get_global_id(0); int o = i + " + std::to_string(uvOffset) + "; int i1 = 4*i - 2*(i%" + std::to_string(width) + "); int i2 = i1 + 2*" + std::to_string(width) + ";"
 											  "    out[o] = (uchar)((66*(short)in[i1] + 64*(short)in[i1+1] + 65*(short)in[i2] + 25*(short)in[i2+1]) / 256 + 16);"
 											  "}");
 			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global uchar* out) { int o = 2*get_global_id(0); int i1 = 4*o - 2*(o%" + std::to_string(width) + "); int i2 = i1 + 2*" + std::to_string(width) + ";"
