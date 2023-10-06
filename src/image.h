@@ -9,6 +9,7 @@ enum PixelFormat {
 	BGR888,
 	U8,
 	I8,
+	F32,
 
 	NV12
 };
@@ -24,6 +25,8 @@ public:
 	[[nodiscard]] int getHeight() const { return height; }
 	[[nodiscard]] unsigned char* getData() const { return data; }
 
+	int pixelWidth();
+	int pixelHeight();
 	int pixelSize();
 
 private:

@@ -24,6 +24,9 @@ std::shared_ptr<Image> BufferImage::create(PixelFormat format, int width, int he
 			pixelWidthSize = 2;
 			pixelHeightSize = 2;
 			break;
+		case F32:
+			pixelWidthSize = 4;
+			break;
 		case BGR888:
 			pixelWidthSize = 3;
 			break;
@@ -40,13 +43,31 @@ BufferImage::~BufferImage() {
 }
 
 int Image::pixelSize() {
+	return pixelWidth()*pixelHeight();
+}
+
+int Image::pixelWidth() {
 	switch(format) {
-		case RGGB8:
+		case F32:
 			return 4;
 		case BGR888:
 			return 3;
+		case RGGB8:
+			return 2; // 2 Image planes, TODO 1.5
 		case NV12:
-			return 2; // 2 Image planes
+		case U8:
+		case I8:
+			return 1;
+	}
+}
+
+int Image::pixelHeight() {
+	switch(format) {
+		case RGGB8:
+		case NV12:
+			return 2;
+		case BGR888:
+		case F32:
 		case U8:
 		case I8:
 			return 1;

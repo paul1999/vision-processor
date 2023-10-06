@@ -38,21 +38,29 @@ OpenCL::OpenCL() {
 		exit(1);
 	}
 
+	//device.getInfo<CL_UNIFIED_SHARED_MEMORY_ACCESS_INTEL>();
+
 	context = cl::Context(device);
 	cl::Context::setDefault(context);
 	queue = cl::CommandQueue(context, device);
 	cl::CommandQueue::setDefault(queue);
 }
 
-cl::Kernel OpenCL::compile(const std::string& name, const std::string& code) {
+cl::Kernel OpenCL::compile(const std::string& code, const std::string& options) {
 	cl::Program::Sources sources;
 	sources.emplace_back(code.c_str(), code.length());
 
 	cl::Program program(context, sources);
-	if (program.build({device}) != CL_SUCCESS) {
-		std::cout << "Error during OpenCL kernel compilation: " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device) << std::endl;
+	if (program.build({device}, options.c_str()) != CL_SUCCESS) {
+		std::cerr << "Error during OpenCL kernel compilation: " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device) << std::endl;
 		exit(1);
 	}
 
-	return {program, name.c_str()};
+	std::vector<cl::Kernel> kernels;
+	program.createKernels(&kernels);
+	return kernels[0];
+}
+
+cl::Buffer OpenCL::toBuffer(bool read, std::shared_ptr<Image>& image) {
+	return {(cl_mem_flags) CL_MEM_USE_HOST_PTR | (read ? CL_MEM_READ_ONLY : CL_MEM_WRITE_ONLY), (cl::size_type) image->getWidth()*image->getHeight()*image->pixelSize(), image->getData(), nullptr};
 }

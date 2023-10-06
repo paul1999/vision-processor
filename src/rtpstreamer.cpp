@@ -120,39 +120,53 @@ void RTPStreamer::allocResources() {
 
 	pkt = av_packet_alloc();
 
-	clBuffer = cl::Buffer(CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, buffer->getWidth()*buffer->getHeight()*2, buffer->getData(), nullptr);
+	std::string options = "-D WIDTH=" + std::to_string(width) + " -D UV_OFFSET=" + std::to_string(uvOffset);
+	clBuffer = openCl->toBuffer(true, buffer);
 	switch(this->format) {
 		case RGGB8:
-			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global uchar* out) { int i = get_global_id(0); int o = i; int i1 = 4*i - 2*(i%" + std::to_string(width) + "); int i2 = i1 + 2*" + std::to_string(width) + ";"
-											  "    out[o] = (uchar)((66*(short)in[i1] + 64*(short)in[i1+1] + 65*(short)in[i2] + 25*(short)in[i2+1]) / 256 + 16);"
-											  "}");
-			//TODO NV12 UV is QUARTER resolution, not HALF
-			uvConverter = openCl->compile("uv", "void kernel uv(global const uchar* in, global uchar* out) { int i = 2*get_global_id(0); int o = i + " + std::to_string(uvOffset) + "; int i1 = 4*i - 2*(i%" + std::to_string(width) + "); int i2 = i1 + 2*" + std::to_string(width) + ";"
-											    "    out[o] = (uchar)((-38*(short)in[i1] + -37*(short)in[i1+1] + -37*(short)in[i2] + 112*(short)in[i2+1]) / 256 + 128);"
-											    "    out[o+1] = (uchar)((112*(short)in[i1] + -47*(short)in[i1+1] + -47*(short)in[i2] + -18*(short)in[i2+1]) / 256 + 128);"
-											    "}");
+			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) {"
+											 "	const int i0 = 2*get_global_id(0) + 2*get_global_id(1)*2*get_global_size(0);"
+											 "	const int i1 = i0 + 2*get_global_size(0);"
+											 "	const int uvout = UV_OFFSET + get_global_id(0)/2*2 + get_global_id(1)/2*get_global_size(0);"
+											 "	const short r = in[i0]; const short g0 = in[i0+1]; const short g1 = in[i1]; const short b = in[i1+1];"
+											 "	out[get_global_id(0) + get_global_id(1)*get_global_size(0)] = (uchar)((66*r + 64*g0 + 65*g1 + 25*b) / 256 + 16);"
+											 "	out[uvout] = (uchar)((-38*r + -37*g0 + -37*g1 + 112*b) / 256 + 128);"
+											 "  out[uvout+1] = (uchar)((112*r + -47*g0 + -47*g1 + -18*b) / 256 + 128);"
+											 "}", options);
 			break;
 		case BGR888:
-			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global uchar* out) { int i = 3*get_global_id(0); int o = get_global_id(0);"
-											  "    out[o] = (uchar)((25*(short)in[i] + 129*(short)in[i+1] + 66*(short)in[i+2]) / 256 + 16);"
-											  "}");
-			//TODO NV12 UV is QUARTER resolution, not HALF
-			uvConverter = openCl->compile("uv", "void kernel y(global const uchar* in, global uchar* out) { int i = 6*get_global_id(0); int o = 2*get_global_id(0) + " + std::to_string(uvOffset) + ";"
-												"    out[o] = (uchar)((112*(short)in[i] + -74*(short)in[i+1] + -38*(short)in[i+2]) / 256 + 128);"
-												"    out[o+1] = (uchar)((-18*(short)in[i] + -94*(short)in[i+1] + 112*(short)in[i+2]) / 256 + 128);"
-												"}");
+			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) {"
+											 "	const int i = 3*get_global_id(0) + get_global_id(1)*3*get_global_size(0);"
+											 "	const int uvout = UV_OFFSET + get_global_id(0)/2*2 + get_global_id(1)/2*get_global_size(0);"
+											 "	const short b = in[i]; const short g = in[i+1]; const short r = in[i+2];"
+											 "	out[get_global_id(0) + get_global_id(1)*get_global_size(0)] = (uchar)((66*r + 129*g + 25*b) / 256 + 16);"
+											 "	out[uvout] = (uchar)((-38*r + -74*g + 112*b) / 256 + 128);"
+											 "  out[uvout+1] = (uchar)((112*r + -94*g + -18*b) / 256 + 128);"
+											 "}", options);
 			break;
 		case U8:
-			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global uchar* out) { int i = get_global_id(0); out[i] = in[i]; }");
-			uvConverter = openCl->compile("uv", "void kernel uv(global const ushort* in, global ushort* out) { int i = get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = 0x7f7f; }");
+			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = in[i]; }");
+			for(int i = 0; i < (width/2) * (height/2); i++)
+				buffer->getData()[i] = 127;
 			break;
 		case I8:
-			yConverter = openCl->compile("y", "void kernel y(global const char* in, global uchar* out) { int i = get_global_id(0); out[i] = (uchar)in[i] + 127; }");
-			uvConverter = openCl->compile("uv", "void kernel uv(global const ushort* in, global ushort* out) { int i = get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = 0x7f7f; }");
+			converter = openCl->compile("void kernel c(global const char* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i] + 127; }");
+			for(int i = 0; i < (width/2) * (height/2); i++)
+				buffer->getData()[i] = 127;
+			break;
+		case F32:
+			converter = openCl->compile("void kernel c(global const float* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)fabs(in[i]) + 127; }");
+			for(int i = 0; i < (width/2) * (height/2); i++)
+				buffer->getData()[i] = 127;
 			break;
 		case NV12:
-			yConverter = openCl->compile("y", "void kernel y(global const uchar* in, global uchar* out) { int i = get_global_id(0); out[i] = in[i]; }");
-			uvConverter = openCl->compile("uv", "void kernel uv(global const ushort* in, global ushort* out) { int i = get_global_id(0) + " + std::to_string(uvOffset) + "; out[i] = in[i]; }");
+			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) {"
+											 "	const int yi = get_global_id(0) + get_global_id(1)*get_global_size(0);"
+											 "	const int uvi = UV_OFFSET + get_global_id(0)/2 + get_global_id(1)/2*get_global_size(0);"
+											 "	out[yi] = in[yi];"
+											 "	out[uvi] = in[uvi];"
+											 "	out[uvi+1] = in[uvi+1];"
+											 "}", options);
 			break;
 	}
 }
@@ -205,11 +219,9 @@ void RTPStreamer::encoderRun() {
 		allocResources();
 
 		auto startTime = std::chrono::high_resolution_clock::now();
-		cl::Buffer inBuffer = cl::Buffer(CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, image->getWidth()*image->getHeight()*image->pixelSize(), image->getData(), nullptr);
-		cl::Event yConversion = openCl->run(yConverter, cl::EnqueueArgs(cl::NDRange(image->getWidth()*image->getHeight())), inBuffer, clBuffer);
-		cl::Event uvConversion = openCl->run(uvConverter, cl::EnqueueArgs(cl::NDRange(image->getWidth()/2*image->getHeight()/2)), inBuffer, clBuffer);
-		yConversion.wait();
-		uvConversion.wait();
+		cl::Buffer inBuffer = openCl->toBuffer(false, image);
+		openCl->run(converter, cl::EnqueueArgs(cl::NDRange(width, height)), inBuffer, clBuffer).wait();
+		//cl::enqueueReadBuffer(clBuffer, true, 0, image->getWidth()*image->getHeight()*2, buffer->getData()); //TODO
 		std::cout << "frame_conversion " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0 << " ms" << std::endl;
 
 		frame->pts = currentFrameId++;

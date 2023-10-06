@@ -8,21 +8,31 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 set(CMAKE_VERBOSE_MAKEFILE 1)
 add_compile_options(-fopt-info-vec-optimized-missed)
 
+find_package(yaml-cpp REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
-find_package(OpenCL REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil)
+
+find_package(Spinnaker)
 
 find_package(Protobuf REQUIRED)
 file(GLOB PROTO_DEFS proto/*.proto)
 protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_DEFS})
 
-find_package(Spinnaker)
+find_package(OpenCL REQUIRED)
+file(GLOB CL_KERNELS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/kernel/" kernel/*.cl)
+# Adapted from https://stackoverflow.com/a/47801116 CC BY-SA 3.0 by Martin R.
+foreach(input_file IN LISTS CL_KERNELS)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/kernel/${input_file}" content)
+    set(content "R\"PrepForInclude(${content})PrepForInclude\"")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/${input_file}" "${content}")
+endforeach()
+unset(content)
 
 file(GLOB SRC src/*.cpp src/*.c)
 add_executable(${PROJECT_NAME} ${SRC} ${PROTO_SRCS})
-target_include_directories(${PROJECT_NAME} PRIVATE src ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_INCLUDE_DIRS} ${Protobuf_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL ${Protobuf_LIBRARIES})
+target_include_directories(${PROJECT_NAME} PRIVATE src ${YAML_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_INCLUDE_DIRS} ${Protobuf_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries(${PROJECT_NAME} ${YAML_CPP_LIBRARIES} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL ${Protobuf_LIBRARIES})
 target_compile_definitions(${PROJECT_NAME} PRIVATE CL_HPP_TARGET_OPENCL_VERSION=300)
 
 install(TARGETS ${PROJECT_NAME} DESTINATION /usr/local/bin)

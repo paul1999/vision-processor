@@ -9,20 +9,15 @@
 #include "image.h"
 #include "videosource.h"
 
-
-class CVImage : public Image {
-public:
-	CVImage(cv::Mat img, PixelFormat format): Image(format, img.cols, img.rows, img.data), img(std::move(img)) {}
-	explicit CVImage(cv::Mat img): Image(BGR888, img.cols, img.rows, img.data), img(std::move(img)) {}
-private:
-	const cv::Mat img;
-};
-
 class ImageSource : public VideoSource {
 public:
 	explicit ImageSource(const std::vector<std::string>& paths) {
 		for(auto& path : paths) {
-			images.push_back(std::make_shared<CVImage>(cv::imread(path)));
+			cv::Mat mat = cv::imread(path);
+			std::shared_ptr<Image> image = BufferImage::create(BGR888, mat.cols, mat.rows);
+			for(int i = 0; i < mat.cols*mat.rows*3; i++)
+				image->getData()[i] = mat.data[i];
+			images.push_back(image);
 		}
 	}
 

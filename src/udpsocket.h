@@ -23,6 +23,7 @@ public:
 	~UDPSocket();
 
 	void send(google::protobuf::Message& msg);
+	void recv(google::protobuf::Message& msg);
 private:
 	int socket_;
 	struct sockaddr addr_;

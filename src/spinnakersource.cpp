@@ -43,6 +43,7 @@ SpinnakerSource::SpinnakerSource(int id) {
 		buffers.push_back(buffer);
 	}
 
+	pCam->SetBufferOwnership(Spinnaker::SPINNAKER_BUFFER_OWNERSHIP_USER);
 	pCam->SetUserBuffers(bufferPtrs.data(), buffers.size(), width*height);
 
 	/*if (IsWritable(pCam->GevSCPSPacketSize)) {

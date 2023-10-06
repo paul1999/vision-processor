@@ -54,6 +54,5 @@ private:
 
 	std::shared_ptr<Image> buffer = nullptr;
 	cl::Buffer clBuffer;
-	cl::Kernel yConverter;
-	cl::Kernel uvConverter;
+	cl::Kernel converter;
 };

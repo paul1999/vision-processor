@@ -1,0 +1,23 @@
+# VisionProcessor configuration
+
+# Camera ID handled by this VisionProcessor instance.
+#cam_id: 0
+
+# Camera source type. Availability depending on libraries installed.
+# SPINNAKER, IMAGES
+#source: SPINNAKER
+
+# Spinnaker camera id
+#spinnaker_id: 0
+
+# List of image file system paths for IMAGES source.
+#images: []
+
+# Vision multicast IP address
+#vision_ip: "224.5.23.2"
+
+# Vision multicast port
+#vision_port: 10006
+
+# Camera feed base port (cam_id is added to maintain separation)
+#stream_base_port: 10100
