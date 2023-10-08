@@ -17,12 +17,15 @@ enum PixelFormat {
 
 class Image {
 public:
-	Image(PixelFormat format, int width, int height, unsigned char* data): format(format), width(width), height(height), data(data) {}
+	Image(PixelFormat format, int width, int height, unsigned char* data): format(format), width(width), height(height), timestamp(0), data(data) {}
+	Image(PixelFormat format, int width, int height, double timestamp, unsigned char* data): format(format), width(width), height(height), timestamp(timestamp), data(data) {}
 	virtual ~Image() = default;
 
+	//TODO CL buffer cache
 	[[nodiscard]] PixelFormat getFormat() const { return format; }
 	[[nodiscard]] int getWidth() const { return width; }
 	[[nodiscard]] int getHeight() const { return height; }
+	[[nodiscard]] double getTimestamp() const { return timestamp; }
 	[[nodiscard]] unsigned char* getData() const { return data; }
 
 	int pixelWidth();
@@ -33,6 +36,7 @@ private:
 	const PixelFormat format;
 	const int width;
 	const int height;
+	const double timestamp;
 	unsigned char* data;
 };
 

@@ -1,10 +1,13 @@
 #include "udpsocket.h"
+#include "messages_robocup_ssl_wrapper.pb.h"
 
 #include <iostream>
 #include <cstring>
 
-UDPSocket::UDPSocket(const std::string &ip, uint16_t port)
+UDPSocket::UDPSocket(const std::string &ip, uint16_t port): receiver(&UDPSocket::receiverRun, this)
 {
+	//Adapted from https://gist.github.com/hostilefork/f7cae3dc33e7416f2dd25a402857b6c6
+
 #ifdef _WIN32
 	WSADATA wsaData;
     if (WSAStartup(0x0101, &wsaData))
@@ -71,4 +74,16 @@ void UDPSocket::recv(google::protobuf::Message& msg) {
 
 	msgbuf[bytesRead] = 0;
 	msg.ParseFromString(msgbuf);
+}
+
+void UDPSocket::receiverRun() {
+	while(true) {
+		SSL_WrapperPacket wrapper;
+		recv(wrapper);
+
+		if(!wrapper.has_geometry())
+			continue;
+
+		geometry.CopyFrom(wrapper.geometry());
+	}
 }

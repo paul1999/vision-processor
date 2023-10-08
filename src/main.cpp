@@ -1,24 +1,44 @@
 #include <iostream>
 
-#include "imagesource.h"
+#include "source/imagesource.h"
 #include "rtpstreamer.h"
-#include "spinnakersource.h"
-#include "messages_robocup_ssl_detection.pb.h"
+#include "source/spinnakersource.h"
 #include "opencl.h"
+#include "udpsocket.h"
 
 #include <opencv2/imgproc.hpp>
 #include <yaml-cpp/yaml.h>
 
-enum Stage {
-	AWAITING_GEOMETRY,
-	UP_AND_RUNNING
-};
+double getTime() {
+	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
+}
 
 int main() {
 	YAML::Node config = YAML::LoadFile("config.yml");
-	//TODO adapt to source type
 
-	config["source"].as<std::string>("SPINNAKER");
+	auto source = config["source"].as<std::string>("SPINNAKER");
+	std::unique_ptr<VideoSource> camera = nullptr;
+
+#ifdef SPINNAKER
+	if(source == "SPINNAKER")
+		camera = std::make_unique<SpinnakerSource>(config["spinnaker_id"].as<int>(0));
+#endif
+
+	if(source == "IMAGES") {
+		auto paths = config["images"].as<std::vector<std::string>>();
+
+		if(paths.empty()) {
+			std::cerr << "Source IMAGES needs at least one image." << std::endl;
+			return 1;
+		}
+
+		camera = std::make_unique<ImageSource>(paths);
+	}
+
+	if(camera == nullptr) {
+		std::cerr << "No camera/image source defined." << std::endl;
+		return 1;
+	}
 
 	/*
 	//RG
@@ -52,46 +72,42 @@ int main() {
 	kData[3] = -1; kData[4] = 0; kData[5] = 1;
 	kData[6] = 0; kData[7] = 1; kData[8] = 1;
 
-#ifdef SPINNAKER
-	SpinnakerSource camera(0);
-#else
-	std::vector<std::string> paths;
-	/*paths.emplace_back("test-data/rc2019/1/cam0/00000.png");
-	paths.emplace_back("test-data/rc2019/1/cam0/00001.png");
-	paths.emplace_back("test-data/rc2019/1/cam0/00002.png");
-	paths.emplace_back("test-data/rc2019/1/cam0/00003.png");*/
-	paths.emplace_back("test-data/rc2022/bots-balls-many-1/00000.png");
-	paths.emplace_back("test-data/rc2022/bots-balls-many-1/00001.png");
-	paths.emplace_back("test-data/rc2022/bots-balls-many-1/00002.png");
-	paths.emplace_back("test-data/rc2022/bots-balls-many-1/00003.png");
-	/*paths.emplace_back("test-data/rc2022/bots-center-ball-1-0/00000.png");
-	paths.emplace_back("test-data/rc2022/bots-center-ball-1-0/00001.png");
-	paths.emplace_back("test-data/rc2022/bots-center-ball-1-0/00002.png");
-	paths.emplace_back("test-data/rc2022/bots-center-ball-1-0/00003.png");
-	paths.emplace_back("test-data/rc2022/bots-center-ball-1-1/00000.png");
-	paths.emplace_back("test-data/rc2022/bots-center-ball-1-1/00001.png");
-	paths.emplace_back("test-data/rc2022/bots-center-ball-1-1/00002.png");
-	paths.emplace_back("test-data/rc2022/bots-center-ball-1-1/00003.png");*/
-	ImageSource camera(paths);
-#endif
+	std::shared_ptr<UDPSocket> socket = std::make_shared<UDPSocket>(config["vision_ip"].as<std::string>("224.5.23.2"), config["vision_port"].as<int>(10006));
 
 	std::shared_ptr<OpenCL> openCl = std::make_shared<OpenCL>();
 	RTPStreamer rtpStreamer(openCl, "rtp://" + config["vision_ip"].as<std::string>("224.5.23.2") + ":" + std::to_string(config["stream_base_port"].as<int>(10100) + config["cam_id"].as<int>(0)));
 
 	cl::Buffer clYellowKernel = openCl->toBuffer(false, yellowKernel); //TODO is WRITE necessary at all?
-	//TODO softcoded stride
+
+	std::shared_ptr<Image> img = camera->readImage();
+
 	cl::Kernel kernel = openCl->compile((
 #include "convolution.cl"
-	), "-D FILTER_WIDTH=" + std::to_string(yellowKernel->getWidth()) + " -D FILTER_HEIGHT=" + std::to_string(yellowKernel->getHeight()) + " -D STRIDE_X=" + std::to_string(3) + " -D STRIDE_Y=" + std::to_string(1));
+	), "-D FILTER_WIDTH=" + std::to_string(yellowKernel->getWidth()) + " -D FILTER_HEIGHT=" + std::to_string(yellowKernel->getHeight()) + " -D STRIDE_X=" + std::to_string(img->pixelWidth()) + " -D STRIDE_Y=" + std::to_string(img->pixelHeight()));
+
+	//TODO ensure pointer same
+	//void* ptr = cl::enqueueMapBuffer(clYellowKernel, true, CL_MAP_READ | CL_MAP_WRITE, 0, size);
+	//cl::enqueueUnmapMemObject()
 
 	//cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
-	std::shared_ptr<Image> img = camera.readImage();
 
 	//std::shared_ptr<Image> convResult = BufferImage::create(F32, img->getWidth(), img->getHeight());
 	//cl::Buffer clConvResult = openCl->toBuffer(true, convResult);
 
+	std::cout << "Awaiting geometry" << std::endl;
+	bool haveGeometry = false;
+
 	while(true) {
-		img = camera.readImage();
+		img = camera->readImage();
+
+		if(!socket->getGeometry().IsInitialized()) {
+			rtpStreamer.sendFrame(img);
+			continue;
+		} else if(!haveGeometry) {
+			std::cout << "Geometry received" << std::endl;
+			haveGeometry = true;
+		}
+
 		auto startTime = std::chrono::high_resolution_clock::now();
 		//cl::Buffer buffer = openCl->toBuffer(false, img);
 		//cl::Event conv = openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(img->getWidth()*2, img->getHeight()*2), cl::NDRange(64, 64)), buffer, clConvResult, clYellowKernel, (64+yellowKernel->getWidth()-1)*(64+yellowKernel->getHeight()-1)*sizeof(float));
@@ -125,6 +141,4 @@ int main() {
 
 		std::cout << "send_frame " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0 << " ms" << std::endl;
 	}
-
-	return 0;
 }

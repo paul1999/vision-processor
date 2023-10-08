@@ -29,7 +29,7 @@ foreach(input_file IN LISTS CL_KERNELS)
 endforeach()
 unset(content)
 
-file(GLOB SRC src/*.cpp src/*.c)
+file(GLOB_RECURSE SRC src/*.cpp src/*.c)
 add_executable(${PROJECT_NAME} ${SRC} ${PROTO_SRCS})
 target_include_directories(${PROJECT_NAME} PRIVATE src ${YAML_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_INCLUDE_DIRS} ${Protobuf_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(${PROJECT_NAME} ${YAML_CPP_LIBRARIES} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL ${Protobuf_LIBRARIES})

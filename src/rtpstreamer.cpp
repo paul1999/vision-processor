@@ -75,11 +75,11 @@ void RTPStreamer::allocResources() {
 	}
 
 	if(codecCtx == nullptr) {
-		std::cerr << "Failed to find suitable encoder." << std::endl;
+		std::cerr << "[RtpStreamer] Failed to find suitable encoder." << std::endl;
 		exit(1);
 	}
 
-	std::cout << "Using codec: " << codec->long_name << std::endl;
+	std::cout << "[RtpStreamer] Using codec: " << codec->long_name << std::endl;
 
 	fmtCtx  = avformat_alloc_context();
 	AVOutputFormat* format = (AVOutputFormat*)av_guess_format("rtp", nullptr, nullptr);
@@ -93,17 +93,9 @@ void RTPStreamer::allocResources() {
 
 	int write = avformat_write_header(fmtCtx, nullptr);
 	if(write < 0) {
-		std::cerr << "Failed to write header: " << write << std::endl;
+		std::cerr << "[RtpStreamer] Failed to write header: " << write << std::endl;
 		exit(1);
 	}
-
-	//TODO SDP file transmission
-	char buf[200000];
-	AVFormatContext *ac[] = { fmtCtx };
-	av_sdp_create(ac, 1, buf, 20000);
-	FILE* fsdp = fopen("test.sdp", "w");
-	fprintf(fsdp, "%s", buf);
-	fclose(fsdp);
 
 	buffer = BufferImage::create(NV12, width, height);
 	int uvOffset = buffer->getWidth()*buffer->getHeight();
@@ -120,7 +112,7 @@ void RTPStreamer::allocResources() {
 
 	pkt = av_packet_alloc();
 
-	std::string options = "-D WIDTH=" + std::to_string(width) + " -D UV_OFFSET=" + std::to_string(uvOffset);
+	std::string options = "-D UV_OFFSET=" + std::to_string(uvOffset);
 	clBuffer = openCl->toBuffer(true, buffer);
 	switch(this->format) {
 		case RGGB8:
@@ -222,7 +214,7 @@ void RTPStreamer::encoderRun() {
 		cl::Buffer inBuffer = openCl->toBuffer(false, image);
 		openCl->run(converter, cl::EnqueueArgs(cl::NDRange(width, height)), inBuffer, clBuffer).wait();
 		//cl::enqueueReadBuffer(clBuffer, true, 0, image->getWidth()*image->getHeight()*2, buffer->getData()); //TODO
-		std::cout << "frame_conversion " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0 << " ms" << std::endl;
+		std::cout << "[RtpStreamer] frame_conversion " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0 << " ms" << std::endl;
 
 		frame->pts = currentFrameId++;
 		avcodec_send_frame(codecCtx, frame);
@@ -235,7 +227,7 @@ void RTPStreamer::encoderRun() {
 		} else if(status == AVERROR(EAGAIN)) {
 			// Encoder needs some more frames
 		} else {
-			std::cerr << "Encoder error: " << status << std::endl;
+			std::cerr << "[RtpStreamer] Encoder error: " << status << std::endl;
 		}
 
 		std::this_thread::sleep_for(std::chrono::microseconds(frametime_us) - (std::chrono::high_resolution_clock::now() - startTime));

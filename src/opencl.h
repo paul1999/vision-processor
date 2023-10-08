@@ -18,9 +18,11 @@ public:
 		return functor(args, std::forward<Ts>(ts)...);
 	}
 
-	cl::Buffer toBuffer(bool read, std::shared_ptr<Image>& image);
+	static cl::Buffer toBuffer(bool read, std::shared_ptr<Image>& image);
 
 private:
+	bool searchDevice(const std::vector<cl::Platform>& platforms, cl_device_type type);
+
 	cl::Device device;
 	cl::Context context;
 	cl::CommandQueue queue;

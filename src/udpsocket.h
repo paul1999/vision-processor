@@ -1,7 +1,9 @@
 #pragma once
 
 
-//Adapted from https://gist.github.com/hostilefork/f7cae3dc33e7416f2dd25a402857b6c6
+#include <thread>
+#include <google/protobuf/message.h>
+#include "messages_robocup_ssl_geometry.pb.h"
 
 #ifdef _WIN32
 #include <Winsock2.h> // before Windows.h, else Winsock 1 conflict
@@ -13,8 +15,6 @@
 #include <arpa/inet.h>
 #endif
 
-#include <vector>
-#include <google/protobuf/message.h>
 
 class UDPSocket
 {
@@ -23,8 +23,16 @@ public:
 	~UDPSocket();
 
 	void send(google::protobuf::Message& msg);
-	void recv(google::protobuf::Message& msg);
+
+	SSL_GeometryData& getGeometry() { return geometry; }
 private:
+	void receiverRun();
+	void recv(google::protobuf::Message& msg);
+
 	int socket_;
 	struct sockaddr addr_;
+
+	std::thread receiver;
+
+	SSL_GeometryData geometry;
 };

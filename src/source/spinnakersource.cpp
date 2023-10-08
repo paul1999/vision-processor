@@ -2,6 +2,16 @@
 
 #ifdef SPINNAKER
 
+class SpinnakerImage : public Image {
+public:
+	// Image size halfed (RGB resolution)
+	explicit SpinnakerImage(const Spinnaker::ImagePtr& pImage): Image(RGGB8, (int)pImage->GetWidth() / 2, (int)pImage->GetHeight() / 2, pImage->GetTimeStamp() / 1e9, (unsigned char*)pImage->GetData()), pImage(pImage) {}
+	~SpinnakerImage() override { pImage->Release(); }
+
+private:
+	const Spinnaker::ImagePtr pImage;
+};
+
 SpinnakerSource::SpinnakerSource(int id) {
 	pSystem = Spinnaker::System::GetInstance();
 
@@ -10,12 +20,12 @@ SpinnakerSource::SpinnakerSource(int id) {
 		if (camList.GetSize() > id) {
 			pCam = camList.GetByIndex(id);
 			pCam->Init();
-			fprintf(stderr, "Spinnaker: Opened %s - %s\n", pCam->DeviceModelName.GetValue().c_str(), pCam->DeviceSerialNumber.GetValue().c_str());
+			std::cout << "[Spinnaker] Opened " << pCam->DeviceModelName.GetValue() << " - " << pCam->DeviceSerialNumber.GetValue().c_str() << std::endl;
 			camList.Clear();
 			break;
 		}
 
-		fprintf(stderr, "Spinnaker: Number of cams: %u\n", camList.GetSize());
+		std::cerr << "[Spinnaker] Waiting for cam: " << camList.GetSize() << "/" << (id+1) << std::endl;
 
 		camList.Clear();
 		sleep(1);

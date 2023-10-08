@@ -13,37 +13,34 @@ OpenCL::OpenCL() {
 		exit(1);
 	}
 
-	bool deviceFound = false;
-	for(const cl::Platform& platform : platforms) {
-		std::vector<cl::Device> devices;
-		platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
-
-		for(cl::Device& d : devices) {
-			cl_device_type type = d.getInfo<CL_DEVICE_TYPE>();
-			if(type & CL_DEVICE_TYPE_GPU) {
-				deviceFound = true;
-				device = d;
-				std::cout << "Using platform: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
-				std::cout << "Using device: " << device.getInfo<CL_DEVICE_NAME>() << "\n";
-				break;
-			}
-		}
-
-		if(deviceFound)
-			break;
-	}
-
-	if(!deviceFound){
+	if(!searchDevice(platforms, CL_DEVICE_TYPE_GPU) && !searchDevice(platforms, CL_DEVICE_TYPE_ALL)) {
 		std::cerr << "No GPU devices found. Check OpenCL installation!" << std::endl;
 		exit(1);
 	}
 
-	//device.getInfo<CL_UNIFIED_SHARED_MEMORY_ACCESS_INTEL>();
+	//CL_DEVICE_GLOBAL_MEM_CACHE_TYPE
+	//CL_DEVICE_EXTENSIONS
 
 	context = cl::Context(device);
 	cl::Context::setDefault(context);
 	queue = cl::CommandQueue(context, device);
 	cl::CommandQueue::setDefault(queue);
+}
+
+bool OpenCL::searchDevice(const std::vector<cl::Platform>& platforms, cl_device_type type) {
+	for(const cl::Platform& platform : platforms) {
+		std::vector<cl::Device> devices;
+		platform.getDevices(type, &devices);
+
+		for(cl::Device& d : devices) {
+			device = d;
+			std::cout << "[OpenCL] Using platform: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl
+					  << "[OpenCL] Using device: " << device.getInfo<CL_DEVICE_NAME>() << std::endl;
+			return true;
+		}
+	}
+
+	return false;
 }
 
 cl::Kernel OpenCL::compile(const std::string& code, const std::string& options) {
@@ -52,7 +49,7 @@ cl::Kernel OpenCL::compile(const std::string& code, const std::string& options) 
 
 	cl::Program program(context, sources);
 	if (program.build({device}, options.c_str()) != CL_SUCCESS) {
-		std::cerr << "Error during OpenCL kernel compilation: " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device) << std::endl;
+		std::cerr << "[OpenCL] Error during kernel compilation: " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device) << std::endl;
 		exit(1);
 	}
 
