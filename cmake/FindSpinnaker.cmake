@@ -16,4 +16,5 @@ find_library(SPINNAKER_LIBS NAMES Spinnaker
 
 if (SPINNAKER_INCLUDE_DIRS AND SPINNAKER_LIBS)
     add_definitions( -DSPINNAKER )
+    message(STATUS "Spinnaker found, activating Spinnaker support.")
 endif (SPINNAKER_INCLUDE_DIRS AND SPINNAKER_LIBS)

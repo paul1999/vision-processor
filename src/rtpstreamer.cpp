@@ -11,7 +11,7 @@ extern "C" {
 }
 
 
-RTPStreamer::RTPStreamer(std::shared_ptr<OpenCL> openCl, std::string uri, int framerate): openCl(std::move(openCl)), uri(std::move(uri)), framerate(framerate), frametime_us(1000000 / framerate), encoder(&RTPStreamer::encoderRun, this) {}
+RTPStreamer::RTPStreamer(std::shared_ptr<OpenCL> openCl, std::string uri, int framerate): openCl(std::move(openCl)), uri(std::move(uri)), framerate(framerate), frametime_us(1000000 / framerate), queueMutex(), encoder(&RTPStreamer::encoderRun, this) {}
 
 RTPStreamer::~RTPStreamer() {
 	stopEncoding = true;
@@ -113,7 +113,6 @@ void RTPStreamer::allocResources() {
 	pkt = av_packet_alloc();
 
 	std::string options = "-D UV_OFFSET=" + std::to_string(uvOffset);
-	clBuffer = openCl->toBuffer(true, buffer);
 	switch(this->format) {
 		case RGGB8:
 			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) {"
@@ -138,18 +137,18 @@ void RTPStreamer::allocResources() {
 			break;
 		case U8:
 			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = in[i]; }");
-			for(int i = 0; i < (width/2) * (height/2); i++)
-				buffer->getData()[i] = 127;
+			for(int i = 0; i < width * (height/2); i++)
+				buffer->getData()[uvOffset + i] = 127;
 			break;
 		case I8:
 			converter = openCl->compile("void kernel c(global const char* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i] + 127; }");
-			for(int i = 0; i < (width/2) * (height/2); i++)
-				buffer->getData()[i] = 127;
+			for(int i = 0; i < width * (height/2); i++)
+				buffer->getData()[uvOffset + i] = 127;
 			break;
 		case F32:
 			converter = openCl->compile("void kernel c(global const float* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)fabs(in[i]) + 127; }");
-			for(int i = 0; i < (width/2) * (height/2); i++)
-				buffer->getData()[i] = 127;
+			for(int i = 0; i < width * (height/2); i++)
+				buffer->getData()[uvOffset + i] = 127;
 			break;
 		case NV12:
 			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) {"
@@ -161,6 +160,8 @@ void RTPStreamer::allocResources() {
 											 "}", options);
 			break;
 	}
+
+	clBuffer = openCl->toBuffer(true, buffer);
 }
 
 void RTPStreamer::freeResources() {
@@ -190,7 +191,7 @@ void RTPStreamer::encoderRun() {
 	while(!stopEncoding) {
 		std::shared_ptr<Image> image;
 		{
-			std::unique_lock<std::mutex> lock(queueMutex);
+			std::unique_lock<std::mutex> lock(queueMutex); //TODO uninitialized
 			while(queue.empty())
 				queueSignal.wait(lock, [&]() { return !queue.empty() || stopEncoding; });
 
@@ -213,8 +214,8 @@ void RTPStreamer::encoderRun() {
 		auto startTime = std::chrono::high_resolution_clock::now();
 		cl::Buffer inBuffer = openCl->toBuffer(false, image);
 		openCl->run(converter, cl::EnqueueArgs(cl::NDRange(width, height)), inBuffer, clBuffer).wait();
-		//cl::enqueueReadBuffer(clBuffer, true, 0, image->getWidth()*image->getHeight()*2, buffer->getData()); //TODO
-		std::cout << "[RtpStreamer] frame_conversion " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0 << " ms" << std::endl;
+		cl::enqueueReadBuffer(clBuffer, true, 0, image->getWidth()*image->getHeight()*2, buffer->getData()); //TODO
+		//std::cout << "[RtpStreamer] frame_conversion " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0 << " ms" << std::endl;
 
 		frame->pts = currentFrameId++;
 		avcodec_send_frame(codecCtx, frame);

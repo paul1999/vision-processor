@@ -24,7 +24,7 @@ file(GLOB CL_KERNELS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/kernel/" kernel/*.cl)
 # Adapted from https://stackoverflow.com/a/47801116 CC BY-SA 3.0 by Martin R.
 foreach(input_file IN LISTS CL_KERNELS)
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/kernel/${input_file}" content)
-    set(content "R\"PrepForInclude(${content})PrepForInclude\"")
+    set(content "R\"PrepForInclude(${content}\n)PrepForInclude\"")
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/${input_file}" "${content}")
 endforeach()
 unset(content)

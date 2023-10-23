@@ -1,12 +1,5 @@
 #ifndef CL_VERSION_1_0
-#define kernel
-#define global
-#define local
-#define constant
-typedef unsigned char uchar;
-int get_global_id(int);
-int get_global_size(int);
-
+#include "clstd.h"
 #define FILTER_WIDTH 1
 #define FILTER_HEIGHT 1
 #define STRIDE_X 1

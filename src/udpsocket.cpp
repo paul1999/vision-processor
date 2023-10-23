@@ -3,8 +3,9 @@
 
 #include <iostream>
 #include <cstring>
+#include <google/protobuf/util/message_differencer.h>
 
-UDPSocket::UDPSocket(const std::string &ip, uint16_t port): receiver(&UDPSocket::receiverRun, this)
+UDPSocket::UDPSocket(const std::string &ip, uint16_t port)
 {
 	//Adapted from https://gist.github.com/hostilefork/f7cae3dc33e7416f2dd25a402857b6c6
 
@@ -38,12 +39,18 @@ UDPSocket::UDPSocket(const std::string &ip, uint16_t port): receiver(&UDPSocket:
 		std::cerr << "Setting SO_REUSEADDR on UDP socket failed" << std::endl;
 	}
 
+	if(bind(socket_, &addr_, sizeof(addr_))) {
+		std::cerr << "Could not bind to multicast socket" << std::endl;
+	}
+
 	struct ip_mreq mreq;
-	mreq.imr_multiaddr.s_addr = inet_addr(ip.c_str());
-	mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+	inet_pton(AF_INET, ip.c_str(), &mreq.imr_multiaddr);
+	inet_pton(AF_INET, "0.0.0.0", &mreq.imr_interface);
 	if (setsockopt(socket_, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*) &mreq, sizeof(mreq)) < 0) {
 		std::cerr << "Could not join multicast group" << std::endl;
 	}
+
+	receiver = std::make_unique<std::thread>(&UDPSocket::receiverRun, this);
 }
 
 UDPSocket::~UDPSocket()
@@ -58,25 +65,24 @@ void UDPSocket::send(google::protobuf::Message& msg) {
 	msg.SerializeToString(&str);
 	if(sendto(socket_, str.data(), str.length(), 0, &addr_, sizeof(addr_)) < 0)
 	{
-		std::cerr << "UDP Frame send failed: " << strerror(errno) << " " << strerrorname_np(errno) << std::endl;
+		std::cerr << "[UDPSocket] UDP Frame send failed: " << strerror(errno) << " " << strerrorname_np(errno) << std::endl;
 	}
 }
 
 void UDPSocket::recv(google::protobuf::Message& msg) {
 	char msgbuf[65535];
-	unsigned int addrlen = sizeof(addr_);
 
-	long bytesRead = recvfrom(socket_, msgbuf, 65535, 0, &addr_, &addrlen);
+	int bytesRead = read(socket_, msgbuf, 65535);
 	if (bytesRead < 0) {
-		std::cerr << "UDP Frame recv failed: " << strerror(errno) << " " << strerrorname_np(errno) << std::endl;
+		std::cerr << "[UDPSocket] UDP Frame recv failed: " << strerror(errno) << " " << strerrorname_np(errno) << std::endl;
 		return;
 	}
 
-	msgbuf[bytesRead] = 0;
-	msg.ParseFromString(msgbuf);
+	msg.ParseFromArray(msgbuf, bytesRead);
 }
 
 void UDPSocket::receiverRun() {
+	std::cout << "[UDPSocket] Awaiting geometry" << std::endl;
 	while(true) {
 		SSL_WrapperPacket wrapper;
 		recv(wrapper);
@@ -84,6 +90,10 @@ void UDPSocket::receiverRun() {
 		if(!wrapper.has_geometry())
 			continue;
 
-		geometry.CopyFrom(wrapper.geometry());
+		if(!google::protobuf::util::MessageDifferencer::Equals(geometry, wrapper.geometry())) {
+			std::cout << "[UDPSocket] New geometry received" << std::endl;
+			geometry.CopyFrom(wrapper.geometry());
+			geometryVersion++;
+		}
 	}
 }

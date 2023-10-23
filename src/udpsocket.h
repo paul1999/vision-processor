@@ -24,6 +24,7 @@ public:
 
 	void send(google::protobuf::Message& msg);
 
+	int getGeometryVersion() const { return geometryVersion; }
 	SSL_GeometryData& getGeometry() { return geometry; }
 private:
 	void receiverRun();
@@ -32,7 +33,8 @@ private:
 	int socket_;
 	struct sockaddr addr_;
 
-	std::thread receiver;
+	std::unique_ptr<std::thread> receiver;
 
+	int geometryVersion = 0;
 	SSL_GeometryData geometry;
 };

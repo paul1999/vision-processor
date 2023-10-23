@@ -5,13 +5,33 @@
 
 # Camera source type. Availability depending on libraries installed.
 # SPINNAKER, IMAGES
-#source: SPINNAKER
+source: IMAGES
 
 # Spinnaker camera id
 #spinnaker_id: 0
 
 # List of image file system paths for IMAGES source.
 #images: []
+images:
+- "test-data/rc2022/bots-balls-many-1/00000.png"
+- "test-data/rc2022/bots-balls-many-1/00001.png"
+- "test-data/rc2022/bots-balls-many-1/00002.png"
+- "test-data/rc2022/bots-balls-many-1/00003.png"
+#- "test-data/rc2019/1/cam0/00000.png"
+#- "test-data/rc2019/1/cam0/00001.png"
+#- "test-data/rc2019/1/cam0/00002.png"
+#- "test-data/rc2019/1/cam0/00003.png"
+#- "test-data/rc2022/bots-center-ball-1-0/00000.png"
+#- "test-data/rc2022/bots-center-ball-1-0/00001.png"
+#- "test-data/rc2022/bots-center-ball-1-0/00002.png"
+#- "test-data/rc2022/bots-center-ball-1-0/00003.png"
+#- "test-data/rc2022/bots-center-ball-1-1/00000.png"
+#- "test-data/rc2022/bots-center-ball-1-1/00001.png"
+#- "test-data/rc2022/bots-center-ball-1-1/00002.png"
+#- "test-data/rc2022/bots-center-ball-1-1/00003.png"
+
+# Max bot height in mm
+#max_bot_height: 150.0
 
 # Vision multicast IP address
 #vision_ip: "224.5.23.2"
