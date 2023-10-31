@@ -7,11 +7,99 @@
 #include "udpsocket.h"
 #include "Perspective.h"
 #include "Mask.h"
+#include "GroundTruth.h"
+#include "messages_robocup_ssl_wrapper.pb.h"
 
 #include <yaml-cpp/yaml.h>
 
 double getTime() {
-	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
+	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
+}
+
+typedef struct __attribute__ ((packed)) {
+	cl_uchar r;
+	cl_uchar g;
+	cl_uchar b;
+} RGB;
+
+const int patterns[16] = {
+		0b0100, // 0
+		0b1100, // 1
+		0b1101, // 2
+		0b0101, // 3
+		0b0010, // 4
+		0b1010, // 5
+		0b1011, // 6
+		0b0011, // 7
+		0b1111, // 8
+		0b0000, // 9
+		0b0110, //10
+		0b1001, //11
+		0b1110, //12
+		0b1000, //13
+		0b0111, //14
+		0b0001  //15
+};
+
+void addBot(const std::shared_ptr<Perspective>& perspective, const GroundTruth& groundTruth, const double maxBotHeight, const I2& blob, SSL_DetectionRobot* bot) {
+	V2 botPos = perspective->image2field({blob.x / 2.0, blob.y / 2.0}, maxBotHeight);
+
+	std::vector<std::pair<double, bool>> nearestBlobs;
+	for(const I2& green : groundTruth.getGreen()) {
+		V2 blobPos = perspective->image2field({green.x / 2.0, green.y / 2.0}, maxBotHeight);
+		V2 diff = {
+				blobPos.x - botPos.x,
+				blobPos.y - botPos.y
+		};
+
+		if(sqrt(diff.x*diff.x + diff.y*diff.y) < 90.0)
+			nearestBlobs.emplace_back(atan2(diff.y, diff.x), true);
+	}
+	for(const I2& pink : groundTruth.getPink()) {
+		V2 blobPos = perspective->image2field({pink.x / 2.0, pink.y / 2.0}, maxBotHeight);
+		V2 diff = {
+				blobPos.x - botPos.x,
+				blobPos.y - botPos.y
+		};
+
+		if(sqrt(diff.x*diff.x + diff.y*diff.y) < 90.0)
+			nearestBlobs.emplace_back(atan2(diff.y, diff.x), false);
+	}
+	if(nearestBlobs.size() != 4) {
+		std::cerr << "Incomplete pattern: " << nearestBlobs.size() << " " << blob.x << "," << blob.y << std::endl;
+		return;
+	}
+
+	std::sort(nearestBlobs.begin(), nearestBlobs.end());
+
+	double largestAngle = 2*M_PI + nearestBlobs[0].first - nearestBlobs[3].first;
+	double orientation = nearestBlobs[3].first + largestAngle/2; //potentially outside of -pi / +pi
+	int rotation = 0;
+	for(int i = 0; i < 3; i++) {
+		double angle = nearestBlobs[i+1].first - nearestBlobs[i].first;
+		if(angle > largestAngle) {
+			largestAngle = angle;
+			orientation = nearestBlobs[i].first + angle/2;
+			rotation = i+1;
+		}
+	}
+
+	std::rotate(nearestBlobs.begin(), nearestBlobs.begin()+rotation, nearestBlobs.end());
+	int robotCode = (nearestBlobs[0].second << 3) + (nearestBlobs[1].second << 2) + (nearestBlobs[2].second << 1) + nearestBlobs[3].second;
+
+	bot->set_confidence(1.0f);
+	for(int i = 0; i < 16; i++) {
+		if(patterns[i] == robotCode) {
+			bot->set_robot_id(i);
+			break;
+		}
+	}
+	bot->set_x(botPos.x);
+	bot->set_y(botPos.y);
+	bot->set_orientation(orientation);
+	bot->set_pixel_x(blob.x);
+	bot->set_pixel_y(blob.y);
+	bot->set_height(maxBotHeight);
 }
 
 int main() {
@@ -43,7 +131,9 @@ int main() {
 
 	std::shared_ptr<UDPSocket> socket = std::make_shared<UDPSocket>(config["vision_ip"].as<std::string>("224.5.23.2"), config["vision_port"].as<int>(10006));
 	std::shared_ptr<Perspective> perspective = std::make_shared<Perspective>(socket, config["cam_id"].as<int>(0));
-	Mask mask(perspective, config["max_bot_height"].as<double>(150.0));
+	auto maxBotHeight = config["max_bot_height"].as<double>(150.0);
+	Mask mask(perspective, maxBotHeight);
+	GroundTruth groundTruth("test-data/rc2022/bots-balls-many-1/gt.yml");
 
 	std::shared_ptr<OpenCL> openCl = std::make_shared<OpenCL>();
 	RTPStreamer rtpStreamer(openCl, "rtp://" + config["vision_ip"].as<std::string>("224.5.23.2") + ":" + std::to_string(config["stream_base_port"].as<int>(10100) + config["cam_id"].as<int>(0)));
@@ -60,19 +150,6 @@ int main() {
 	), "-D RGGB");
 	//), "-D FILTER_WIDTH=" + std::to_string(yellowKernel->getWidth()) + " -D FILTER_HEIGHT=" + std::to_string(yellowKernel->getHeight()) + " -D STRIDE_X=" + std::to_string(img->pixelWidth()) + " -D STRIDE_Y=" + std::to_string(img->pixelHeight()));
 
-	std::vector<int> pos;
-	pos.reserve(1224*1024*2);
-	for(int y = 0; y < 1024; y++) {
-		for(int x = 0; x < 1224; x++) {
-			pos.push_back(x);
-			pos.push_back(y);
-		}
-	}
-	std::vector<float> result;
-	result.resize(pos.size()/2);
-	cl::Buffer clPos(CL_MEM_USE_HOST_PTR, pos.size()*sizeof(int), pos.data());
-	cl::Buffer clResult(CL_MEM_USE_HOST_PTR | CL_MEM_HOST_READ_ONLY, result.size()*sizeof(float), result.data());
-
 	//TODO ensure pointer same
 	//void* ptr = cl::enqueueMapBuffer(clYellowKernel, true, CL_MAP_READ | CL_MAP_WRITE, 0, size);
 	//cl::enqueueUnmapMemObject()
@@ -82,20 +159,28 @@ int main() {
 	//std::shared_ptr<Image> convResult = BufferImage::create(F32, img->getWidth(), img->getHeight());
 	//cl::Buffer clConvResult = openCl->toBuffer(true, convResult);
 
+	uint32_t frameNumber = 0;
+
 	while(true) {
 		std::shared_ptr<Image> img = camera->readImage();
+		double frameTime = getTime();
 
-		auto startTime = std::chrono::high_resolution_clock::now();
 		perspective->geometryCheck();
 		mask.geometryCheck();
 
 		if(perspective->getGeometryVersion()) {
 			cl::Buffer clBuffer = openCl->toBuffer(false, img);
-			//yellow openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), 150.0f, 25.0f, (uint8_t)255, (uint8_t)255, (uint8_t)0).wait();
+			std::vector<int> pos = mask.scanArea();
+			cl::Buffer clPos(CL_MEM_USE_HOST_PTR, pos.size()*sizeof(int), pos.data());
+			std::vector<float> result;
+			result.resize(pos.size()/2);
+			cl::Buffer clResult(CL_MEM_USE_HOST_PTR | CL_MEM_HOST_READ_ONLY, result.size()*sizeof(float), result.data());
+			//yellow peak SNR 1.8 PSR 1.15
+			openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)maxBotHeight, 25.0f, (RGB) {255, 255, 0}, 45.0f, (RGB) {0, 0, 0}).wait();
+			//yellow optimized color peak SNR 5.8 openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)maxBotHeight, 25.0f, (RGB) {109, 150, 120}, 45.0f, (RGB) {42, 57, 73}).wait();
 			//TODO issues with goal and floor outside field. Black background consideration necessary
-			//blue openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), 150.0f, 25.0f, (uint8_t)0, (uint8_t)128, (uint8_t)255).wait();
-			//ball
-			openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), 21.5f, 21.5f, (uint8_t)255, (uint8_t)128, (uint8_t)0).wait();
+			//blue openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)maxBotHeight, 25.0f, (RGB) {0, 128, 255}).wait();
+			//ball openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), 21.5f, 21.5f, (RGB) {255, 128, 0}).wait();
 			//std::cout << event.wait() << " " << event.getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>() << std::endl;
 			//TODO only if not unified memory (also rtpstreamer.cpp)
 			cl::enqueueReadBuffer(clResult, true, 0, result.size()*sizeof(float), result.data());
@@ -112,21 +197,86 @@ int main() {
 				}
 			}*/
 
-			float threshold = *std::min_element(result.begin(), result.end())*1.15;
+			RLEVector yellowGroundTruth;
+			for(const I2& point : groundTruth.getYellow()) {
+				yellowGroundTruth.add(perspective->getRing({point.x / 2.0, point.y / 2.0}, maxBotHeight, 0.0, 25.0));
+			}
+
+			/*float min = *std::min_element(result.begin(), result.end());
+			float sidelobeMin = INFINITY;
 			for(int i = 0; i < result.size(); i++) {
-				if(result[i] < threshold) {
+				if(result[i] < sidelobeMin && !yellowGroundTruth.contains(pos[2*i], pos[2*i+1])) {
+					sidelobeMin = result[i];
+				}
+			}*/
+			float max = *std::max_element(result.begin(), result.end());
+			float sidelobeMax = -INFINITY;
+			for(int i = 0; i < result.size(); i++) {
+				if(result[i] > sidelobeMax && !yellowGroundTruth.contains(pos[2 * i], pos[2 * i + 1])) {
+					sidelobeMax = result[i];
+				}
+			}
+
+			/*for(RLEVector& vector : yellowGroundTruth) {
+				for(const Run& run : vector.getRuns()) {
+					uint8_t* row0 = img->getData() + 4*img->getWidth()*run.y + 2*run.x;
+					uint8_t* row1 = row0 + 2*img->getWidth();
+					for(int i = 0; i < run.length; i++) {
+						row0[2*i + 0] = 255;
+						row0[2*i + 1] = 255;
+						row1[2*i + 0] = 255;
+						row1[2*i + 1] = 255;
+					}
+				}
+			}*/
+
+			//float threshold = min*1.15;
+			float threshold = max*0.9;
+			for(int i = 0; i < result.size(); i++) {
+				if(result[i] > threshold) {
 					uint8_t* row0 = img->getData() + 4*img->getWidth()*pos[2*i+1] + 2*pos[2*i];
 					uint8_t* row1 = row0 + 2*img->getWidth();
 					row0[0] = 255;
 					row0[1] = 255;
 					row1[0] = 255;
-					row1[1] = 0	;
+					row1[1] = 0;
 				}
 			}
-			std::cout << "minmax " << result.size() << " " << *std::min_element(result.begin(), result.end()) << " " << *std::max_element(result.begin(), result.end()) << std::endl;
-		}
+			//std::sort(result.begin(), result.end());
+			//std::cout << "minmax " << result[0] << " " << result[result.size()/2] << " " << result[result.size()-1] << std::endl;
+			//std::cout << "min sidelobe " << min << " " << sidelobeMin << std::endl;
+			std::cout << "max sidelobe " << max << " " << sidelobeMax << std::endl;
 
-		std::cout << "main " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0 << " ms" << std::endl;
+			SSL_WrapperPacket wrapper;
+			SSL_DetectionFrame* detection = wrapper.mutable_detection();
+			detection->set_frame_number(frameNumber++);
+			detection->set_t_capture(frameTime);
+			detection->set_t_sent(getTime());
+			if(img->getTimestamp() != 0)
+				detection->set_t_capture_camera(img->getTimestamp());
+			detection->set_camera_id(config["cam_id"].as<int>(0));
+
+			for(const I2& orange : groundTruth.getOrange()) {
+				V2 ballPos = perspective->image2field({orange.x/2.0, orange.y/2.0}, 21.5);
+				SSL_DetectionBall* ball = detection->add_balls();
+				ball->set_confidence(1.0f);
+				//ball->set_area(0);
+				ball->set_x(ballPos.x);
+				ball->set_y(ballPos.y);
+				//ball->set_z(0.0f);
+				ball->set_pixel_x(orange.x);
+				ball->set_pixel_y(orange.y);
+			}
+
+			for(const I2& blob : groundTruth.getYellow())
+				addBot(perspective, groundTruth, maxBotHeight, blob, detection->add_robots_yellow());
+
+			for(const I2& blob : groundTruth.getBlue())
+				addBot(perspective, groundTruth, maxBotHeight, blob, detection->add_robots_blue());
+
+			socket->detectionTracking(wrapper.detection());
+			socket->send(wrapper);
+		}
 
 		/*cv::Mat cvImg(img->getHeight(), img->getWidth(), CV_8UC3, (uint8_t*)img->getData());
 
@@ -149,6 +299,7 @@ int main() {
 		rtpStreamer.sendFrame(out);*/
 
 		rtpStreamer.sendFrame(img);
-		std::this_thread::sleep_for(std::chrono::microseconds(33333) - (std::chrono::high_resolution_clock::now() - startTime));
+		std::cout << "main " << (getTime() - frameTime) * 1000.0 << " ms" << std::endl;
+		std::this_thread::sleep_for(std::chrono::microseconds(33333 - (int64_t)((getTime() - frameTime) * 1e6)));
 	}
 }

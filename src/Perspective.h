@@ -2,6 +2,7 @@
 
 #include "messages_robocup_ssl_geometry.pb.h"
 #include "udpsocket.h"
+#include "RLEVector.h"
 
 struct V2 {
 	double x, y;
@@ -40,6 +41,7 @@ public:
 	int getBoundaryWidth();
 
 	ClPerspective getClPerspective();
+	RLEVector getRing(V2 pos, double height, double inner, double radius);
 
 private:
 	const std::shared_ptr<UDPSocket> socket;

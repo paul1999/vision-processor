@@ -46,8 +46,10 @@ V2 Perspective::image2field(V2 pos, double height) {
 
 	V3 camRay = rotation({distortion*normalized.x, distortion*normalized.y, 1.0}, rX, rY, rZ);
 
-	if(camRay.z >= 0) // Over horizon
+	if(camRay.z >= 0) { // Over horizon
+		std::cout << "Horizon " << pos.x << " " << pos.y << std::endl;
 		return { NAN, NAN };
+	}
 
 	double zFactor = (cameraPos.z + height) / camRay.z;
 	V2 worldRay = {
@@ -85,8 +87,8 @@ int Perspective::getBoundaryWidth() {
 ClPerspective Perspective::getClPerspective() {
 	return {
 			{(int)calib.pixel_image_width(), (int)calib.pixel_image_height()},
-			2/calib.focal_length(),
-			{calib.principal_point_x()/2, calib.principal_point_y()/2},
+			1/calib.focal_length(),
+			{calib.principal_point_x(), calib.principal_point_y()},
 			calib.distortion(),
 			{
 				(float)rX.x, (float)rY.x, (float)rZ.x,
@@ -95,4 +97,40 @@ ClPerspective Perspective::getClPerspective() {
 			},
 			{(float)cameraPos.x, (float)cameraPos.y, (float)cameraPos.z}
 	};
+}
+
+inline static bool inRange(V2 a, V2 b, double sqInner, double sqRadius) {
+	V2 diff = {a.x - b.x, a.y - b.y};
+	double sqr = diff.x*diff.x + diff.y*diff.y;
+	return sqr >= sqInner && sqr <= sqRadius;
+}
+
+RLEVector Perspective::getRing(V2 pos, double height, double inner, double radius) {
+	V2 root = image2field(pos, height);
+	double sqInner = inner*inner;
+	double sqRadius = radius*radius;
+	RLEVector result;
+	result.add(pos.x, pos.y);
+
+	//TODO outside of perspective
+	//TODO more accurate size (due to distortion)
+	V2 min = pos;
+	while(inRange(root, image2field({min.x-1, pos.y}, height), sqInner, sqRadius))
+		min.x--;
+	while(inRange(root, image2field({pos.x, min.y-1}, height), sqInner, sqRadius))
+		min.y--;
+
+	V2 max = pos;
+	while(inRange(root, image2field({max.x+1, pos.y}, height), sqInner, sqRadius))
+		max.x++;
+	while(inRange(root, image2field({pos.x, max.y+1}, height), sqInner, sqRadius))
+		max.y++;
+
+	for(int x = min.x; x <= max.x; x++) {
+		for(int y = min.y; y <= max.y; y++) {
+			if(inRange(root, image2field({(double)x, (double)y}, height), sqInner, sqRadius))
+				result.add(x, y);
+		}
+	}
+	return result;
 }

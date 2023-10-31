@@ -5,7 +5,7 @@ void Mask::geometryCheck() {
 		return;
 
 	geometryVersion = perspective->getGeometryVersion();
-	runs.clear();
+	mask.clear();
 
 	double halfLength = perspective->getFieldLength()/2.0 + perspective->getBoundaryWidth();
 	double halfWidth = perspective->getFieldWidth()/2.0 + perspective->getBoundaryWidth();
@@ -15,7 +15,18 @@ void Mask::geometryCheck() {
 			if(groundPos.x < -halfLength || groundPos.x > halfLength || groundPos.y < -halfWidth || groundPos.y > halfWidth)
 				continue;
 
-			runs.add(x, y);
+			mask.add(x, y);
 		}
 	}
+}
+
+std::vector<int> Mask::scanArea() {
+	std::vector<int> result;
+	for(const Run& run : mask.getRuns()) {
+		for(int x = run.x; x < run.x+run.length; x++) {
+			result.push_back(x);
+			result.push_back(run.y);
+		}
+	}
+	return result;
 }

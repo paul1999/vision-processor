@@ -11,12 +11,12 @@ public:
 	Mask(std::shared_ptr<Perspective> perspective, double maxBotHeight): perspective(std::move(perspective)), maxBotHeight(maxBotHeight) {}
 
 	void geometryCheck();
-	std::vector<Run>& getRuns() { return runs.getRuns(); }
+	std::vector<int> scanArea();
 
 private:
 	double maxBotHeight;
 	std::shared_ptr<Perspective> perspective;
 
-	RLEVector runs;
+	RLEVector mask;
 	int geometryVersion = 0;
 };

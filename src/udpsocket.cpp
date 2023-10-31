@@ -69,7 +69,7 @@ void UDPSocket::send(google::protobuf::Message& msg) {
 	}
 }
 
-void UDPSocket::recv(google::protobuf::Message& msg) {
+void UDPSocket::recv(google::protobuf::Message& msg) const {
 	char msgbuf[65535];
 
 	int bytesRead = read(socket_, msgbuf, 65535);
@@ -87,13 +87,80 @@ void UDPSocket::receiverRun() {
 		SSL_WrapperPacket wrapper;
 		recv(wrapper);
 
-		if(!wrapper.has_geometry())
-			continue;
+		if(wrapper.has_detection()) {
+			detectionTracking(wrapper.detection());
+		}
 
-		if(!google::protobuf::util::MessageDifferencer::Equals(geometry, wrapper.geometry())) {
-			std::cout << "[UDPSocket] New geometry received" << std::endl;
-			geometry.CopyFrom(wrapper.geometry());
-			geometryVersion++;
+		if(wrapper.has_geometry()) {
+			if(!google::protobuf::util::MessageDifferencer::Equals(geometry, wrapper.geometry())) {
+				std::cout << "[UDPSocket] New geometry received" << std::endl;
+				geometry.CopyFrom(wrapper.geometry());
+				geometryVersion++;
+			}
 		}
 	}
+}
+
+static void trackBots(const double timestamp, const google::protobuf::RepeatedPtrField<SSL_DetectionRobot>& bots, const std::vector<TrackingState>& previous, std::vector<TrackingState>& objects, int idOffset) {
+	for (const SSL_DetectionRobot& bot : bots) {
+		bool oldBotFound = false;
+		for(const TrackingState& oldBot : previous) {
+			if(oldBot.id != bot.robot_id() + idOffset)
+				continue;
+
+			float timeDelta = timestamp - oldBot.timestamp;
+			objects.push_back({
+				oldBot.id, timestamp,
+				bot.x(), bot.y(), bot.orientation(),
+				(bot.x() - oldBot.x) / timeDelta, (bot.y() - oldBot.y) / timeDelta, (bot.orientation() - oldBot.z) / timeDelta
+			});
+			oldBotFound = true;
+		}
+
+		if(!oldBotFound) {
+			objects.push_back({
+				(int)bot.robot_id() + idOffset, timestamp,
+				bot.x(), bot.y(), bot.orientation(),
+				0.0f, 0.0f, 0.0f
+			});
+		}
+	}
+}
+
+void UDPSocket::detectionTracking(const SSL_DetectionFrame &detection) {
+	const double timestamp = detection.has_t_capture_camera() ? detection.t_capture_camera() : detection.t_capture();
+
+	const std::vector<TrackingState>& previous = trackedObjects[detection.camera_id()];
+	std::vector<TrackingState> objects;
+
+	for (const auto& ball : detection.balls()) {
+		float z = ball.has_z() ? ball.z() : 21.5f;
+
+		bool oldBallFound = false;
+		for(const TrackingState& oldBall : previous) {
+			if(oldBall.id != -1)
+				continue;
+
+			float timeDelta = timestamp - oldBall.timestamp;
+			objects.push_back({
+				-1, timestamp,
+				ball.x(), ball.y(), z,
+				(ball.x() - oldBall.x) / timeDelta, (ball.y() - oldBall.y) / timeDelta, (z - oldBall.z) / timeDelta
+			});
+			oldBallFound = true;
+		}
+
+		if(!oldBallFound) {
+			objects.push_back({
+				-1, timestamp,
+				ball.x(), ball.y(), z,
+				0.0f, 0.0f, 0.0f
+			});
+		}
+	}
+
+	trackBots(timestamp, detection.robots_yellow(), previous, objects, 0);
+	trackBots(timestamp, detection.robots_blue(), previous, objects, 16);
+
+	trackedObjects[detection.camera_id()] = objects;
 }

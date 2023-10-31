@@ -27,39 +27,39 @@ kernel void ssd(global const uchar* img, global const int* pos, global float* ou
 			V2 diff = {mpos.x - center.x, mpos.y - center.y};
 			float dist = diff.x*diff.x + diff.y*diff.y;
 			if(dist <= sqBgRadius) {
-				float vdiff;
-
+				uchar reference;
 				if(dist <= sqRadius) {
 #ifdef RGGB
 					if(y%2 == 0) {
 						if(x%2 == 0)
-							vdiff = img[x + y*perspective.shape[0]] - (float)rgb.r;
+							reference = rgb.r;
 						else
-							vdiff = img[x + y*perspective.shape[0]] - (float)rgb.g;
+							reference = rgb.g;
 					} else {
 						if(x%2 == 0)
-							vdiff = img[x + y*perspective.shape[0]] - (float)rgb.g;
+							reference = rgb.g;
 						else
-							vdiff = img[x + y*perspective.shape[0]] - (float)rgb.b;
+							reference = rgb.b;
 					}
 #endif
 				} else {
 #ifdef RGGB
 					if(y%2 == 0) {
 						if(x%2 == 0)
-							vdiff = img[x + y*perspective.shape[0]] - (float)bg.r;
+							reference = rgb.r;
 						else
-							vdiff = img[x + y*perspective.shape[0]] - (float)bg.g;
+							reference = rgb.g;
 					} else {
 						if(x%2 == 0)
-							vdiff = img[x + y*perspective.shape[0]] - (float)bg.g;
+							reference = rgb.g;
 						else
-							vdiff = img[x + y*perspective.shape[0]] - (float)bg.b;
+							reference = rgb.b;
 					}
 #endif
 				}
 
-				sum += vdiff*vdiff;
+				char value = (char)img[x + y*perspective.shape[0]] - 128;
+				sum += (float)value * ((char)reference - 128);
 				n++;
 			}
 		}

@@ -25,6 +25,7 @@ public:
 	[[nodiscard]] PixelFormat getFormat() const { return format; }
 	[[nodiscard]] int getWidth() const { return width; }
 	[[nodiscard]] int getHeight() const { return height; }
+	// timestamp of 0 indicates unavailability
 	[[nodiscard]] double getTimestamp() const { return timestamp; }
 	[[nodiscard]] unsigned char* getData() const { return data; }
 

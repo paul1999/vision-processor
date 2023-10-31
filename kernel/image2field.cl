@@ -47,3 +47,36 @@ inline V2 image2field(const Perspective p, const float height, const V2 pos) {
 			camRay.y*zFactor - p.c[1]
 	};
 }
+
+inline int inRange(V2 a, V2 b, double sqRadius) {
+	V2 diff = {a.x - b.x, a.y - b.y};
+	double sqr = diff.x*diff.x + diff.y*diff.y;
+	return sqr <= sqRadius;
+}
+
+typedef struct {
+	int x;
+	int y;
+} I2;
+
+typedef struct {
+	uchar r;
+	uchar g;
+	uchar b;
+} RGB;
+
+inline void area(const Perspective perspective, const float height, const I2 pos, const V2 center, const float sqRadius, I2* min, I2* max) {
+	min->x = pos.x;
+	min->y = pos.y;
+	max->x = pos.x;
+	max->y = pos.y;
+
+	while(inRange(center, image2field(perspective, height, (V2) {(float)min->x-1, (float)pos.y}), sqRadius))
+		min->x--;
+	while(inRange(center, image2field(perspective, height, (V2) {(float)max->x+1, (float)pos.y}), sqRadius))
+		max->x++;
+	while(inRange(center, image2field(perspective, height, (V2) {(float)pos.x, (float)min->y-1}), sqRadius))
+		min->y--;
+	while(inRange(center, image2field(perspective, height, (V2) {(float)pos.x, (float)max->y+1}), sqRadius))
+		max->y++;
+}
