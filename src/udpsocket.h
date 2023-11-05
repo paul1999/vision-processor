@@ -20,31 +20,38 @@
 struct TrackingState {
 	int id; // -1: ball, 0-15: yellow bot, 16-31: blue bot
 	double timestamp;
-	float x, y, z; // z is the orientation on bots
-	float vx, vy, vz;
+	float x, y, z, w;
+	float vx, vy, vz, vw;
 };
 
 
 class UDPSocket
 {
 public:
-	UDPSocket(const std::string& ip, uint16_t port); //TODO supply ball size
+	UDPSocket(const std::string& ip, uint16_t port, float defaultBotHeight, float ballRadius);
 	~UDPSocket();
 
 	void send(google::protobuf::Message& msg);
+	void close();
 
 	int getGeometryVersion() const { return geometryVersion; }
 	SSL_GeometryData& getGeometry() { return geometry; }
 
-	void detectionTracking(const SSL_DetectionFrame& detection);
+	std::map<int, std::vector<TrackingState>>& getTrackedObjects() { return trackedObjects; }
 private:
 	void receiverRun();
 	void recv(google::protobuf::Message& msg) const;
 
+	void detectionTracking(const SSL_DetectionFrame& detection);
+
 	int socket_;
 	struct sockaddr addr_;
 
-	std::unique_ptr<std::thread> receiver;
+	std::thread receiver;
+	bool closing = false;
+
+	const float defaultBotHeight;
+	const float ballRadius;
 
 	int geometryVersion = 0;
 	SSL_GeometryData geometry;

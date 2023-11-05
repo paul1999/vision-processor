@@ -10,6 +10,7 @@ struct Run {
 class RLEVector {
 public:
 
+	void add(const Run& run);
 	void add(int x, int y);
 	bool contains(int x, int y);
 	void clear();
@@ -20,6 +21,8 @@ public:
 	std::vector<Run> getPart(int start, int end);
 
 	const std::vector<Run>& getRuns() { return runs; }
+
+	std::vector<int> scanArea();
 
 private:
 	std::vector<Run> runs;

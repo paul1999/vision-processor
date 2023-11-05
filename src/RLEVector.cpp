@@ -1,30 +1,8 @@
+#include <algorithm>
 #include "RLEVector.h"
 
 void RLEVector::add(int x, int y) {
-	//TODO remove runs on run merging
-	for(auto it = runs.begin(); it != runs.end(); it++) {
-		Run& run = *it;
-		if(run.y < y)
-			continue;
-
-		if(run.y > y) {
-			runs.insert(it, {x, y, 1});
-			return;
-		}
-
-		if(run.x-1 > x) {
-			runs.insert(it, {x, y, 1});
-			return;
-		}
-
-		if(run.x + run.length <= x) {
-			run.x = std::min(run.x, x);
-			run.length = std::max(run.length, 1 + x - run.x);
-			return;
-		}
-	}
-
-	runs.push_back({x, y, 1});
+	add({x, y, 1});
 }
 
 bool RLEVector::contains(int x, int y) {
@@ -80,9 +58,51 @@ void RLEVector::subtract(const RLEVector &vector) {
 	//TODO
 }
 
+static inline bool lowerOrEqual(const Run& value, const Run& element) {
+	//return value.y < element.y || (value.y == element.y && value.x <= element.x); //Das letzte Element, für das diese Bedingung gilt oder .end()
+	//return element.y < value.y || (element.y == value.y && element.x < value.x); //first value where this is false (lower_bound)
+	//return value.y < element.y || (value.y == element.y && value.x < element.x); //first value where this is true
+	return element.y < value.y || (element.y == value.y && element.x <= value.x);
+	//return element.y < value.y || (element.y == value.y && element.x < value.x);
+}
+
+void RLEVector::add(const Run& run) {
+	//TODO still bugged
+	auto rpos = std::upper_bound(runs.rbegin(), runs.rend(), run, lowerOrEqual);
+	auto pos = rpos.base();
+
+	if(rpos == runs.rend()) {
+		pos = runs.insert(pos, run);
+	} else if(rpos->y < run.y || rpos->x + rpos->length < run.x) {
+		pos = runs.insert(pos, run);
+	} else {
+		if (rpos->x + rpos->length >= run.x + run.length)
+			return; // Already inside
+
+		rpos->length = run.x + run.length - rpos->x;
+		pos--;
+	}
+
+	auto next = pos+1;
+	while(next != runs.end() && pos->x + pos->length >= next->x && pos->y == next->y) {
+		pos->length = next->x + next->length - pos->x;
+		next = runs.erase(next);
+	}
+}
+
 void RLEVector::add(const RLEVector &vector) {
 	for(const auto& run : vector.runs) {
-		for(int x = run.x; x < run.x+run.length; x++)
-			add(x, run.y);
+		add(run);
 	}
+}
+
+std::vector<int> RLEVector::scanArea() {
+	std::vector<int> result;
+	for(const Run& run : runs) {
+		for(int x = run.x; x < run.x+run.length; x++) {
+			result.push_back(x);
+			result.push_back(run.y);
+		}
+	}
+	return result;
 }

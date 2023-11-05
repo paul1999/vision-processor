@@ -13,6 +13,8 @@ public:
 	void geometryCheck();
 	std::vector<int> scanArea();
 
+	RLEVector& getRuns() { return mask; }
+
 private:
 	double maxBotHeight;
 	std::shared_ptr<Perspective> perspective;

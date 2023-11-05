@@ -167,8 +167,7 @@ void RTPStreamer::allocResources() {
 void RTPStreamer::freeResources() {
 	if(codecCtx != nullptr) {
 		avcodec_send_frame(codecCtx, nullptr);
-		av_free(codecCtx);
-		codecCtx = nullptr;
+		avcodec_free_context(&codecCtx);
 	}
 
 	if(fmtCtx != nullptr) {
@@ -192,11 +191,13 @@ void RTPStreamer::encoderRun() {
 		std::shared_ptr<Image> image;
 		{
 			std::unique_lock<std::mutex> lock(queueMutex); //TODO uninitialized
-			while(queue.empty())
+			while(queue.empty() && !stopEncoding)
 				queueSignal.wait(lock, [&]() { return !queue.empty() || stopEncoding; });
 
-			if(stopEncoding)
+			if(stopEncoding) {
+				freeResources();
 				return;
+			}
 
 			image = queue.front();
 			queue.pop();

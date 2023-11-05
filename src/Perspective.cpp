@@ -1,3 +1,4 @@
+#include <cfloat>
 #include "Perspective.h"
 
 static inline V3 rotation(V3 v, V3 x, V3 y, V3 z) {
@@ -8,18 +9,10 @@ static inline V3 rotation(V3 v, V3 x, V3 y, V3 z) {
 	};
 }
 
-
-void Perspective::geometryCheck() {
-	if(socket->getGeometryVersion() == geometryVersion)
-		return;
-
-	geometryVersion = socket->getGeometryVersion();
-	calib = socket->getGeometry().calib(camId); //TODO
-	field = socket->getGeometry().field();
-
-	orientation = { -calib.q0(), -calib.q1(), -calib.q2(), calib.q3() };
+static void quaternionToMatrix(V4 orientation, V3& rX, V3& rY, V3& rZ) {
 	double qLength = sqrt(orientation.q0*orientation.q0 + orientation.q1*orientation.q1 + orientation.q2*orientation.q2 + orientation.q3*orientation.q3);
 	orientation.q0 /= qLength; orientation.q1 /= qLength; orientation.q2 /= qLength; orientation.q3 /= qLength;
+
 	double x2 = orientation.q0*orientation.q0;
 	double y2 = orientation.q1*orientation.q1;
 	double z2 = orientation.q2*orientation.q2;
@@ -32,6 +25,30 @@ void Perspective::geometryCheck() {
 	rX = {1.0 - 2.0 * (y2 + z2), 2.0 * (xy + wz), 2.0 * (xz - wy)};
 	rY = {2.0 * (xy - wz), 1.0 - 2.0 * (x2 + z2), 2.0 * (yz + wx)};
 	rZ = {2.0 * (xz + wy), 2.0 * (yz - wx), 1.0 - 2.0 * (x2 + y2)};
+}
+
+void Perspective::geometryCheck() {
+	if(socket->getGeometryVersion() == geometryVersion)
+		return;
+
+	bool calibFound = false;
+	for(const SSL_GeometryCameraCalibration& c : socket->getGeometry().calib()) {
+		if(c.camera_id() == camId) {
+			calibFound = true;
+			calib = c;
+			break;
+		}
+	}
+
+	if(!calibFound)
+		return;
+
+	geometryVersion = socket->getGeometryVersion();
+	field = socket->getGeometry().field();
+
+	orientation = { -calib.q0(), -calib.q1(), -calib.q2(), calib.q3() };
+	quaternionToMatrix(orientation, rX, rY, rZ);
+	quaternionToMatrix({ calib.q0(), calib.q1(), calib.q2(), calib.q3() }, rXinv, rYinv, rZinv);
 
 	cameraPos = rotation({calib.tx(), calib.ty(), calib.tz()}, rX, rY, rZ);
 }
@@ -43,7 +60,6 @@ V2 Perspective::image2field(V2 pos, double height) {
 	};
 
 	double distortion = 1.0 + (normalized.x*normalized.x + normalized.y*normalized.y) * calib.distortion();
-
 	V3 camRay = rotation({distortion*normalized.x, distortion*normalized.y, 1.0}, rX, rY, rZ);
 
 	if(camRay.z >= 0) { // Over horizon
@@ -58,6 +74,32 @@ V2 Perspective::image2field(V2 pos, double height) {
 	};
 
 	return worldRay;
+}
+
+V2 Perspective::field2image(V3 pos) {
+	pos.x += cameraPos.x;
+	pos.y += cameraPos.y;
+	pos.z += cameraPos.z;
+
+	V3 camRay = rotation(pos, rXinv, rYinv, rZinv);
+	camRay.x /= camRay.z;
+	camRay.y /= camRay.z;
+
+	//Apply distortion
+	if(calib.distortion() >= DBL_MIN) {
+		double length = sqrt(camRay.x*camRay.x + camRay.y*camRay.y);
+		double d = calib.distortion();
+		double b = -9.0 * d * d * length + d * sqrt(d * (12.0 + 81.0 * d * length * length));
+		b = (b < 0.0) ? (-pow(b, 1.0 / 3.0)) : pow(b, 1.0 / 3.0);
+		double distortion = pow(2.0 / 3.0, 1.0 / 3.0) / b - b / (pow(2.0 * 3.0 * 3.0, 1.0 / 3.0) * d);
+		camRay.x *= distortion;
+		camRay.y *= distortion;
+	}
+
+	return {
+		calib.focal_length()/2 * camRay.x + calib.principal_point_x()/2,
+		calib.focal_length()/2 * camRay.y + calib.principal_point_y()/2
+	};
 }
 
 int Perspective::getGeometryVersion() {
@@ -115,15 +157,15 @@ RLEVector Perspective::getRing(V2 pos, double height, double inner, double radiu
 	//TODO outside of perspective
 	//TODO more accurate size (due to distortion)
 	V2 min = pos;
-	while(inRange(root, image2field({min.x-1, pos.y}, height), sqInner, sqRadius))
+	while(inRange(root, image2field({min.x-1, pos.y}, height), sqInner, sqRadius) && min.x > 0)
 		min.x--;
-	while(inRange(root, image2field({pos.x, min.y-1}, height), sqInner, sqRadius))
+	while(inRange(root, image2field({pos.x, min.y-1}, height), sqInner, sqRadius) && min.y > 0)
 		min.y--;
 
 	V2 max = pos;
-	while(inRange(root, image2field({max.x+1, pos.y}, height), sqInner, sqRadius))
+	while(inRange(root, image2field({max.x+1, pos.y}, height), sqInner, sqRadius) && max.x+1 < getWidth())
 		max.x++;
-	while(inRange(root, image2field({pos.x, max.y+1}, height), sqInner, sqRadius))
+	while(inRange(root, image2field({pos.x, max.y+1}, height), sqInner, sqRadius) && max.y+1 < getHeight())
 		max.y++;
 
 	for(int x = min.x; x <= max.x; x++) {

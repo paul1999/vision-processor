@@ -30,8 +30,17 @@ images:
 #- "test-data/rc2022/bots-center-ball-1-1/00002.png"
 #- "test-data/rc2022/bots-center-ball-1-1/00003.png"
 
-# Max bot height in mm
-#max_bot_height: 150.0
+# Default bot height in mm
+#default_bot_height: 150.0
+
+# Max tracked bot acceleration in m/s^2
+#max_bot_acceleration: 6.5
+
+# Max tracked ball velocity in m/s
+#max_ball_velocity: 8.0
+
+# Min tracking radius in mm
+#min_tracking_radius: 30.0
 
 # Vision multicast IP address
 #vision_ip: "224.5.23.2"

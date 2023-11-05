@@ -32,6 +32,7 @@ public:
 	void geometryCheck();
 
 	V2 image2field(V2 pos, double height);
+	V2 field2image(V3 pos);
 
 	int getGeometryVersion();
 	int getWidth();
@@ -53,4 +54,5 @@ private:
 	V4 orientation;
 	V3 cameraPos;
 	V3 rX, rY, rZ;
+	V3 rXinv, rYinv, rZinv;
 };
