@@ -1,5 +1,7 @@
-#include <cfloat>
 #include "Perspective.h"
+
+#include <cfloat>
+#include <cmath>
 
 static inline V3 rotation(V3 v, V3 x, V3 y, V3 z) {
 	return {

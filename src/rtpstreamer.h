@@ -9,6 +9,7 @@
 
 #include "image.h"
 #include "opencl.h"
+#include "AlignedArray.h"
 
 
 typedef struct AVCodec AVCodec;
@@ -41,9 +42,9 @@ private:
 	bool stopEncoding = false;
 	std::thread encoder;
 
-	std::queue<std::shared_ptr<Image>> queue;
-	std::mutex queueMutex;
-	std::condition_variable queueSignal;
+	std::queue<std::shared_ptr<Image>> queue = std::queue<std::shared_ptr<Image>>();
+	std::mutex queueMutex = std::mutex();
+	std::condition_variable queueSignal = std::condition_variable();
 	long currentFrameId = 0;
 
 	AVCodecContext* codecCtx = nullptr;
@@ -52,7 +53,6 @@ private:
 	AVFrame* frame = nullptr;
 	AVPacket* pkt = nullptr;
 
-	std::shared_ptr<Image> buffer = nullptr;
-	cl::Buffer clBuffer;
+	std::unique_ptr<AlignedArray> buffer = nullptr;
 	cl::Kernel converter;
 };

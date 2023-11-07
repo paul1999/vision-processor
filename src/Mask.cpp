@@ -32,6 +32,6 @@ void Mask::geometryCheck() {
 	}
 }
 
-std::vector<int> Mask::scanArea() {
-	return mask.scanArea();
+std::shared_ptr<AlignedArray> Mask::scanArea(AlignedArrayPool& arrayPool) {
+	return mask.scanArea(arrayPool);
 }

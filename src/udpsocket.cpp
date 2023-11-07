@@ -1,6 +1,7 @@
 #include "udpsocket.h"
 #include "messages_robocup_ssl_wrapper.pb.h"
 
+#include <cmath>
 #include <iostream>
 #include <cstring>
 #include <google/protobuf/util/message_differencer.h>

@@ -11,7 +11,9 @@ extern "C" {
 }
 
 
-RTPStreamer::RTPStreamer(std::shared_ptr<OpenCL> openCl, std::string uri, int framerate): openCl(std::move(openCl)), uri(std::move(uri)), framerate(framerate), frametime_us(1000000 / framerate), queueMutex(), encoder(&RTPStreamer::encoderRun, this) {}
+RTPStreamer::RTPStreamer(std::shared_ptr<OpenCL> openCl, std::string uri, int framerate): openCl(std::move(openCl)), uri(std::move(uri)), framerate(framerate), frametime_us(1000000 / framerate) {
+	encoder = std::thread(&RTPStreamer::encoderRun, this);
+}
 
 RTPStreamer::~RTPStreamer() {
 	stopEncoding = true;
@@ -97,21 +99,19 @@ void RTPStreamer::allocResources() {
 		exit(1);
 	}
 
-	buffer = BufferImage::create(NV12, width, height);
-	int uvOffset = buffer->getWidth()*buffer->getHeight();
+	buffer = std::make_unique<AlignedArray>(width*height*3/2);
 
 	frame = av_frame_alloc();
 	frame->format = codecCtx->pix_fmt;
 	frame->width  = codecCtx->width;
 	frame->height = codecCtx->height;
-	//frame->extended_data = frame->data;
-	frame->data[0] = buffer->getData();
-	frame->data[1] = buffer->getData() + uvOffset;
-	frame->linesize[0] = buffer->getWidth();
-	frame->linesize[1] = buffer->getWidth();
+	frame->linesize[0] = width;
+	frame->linesize[1] = width;
 
 	pkt = av_packet_alloc();
 
+	int uvOffset = width*height;
+	uint8_t* uv = buffer->mapWrite<uint8_t>() + uvOffset;
 	std::string options = "-D UV_OFFSET=" + std::to_string(uvOffset);
 	switch(this->format) {
 		case RGGB8:
@@ -138,17 +138,17 @@ void RTPStreamer::allocResources() {
 		case U8:
 			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = in[i]; }");
 			for(int i = 0; i < width * (height/2); i++)
-				buffer->getData()[uvOffset + i] = 127;
+				uv[i] = 127;
 			break;
 		case I8:
 			converter = openCl->compile("void kernel c(global const char* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i] + 127; }");
 			for(int i = 0; i < width * (height/2); i++)
-				buffer->getData()[uvOffset + i] = 127;
+				uv[i] = 127;
 			break;
 		case F32:
 			converter = openCl->compile("void kernel c(global const float* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)fabs(in[i]) + 127; }");
 			for(int i = 0; i < width * (height/2); i++)
-				buffer->getData()[uvOffset + i] = 127;
+				uv[i] = 127;
 			break;
 		case NV12:
 			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) {"
@@ -161,7 +161,7 @@ void RTPStreamer::allocResources() {
 			break;
 	}
 
-	clBuffer = openCl->toBuffer(true, buffer);
+	buffer->unmap();
 }
 
 void RTPStreamer::freeResources() {
@@ -190,7 +190,7 @@ void RTPStreamer::encoderRun() {
 	while(!stopEncoding) {
 		std::shared_ptr<Image> image;
 		{
-			std::unique_lock<std::mutex> lock(queueMutex); //TODO uninitialized
+			std::unique_lock<std::mutex> lock(queueMutex);
 			while(queue.empty() && !stopEncoding)
 				queueSignal.wait(lock, [&]() { return !queue.empty() || stopEncoding; });
 
@@ -214,12 +214,15 @@ void RTPStreamer::encoderRun() {
 
 		auto startTime = std::chrono::high_resolution_clock::now();
 		cl::Buffer inBuffer = openCl->toBuffer(false, image);
-		openCl->run(converter, cl::EnqueueArgs(cl::NDRange(width, height)), inBuffer, clBuffer).wait();
-		cl::enqueueReadBuffer(clBuffer, true, 0, image->getWidth()*image->getHeight()*2, buffer->getData()); //TODO
+		openCl->run(converter, cl::EnqueueArgs(cl::NDRange(width, height)), inBuffer, buffer->getBuffer()).wait();
 		//std::cout << "[RtpStreamer] frame_conversion " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0 << " ms" << std::endl;
 
+		auto* data = (uint8_t*)buffer->mapRead<uint8_t>();
 		frame->pts = currentFrameId++;
+		frame->data[0] = data;
+		frame->data[1] = data + width*height;
 		avcodec_send_frame(codecCtx, frame);
+		buffer->unmap();
 
 		int status = avcodec_receive_packet(codecCtx, pkt);
 		if(status == 0) {

@@ -96,13 +96,16 @@ void RLEVector::add(const RLEVector &vector) {
 	}
 }
 
-std::vector<int> RLEVector::scanArea() {
-	std::vector<int> result;
+std::shared_ptr<AlignedArray> RLEVector::scanArea(AlignedArrayPool& arrayPool) {
+	auto alignedArray = arrayPool.acquire<int>(2*size());
+	int* array = alignedArray->mapWrite<int>();
+	int i = 0;
 	for(const Run& run : runs) {
 		for(int x = run.x; x < run.x+run.length; x++) {
-			result.push_back(x);
-			result.push_back(run.y);
+			array[i++] = x;
+			array[i++] = run.y;
 		}
 	}
-	return result;
+	alignedArray->unmap();
+	return alignedArray;
 }

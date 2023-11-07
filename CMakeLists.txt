@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 project(vision_processor)
 
+option(WITH_SPINNAKER "Build with Spinnaker support (if library available" ON)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -Wall -ftree-vectorize -ffast-math")
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
@@ -29,7 +31,7 @@ foreach(input_file IN LISTS CL_KERNELS)
 endforeach()
 unset(content)
 
-file(GLOB_RECURSE SRC src/*.cpp src/*.c)
+file(GLOB_RECURSE SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 add_executable(${PROJECT_NAME} ${SRC} ${PROTO_SRCS})
 target_include_directories(${PROJECT_NAME} PRIVATE src ${YAML_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_INCLUDE_DIRS} ${Protobuf_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(${PROJECT_NAME} ${YAML_CPP_LIBRARIES} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL ${Protobuf_LIBRARIES})

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include "AlignedArray.h"
 
 struct Run {
 	int x, y, length;
@@ -22,7 +23,7 @@ public:
 
 	const std::vector<Run>& getRuns() { return runs; }
 
-	std::vector<int> scanArea();
+	std::shared_ptr<AlignedArray> scanArea(AlignedArrayPool& arrayPool);
 
 private:
 	std::vector<Run> runs;

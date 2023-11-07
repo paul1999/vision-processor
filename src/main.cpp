@@ -139,11 +139,10 @@ int main() {
 	std::shared_ptr<UDPSocket> socket = std::make_shared<UDPSocket>(config["vision_ip"].as<std::string>("224.5.23.2"), config["vision_port"].as<int>(10006), defaultBotHeight, 21.5f);
 	std::shared_ptr<Perspective> perspective = std::make_shared<Perspective>(socket, camId);
 	std::shared_ptr<OpenCL> openCl = std::make_shared<OpenCL>();
+	std::shared_ptr<AlignedArrayPool> arrayPool = std::make_shared<AlignedArrayPool>();
 	Mask mask(perspective, defaultBotHeight);
 	GroundTruth groundTruth("test-data/rc2022/bots-balls-many-1/gt.yml");
 	RTPStreamer rtpStreamer(openCl, "rtp://" + config["vision_ip"].as<std::string>("224.5.23.2") + ":" + std::to_string(config["stream_base_port"].as<int>(10100) + camId));
-
-	//cl::Buffer clYellowKernel = openCl->toBuffer(false, yellowKernel); //TODO is WRITE necessary at all?
 
 	cl::Kernel kernel = openCl->compile((
 #include "image2field.cl"
@@ -153,16 +152,8 @@ int main() {
 #include "image2field.cl"
 #include "ballssd.cl"
 	), "-D RGGB");
-	//), "-D FILTER_WIDTH=" + std::to_string(yellowKernel->getWidth()) + " -D FILTER_HEIGHT=" + std::to_string(yellowKernel->getHeight()) + " -D STRIDE_X=" + std::to_string(img->pixelWidth()) + " -D STRIDE_Y=" + std::to_string(img->pixelHeight()));
-
-	//TODO ensure pointer same
-	//void* ptr = cl::enqueueMapBuffer(clYellowKernel, true, CL_MAP_READ | CL_MAP_WRITE, 0, size);
-	//cl::enqueueUnmapMemObject()
 
 	//cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
-
-	//std::shared_ptr<Image> convResult = BufferImage::create(F32, img->getWidth(), img->getHeight());
-	//cl::Buffer clConvResult = openCl->toBuffer(true, convResult);
 
 	uint32_t frameNumber = 0;
 
@@ -190,6 +181,7 @@ int main() {
 				//TODO do for all camIds, filter already detected from other cameras
 				for(const TrackingState& object : socket->getTrackedObjects()[camId]) {
 					double timeDelta = timestamp - object.timestamp;
+					//double timeDelta = 0.033333;
 					double height = object.z + object.vz * timeDelta;
 					V2 position = perspective->field2image({
 						object.x + object.vx * timeDelta,
@@ -208,58 +200,31 @@ int main() {
 						std::max(minTrackingRadius, object.id != -1 ? maxBotAcceleration*timeDelta*timeDelta/2.0 : maxBallVelocity*timeDelta)
 					);
 
-					/*for(const Run& run : searchArea.getRuns()) {
-					    //TODO only RGGB
-						uint8_t* row0 = img->getData() + 4*img->getWidth()*run.y + 2*run.x;
-						uint8_t* row1 = row0 + 2*img->getWidth();
-						for(int i = 0; i < run.length; i++) {
-							row0[2*i + 0] = 127;
-							row0[2*i + 1] = 127;
-							row1[2*i + 0] = 127;
-							row1[2*i + 1] = 127;
-						}
-					}
-					if(object.id == -1) {
-						SSL_DetectionBall* ball = detection->add_balls();
-						ball->set_confidence(1.0f);
-						ball->set_x(object.x);
-						ball->set_y(object.y);
-						ball->set_pixel_x(0);
-						ball->set_pixel_y(0);
-					} else {
-						SSL_DetectionRobot* bot = object.id < 16 ? detection->add_robots_yellow() : detection->add_robots_blue();
-						bot->set_confidence(1.0f);
-						bot->set_robot_id(object.id % 16);
-						bot->set_x(object.x);
-						bot->set_y(object.y);
-						bot->set_orientation(object.z);
-						bot->set_height(defaultBotHeight);
-						bot->set_pixel_x(0);
-						bot->set_pixel_y(0);
-					}*/
-
-					std::vector<int> pos = searchArea.scanArea();
-					cl::Buffer clPos(CL_MEM_USE_HOST_PTR, pos.size()*sizeof(int), pos.data());
-					//AlignedArray<float> result;
-					std::vector<float> result;
-					result.resize(pos.size()/2);
-					cl::Buffer clResult(CL_MEM_USE_HOST_PTR | CL_MEM_HOST_READ_ONLY, result.size()*sizeof(float), result.data());
+					auto posArray = searchArea.scanArea(*arrayPool);
+					int searchAreaSize = searchArea.size();
+					auto resultArray = arrayPool->acquire<float>(searchAreaSize);
 
 					if(object.id == -1) {
-						openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), height, 21.5f, (RGB) {255, 128, 0}).wait();
+						//openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, 21.5f, (RGB) {255, 128, 0}).wait();
+						openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, 21.5f, (RGB) {150, 130, 90}).wait();
 					} else if(object.id < 16) {
-						openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {255, 255, 0}, 45.0f, (RGB) {0, 0, 0}).wait();
+						openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {255, 255, 0}, 45.0f, (RGB) {0, 0, 0}).wait();
 					} else {
-						openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {0, 128, 255}, 45.0f, (RGB) {0, 0, 0}).wait();
+						openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {0, 128, 255}, 45.0f, (RGB) {0, 0, 0}).wait();
 					}
 
-					//TODO only if not unified memory (also rtpstreamer.cpp)
-					cl::enqueueReadBuffer(clResult, true, 0, result.size()*sizeof(float), result.data());
+					auto* result = resultArray->mapRead<float>();
+					int best = std::distance(result, std::min_element(result, result + searchAreaSize));
+					resultArray->unmap();
 
-					int best = std::distance(result.begin(), std::min_element(result.begin(), result.end()));
+					auto* pos = posArray->mapRead<int>();
+					int rawX = pos[2*best];
+					int rawY = pos[2*best + 1];
+					posArray->unmap();
+
 					V2 bestPos = perspective->image2field({
-							(double)pos[2*best],
-							(double)pos[2*best+1]
+							(double)rawX,
+							(double)rawY
 					}, height);
 
 					//TODO thresholding (detection)
@@ -273,8 +238,8 @@ int main() {
 						ball->set_x(bestPos.x);
 						ball->set_y(bestPos.y);
 						//ball->set_z(0.0f);
-						ball->set_pixel_x(pos[2*best]*2);
-						ball->set_pixel_y(pos[2*best+1]*2);
+						ball->set_pixel_x(rawX * 2);
+						ball->set_pixel_y(rawY * 2);
 					} else {
 						SSL_DetectionRobot* bot = object.id < 16 ? detection->add_robots_yellow() : detection->add_robots_blue();
 						bot->set_confidence(1.0f);
@@ -282,8 +247,8 @@ int main() {
 						bot->set_x(bestPos.x);
 						bot->set_y(bestPos.y);
 						bot->set_orientation(object.w);
-						bot->set_pixel_x(pos[2*best]*2);
-						bot->set_pixel_y(pos[2*best+1]*2);
+						bot->set_pixel_x(rawX * 2);
+						bot->set_pixel_y(rawY * 2);
 						bot->set_height(height);
 					}
 				}
