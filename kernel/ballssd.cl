@@ -22,27 +22,31 @@ kernel void ssd(global const uchar* img, global const int* pos, global float* ou
 	int n = 0;
 	for(int y = min.y; y < max.y; y++) {
 		for(int x = min.x; x < max.x; x++) {
-			V2 mpos = image2field(perspective, height, (V2) {(float)x/2, (float)y/2});
+			V2 mpos = image2field(perspective, height, (V2) {(float)x, (float)y});
 			V2 diff = {mpos.x - center.x, mpos.y - center.y};
-			float rdiff = diff.x*diff.x + diff.y*diff.y;
-			if(rdiff <= sqRadius) {
+			float dist = diff.x*diff.x + diff.y*diff.y;
+			if(dist <= sqRadius) {
 #ifdef RGGB
 				float vdiff;
 				if(y%2 == 0) {
 					if(x%2 == 0) {
 						//sum += img[x + y*perspective.shape[0]] * r;
-						vdiff = img[x + y*perspective.shape[0]] - (1-rdiff/sqRadius) * rgb.r;
+						vdiff = img[x + y*perspective.shape[0]] - (1-dist/sqRadius) * rgb.r;
+						//vdiff = img[x + y*perspective.shape[0]] - (float)rgb.r;
 					} else {
 						//sum += img[x + y*perspective.shape[0]] * g;
-						vdiff = img[x + y*perspective.shape[0]] - (1-rdiff/sqRadius) * rgb.g;
+						vdiff = img[x + y*perspective.shape[0]] - (1-dist/sqRadius) * rgb.g;
+						//vdiff = img[x + y*perspective.shape[0]] - (float)rgb.g;
 					}
 				} else {
 					if(x%2 == 0) {
 						//sum += img[x + y*perspective.shape[0]] * g;
-						vdiff = img[x + y*perspective.shape[0]] - (1-rdiff/sqRadius) * rgb.g;
+						vdiff = img[x + y*perspective.shape[0]] - (1-dist/sqRadius) * rgb.g;
+						//vdiff = img[x + y*perspective.shape[0]] - (float)rgb.g;
 					} else {
 						//sum += img[x + y*perspective.shape[0]] * b;
-						vdiff = img[x + y*perspective.shape[0]] - (1-rdiff/sqRadius) * rgb.b;
+						vdiff = img[x + y*perspective.shape[0]] - (1-dist/sqRadius) * rgb.b;
+						//vdiff = img[x + y*perspective.shape[0]] - (float)rgb.b;
 					}
 				}
 				sum += vdiff*vdiff;

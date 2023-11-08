@@ -67,7 +67,6 @@ static inline bool lowerOrEqual(const Run& value, const Run& element) {
 }
 
 void RLEVector::add(const Run& run) {
-	//TODO still bugged
 	auto rpos = std::upper_bound(runs.rbegin(), runs.rend(), run, lowerOrEqual);
 	auto pos = rpos.base();
 

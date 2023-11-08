@@ -49,7 +49,7 @@ private:
 
 	AVCodecContext* codecCtx = nullptr;
 	AVFormatContext* fmtCtx = nullptr;
-	AVStream* stream = nullptr; //TODO necessary?
+	AVStream* stream = nullptr;
 	AVFrame* frame = nullptr;
 	AVPacket* pkt = nullptr;
 

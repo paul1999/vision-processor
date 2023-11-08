@@ -146,7 +146,7 @@ void RTPStreamer::allocResources() {
 				uv[i] = 127;
 			break;
 		case F32:
-			converter = openCl->compile("void kernel c(global const float* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)fabs(in[i]) + 127; }");
+			converter = openCl->compile("void kernel c(global const float* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i]; }"); //(uchar)fabs(in[i]) + 127
 			for(int i = 0; i < width * (height/2); i++)
 				uv[i] = 127;
 			break;
@@ -215,7 +215,6 @@ void RTPStreamer::encoderRun() {
 		auto startTime = std::chrono::high_resolution_clock::now();
 		cl::Buffer inBuffer = openCl->toBuffer(false, image);
 		openCl->run(converter, cl::EnqueueArgs(cl::NDRange(width, height)), inBuffer, buffer->getBuffer()).wait();
-		//std::cout << "[RtpStreamer] frame_conversion " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0 << " ms" << std::endl;
 
 		auto* data = (uint8_t*)buffer->mapRead<uint8_t>();
 		frame->pts = currentFrameId++;

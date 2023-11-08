@@ -175,9 +175,9 @@ int main() {
 				detection->set_t_capture_camera(img->getTimestamp());
 			detection->set_camera_id(camId);
 
-			if(socket->getTrackedObjects().count(camId)) {
-				cl::Buffer clBuffer = openCl->toBuffer(false, img);
+			cl::Buffer clBuffer = openCl->toBuffer(false, img); //TODO aligned array with OpenCL buffer already provided
 
+			if(socket->getTrackedObjects().count(camId)) {
 				//TODO do for all camIds, filter already detected from other cameras
 				for(const TrackingState& object : socket->getTrackedObjects()[camId]) {
 					double timeDelta = timestamp - object.timestamp;
@@ -205,8 +205,8 @@ int main() {
 					auto resultArray = arrayPool->acquire<float>(searchAreaSize);
 
 					if(object.id == -1) {
-						//openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, 21.5f, (RGB) {255, 128, 0}).wait();
-						openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, 21.5f, (RGB) {150, 130, 90}).wait();
+						openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, 21.5f, (RGB) {255, 128, 0}).wait();
+						//openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, 21.5f, (RGB) {150, 130, 90}).wait();
 					} else if(object.id < 16) {
 						openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {255, 255, 0}, 45.0f, (RGB) {0, 0, 0}).wait();
 					} else {
@@ -228,7 +228,6 @@ int main() {
 					}, height);
 
 					//TODO thresholding (detection)
-					//TODO ball position
 					//TODO bot orientation
 
 					if(object.id == -1) {
@@ -253,19 +252,31 @@ int main() {
 					}
 				}
 
-				/*std::vector<int> pos = mask.scanArea();
-				cl::Buffer clPos(CL_MEM_USE_HOST_PTR, pos.size()*sizeof(int), pos.data());
-				std::vector<float> result;
-				result.resize(pos.size()/2);
-				cl::Buffer clResult(CL_MEM_USE_HOST_PTR | CL_MEM_HOST_READ_ONLY, result.size()*sizeof(float), result.data());
+				/*auto posArray = mask.scanArea(*arrayPool);
+				int maskSize = mask.getRuns().size();
+				auto resultArray = arrayPool->acquire<float>(maskSize);
 				//yellow peak SNR 1.8 PSR 1.15
-				openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {255, 255, 0}, 45.0f, (RGB) {0, 0, 0}).wait();
+				//openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {255, 255, 0}, 45.0f, (RGB) {0, 0, 0}).wait();
 				//yellow optimized color peak SNR 5.8 openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {109, 150, 120}, 45.0f, (RGB) {42, 57, 73}).wait();
 				//TODO issues with goal and floor outside field. Black background consideration necessary
 				//blue openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {0, 128, 255}).wait();
-				//ball openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), 21.5f, 21.5f, (RGB) {255, 128, 0}).wait();
-				//std::cout << event.wait() << " " << event.getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>() << std::endl;
+				//ball
+				openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(maskSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), 21.5f, 21.5f, (RGB) {255, 128, 0}).wait();
+				///openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(maskSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), 21.5f, 21.5f, (RGB) {255, 128, 0}, 21.5f, (RGB){0, 0, 0}).wait();
 
+				auto* result = resultArray->mapRead<float>();
+				float min = *std::min_element(result, result + maskSize);
+				float factor = 255 / (*std::max_element(result, result + maskSize) - min);
+				std::cout << factor << " " << min << std::endl;
+
+				auto* pos = posArray->mapRead<int>();
+				std::shared_ptr<Image> r = BufferImage::create(PixelFormat::F32, img->getWidth(), img->getHeight());
+				for(int i = 0; i < maskSize; i++) {
+					((float*)r->getData())[img->getWidth()*pos[2*i+1] + pos[2*i]] = (result[i] - min) * factor;
+				}
+				resultArray->unmap();
+				posArray->unmap();
+				rtpStreamer.sendFrame(r);*/
 
 				/*for(Run& run : mask.getRuns()) {
 					//TODO only RGGB

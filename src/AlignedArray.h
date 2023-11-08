@@ -18,6 +18,8 @@ public:
 	template<typename T>
 	const T* mapRead() {
 		map = cl::enqueueMapBuffer(buffer, true, CL_MAP_READ, 0, size);
+		if(map == NULL) // Spurious -56 error codes from the NVIDIA driver solved by trying again...
+			map = cl::enqueueMapBuffer(buffer, true, CL_MAP_READ, 0, size);
 		return (T*)map;
 	}
 	template<typename T>
@@ -34,12 +36,7 @@ public:
 		cl::enqueueUnmapMemObject(buffer, map);
 	}
 
-	[[nodiscard]] cl::Buffer getBuffer() { return buffer; }
-
-	template<typename T>
-	[[nodiscard]] int getSize() const {
-		return size/sizeof(T);
-	}
+	[[nodiscard]] cl::Buffer& getBuffer() { return buffer; }
 
 private:
 	const int size;

@@ -167,7 +167,7 @@ void UDPSocket::detectionTracking(const SSL_DetectionFrame &detection) {
 
 			float dX = ball.x() - oldBall.x;
 			float dY = ball.y() - oldBall.y;
-			float dZ = ball.z() - oldBall.z;
+			float dZ = z - oldBall.z;
 			double distance = dX*dX + dY*dY + dZ*dZ;
 			if(distance > nextDistance)
 				continue;
