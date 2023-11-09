@@ -36,8 +36,20 @@ images:
 # Max tracked bot acceleration in m/s^2
 #max_bot_acceleration: 6.5
 
+# Side blob distance in mm
+#side_blob_distance: 65.0
+
+# Center blob radius in mm
+#center_blob_radius: 25.0
+
+# Side blob radius in mm
+#side_blob_radius: 20.0
+
 # Max tracked ball velocity in m/s
 #max_ball_velocity: 8.0
+
+# Ball radius in mm
+#ball_radius: 21.5
 
 # Min tracking radius in mm
 #min_tracking_radius: 30.0

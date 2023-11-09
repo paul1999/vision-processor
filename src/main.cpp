@@ -23,7 +23,7 @@ typedef struct __attribute__ ((packed)) {
 	cl_uchar b;
 } RGB;
 
-const int patterns[16] = {
+/*const int patterns[16] = {
 		0b0100, // 0
 		0b1100, // 1
 		0b1101, // 2
@@ -40,7 +40,29 @@ const int patterns[16] = {
 		0b1000, //13
 		0b0111, //14
 		0b0001  //15
-};
+};*/
+
+const int patternLUT[16] = {
+		9, 15, 4, 7, 0, 3, 10, 14, 13, 11, 5, 6, 1, 2, 12, 8 };
+
+std::pair<double, int> orientationAndPatternId(std::vector<std::pair<double, bool>>& blobs) {
+	std::sort(blobs.begin(), blobs.end());
+
+	double largestAngle = 2*M_PI + blobs[0].first - blobs[3].first;
+	double orientation = blobs[3].first + largestAngle/2; //potentially outside of -pi / +pi
+	int rotation = 0;
+	for(int i = 0; i < 3; i++) {
+		double angle = blobs[i+1].first - blobs[i].first;
+		if(angle > largestAngle) {
+			largestAngle = angle;
+			orientation = blobs[i].first + angle/2;
+			rotation = i+1;
+		}
+	}
+
+	std::rotate(blobs.begin(), blobs.begin()+rotation, blobs.end());
+	return {orientation, patternLUT[(blobs[0].second << 3) + (blobs[1].second << 2) + (blobs[2].second << 1) + blobs[3].second]};
+}
 
 void addBot(const std::shared_ptr<Perspective>& perspective, const GroundTruth& groundTruth, const double maxBotHeight, const I2& blob, SSL_DetectionRobot* bot) {
 	V2 botPos = perspective->image2field({blob.x / 2.0, blob.y / 2.0}, maxBotHeight);
@@ -71,33 +93,13 @@ void addBot(const std::shared_ptr<Perspective>& perspective, const GroundTruth& 
 		return;
 	}
 
-	std::sort(nearestBlobs.begin(), nearestBlobs.end());
-
-	double largestAngle = 2*M_PI + nearestBlobs[0].first - nearestBlobs[3].first;
-	double orientation = nearestBlobs[3].first + largestAngle/2; //potentially outside of -pi / +pi
-	int rotation = 0;
-	for(int i = 0; i < 3; i++) {
-		double angle = nearestBlobs[i+1].first - nearestBlobs[i].first;
-		if(angle > largestAngle) {
-			largestAngle = angle;
-			orientation = nearestBlobs[i].first + angle/2;
-			rotation = i+1;
-		}
-	}
-
-	std::rotate(nearestBlobs.begin(), nearestBlobs.begin()+rotation, nearestBlobs.end());
-	int robotCode = (nearestBlobs[0].second << 3) + (nearestBlobs[1].second << 2) + (nearestBlobs[2].second << 1) + nearestBlobs[3].second;
+	std::pair<double, int> OAPID = orientationAndPatternId(nearestBlobs);
 
 	bot->set_confidence(1.0f);
-	for(int i = 0; i < 16; i++) {
-		if(patterns[i] == robotCode) {
-			bot->set_robot_id(i);
-			break;
-		}
-	}
+	bot->set_robot_id(OAPID.second);
 	bot->set_x(botPos.x);
 	bot->set_y(botPos.y);
-	bot->set_orientation(orientation);
+	bot->set_orientation(OAPID.first);
 	bot->set_pixel_x(blob.x);
 	bot->set_pixel_y(blob.y);
 	bot->set_height(maxBotHeight);
@@ -133,21 +135,28 @@ int main() {
 	auto camId = config["cam_id"].as<int>(0);
 	auto defaultBotHeight = config["default_bot_height"].as<double>(150.0);
 	auto maxBotAcceleration = 1000*config["max_bot_acceleration"].as<double>(6.5);
+	auto sideBlobDistance = config["side_blob_distance"].as<double>(65.0);
+	auto centerBlobRadius = config["center_blob_radius"].as<double>(25.0);
+	auto sideBlobRadius = config["side_blob_radius"].as<double>(20.0);
 	auto maxBallVelocity = 1000*config["max_ball_velocity"].as<double>(8.0);
+	auto ballRadius = config["ball_radius"].as<double>(21.5);
 	auto minTrackingRadius = config["min_tracking_radius"].as<double>(30.0);
 
-	std::shared_ptr<UDPSocket> socket = std::make_shared<UDPSocket>(config["vision_ip"].as<std::string>("224.5.23.2"), config["vision_port"].as<int>(10006), defaultBotHeight, 21.5f);
+	std::shared_ptr<UDPSocket> socket = std::make_shared<UDPSocket>(config["vision_ip"].as<std::string>("224.5.23.2"), config["vision_port"].as<int>(10006), defaultBotHeight, ballRadius);
 	std::shared_ptr<Perspective> perspective = std::make_shared<Perspective>(socket, camId);
 	std::shared_ptr<OpenCL> openCl = std::make_shared<OpenCL>();
 	std::shared_ptr<AlignedArrayPool> arrayPool = std::make_shared<AlignedArrayPool>();
 	Mask mask(perspective, defaultBotHeight);
-	GroundTruth groundTruth("test-data/rc2022/bots-balls-many-1/gt.yml");
 	RTPStreamer rtpStreamer(openCl, "rtp://" + config["vision_ip"].as<std::string>("224.5.23.2") + ":" + std::to_string(config["stream_base_port"].as<int>(10100) + camId));
 
-	cl::Kernel kernel = openCl->compile((
+	cl::Kernel botkernel = openCl->compile((
+#include "image2field.cl"
+#include "botssd.cl"
+	), "-D RGGB");
+	cl::Kernel sidekernel = openCl->compile((
 #include "image2field.cl"
 #include "ssd.cl"
-	), "-D RGGB");
+), "-D RGGB");
 	cl::Kernel ballkernel = openCl->compile((
 #include "image2field.cl"
 #include "ballssd.cl"
@@ -200,35 +209,37 @@ int main() {
 						std::max(minTrackingRadius, object.id != -1 ? maxBotAcceleration*timeDelta*timeDelta/2.0 : maxBallVelocity*timeDelta)
 					);
 
-					auto posArray = searchArea.scanArea(*arrayPool);
-					int searchAreaSize = searchArea.size();
-					auto resultArray = arrayPool->acquire<float>(searchAreaSize);
+					int rawX, rawY;
+					{
+						auto posArray = searchArea.scanArea(*arrayPool);
+						int searchAreaSize = searchArea.size();
+						auto resultArray = arrayPool->acquire<float>(searchAreaSize);
 
-					if(object.id == -1) {
-						openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, 21.5f, (RGB) {255, 128, 0}).wait();
-						//openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, 21.5f, (RGB) {150, 130, 90}).wait();
-					} else if(object.id < 16) {
-						openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {255, 255, 0}, 45.0f, (RGB) {0, 0, 0}).wait();
-					} else {
-						openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {0, 128, 255}, 45.0f, (RGB) {0, 0, 0}).wait();
+						if(object.id == -1) {
+							openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, (float)ballRadius, (RGB) {255, 128, 0}).wait();
+							//openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, 21.5f, (RGB) {150, 130, 90}).wait();
+						} else if(object.id < 16) {
+							openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), (float)defaultBotHeight, (float)centerBlobRadius, (RGB) {255, 255, 0}, (float)(sideBlobDistance - sideBlobRadius), (RGB) {0, 0, 0}).wait();
+						} else {
+							openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), (float)defaultBotHeight, (float)centerBlobRadius, (RGB) {0, 128, 255}, (float)(sideBlobDistance - sideBlobRadius), (RGB) {0, 0, 0}).wait();
+						}
+
+						auto* result = resultArray->mapRead<float>();
+						int best = std::distance(result, std::min_element(result, result + searchAreaSize));
+						resultArray->unmap();
+
+						auto* pos = posArray->mapRead<int>();
+						rawX = pos[2*best];
+						rawY = pos[2*best + 1];
+						posArray->unmap();
 					}
-
-					auto* result = resultArray->mapRead<float>();
-					int best = std::distance(result, std::min_element(result, result + searchAreaSize));
-					resultArray->unmap();
-
-					auto* pos = posArray->mapRead<int>();
-					int rawX = pos[2*best];
-					int rawY = pos[2*best + 1];
-					posArray->unmap();
 
 					V2 bestPos = perspective->image2field({
 							(double)rawX,
 							(double)rawY
 					}, height);
 
-					//TODO thresholding (detection)
-					//TODO bot orientation
+					//TODO subsampling/supersampling (constant computational time/constant resolution)
 
 					if(object.id == -1) {
 						SSL_DetectionBall* ball = detection->add_balls();
@@ -240,29 +251,87 @@ int main() {
 						ball->set_pixel_x(rawX * 2);
 						ball->set_pixel_y(rawY * 2);
 					} else {
+						//TODO improve backprojection accuracy
+						//RLEVector sideSearchArea = perspective->getRing(position, height, std::max(0.0, sideBlobDistance - minTrackingRadius/2), sideBlobDistance + minTrackingRadius/2);
+						RLEVector sideSearchArea = perspective->getRing(position, height, std::max(0.0, sideBlobDistance - minTrackingRadius), sideBlobDistance + minTrackingRadius);
+						int searchAreaSize = sideSearchArea.size();
+						double sqMinDist = 4*sideBlobRadius*sideBlobRadius;
+						auto posArray = sideSearchArea.scanArea(*arrayPool);
+						auto greenArray = arrayPool->acquire<float>(searchAreaSize);
+						auto pinkArray = arrayPool->acquire<float>(searchAreaSize);
+						openCl->run(sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), greenArray->getBuffer(), perspective->getClPerspective(), height, (float)sideBlobRadius, (RGB) {0, 255, 128}).wait();
+						openCl->run(sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), pinkArray->getBuffer(), perspective->getClPerspective(), height, (float)sideBlobRadius, (RGB) {255, 0, 255}).wait();
+
+						auto* green = (float*)greenArray->mapRead<float>();
+						auto* pink = (float*)pinkArray->mapRead<float>();
+						auto* pos = posArray->mapRead<int>();
+						std::vector<std::pair<V2, bool>> blobs;
+						//TODO better pattern matching
+						while(blobs.size() < 4) {
+							auto bestGreen = std::min_element(green, green + searchAreaSize);
+							auto bestPink = std::min_element(pink, pink + searchAreaSize);
+							if(*bestGreen < *bestPink) {
+								int best = std::distance(green, bestGreen);
+								V2 blob = perspective->image2field({(double)pos[2*best], (double)pos[2*best+1]}, height);
+								if(std::none_of(blobs.begin(), blobs.end(), [&](const std::pair<V2, bool>& item) {
+									double dX = item.first.x - blob.x;
+									double dY = item.first.y - blob.y;
+									return dX*dX + dY*dY < sqMinDist;
+								})) {
+									blobs.emplace_back(blob, true);
+								} else {
+									*bestGreen = INFINITY;
+								}
+							} else {
+								int best = std::distance(pink, bestPink);
+								V2 blob = perspective->image2field({(double)pos[2*best], (double)pos[2*best+1]}, height);
+								if(std::none_of(blobs.begin(), blobs.end(), [&](const std::pair<V2, bool>& item) {
+									double dX = item.first.x - blob.x;
+									double dY = item.first.y - blob.y;
+									return dX*dX + dY*dY < sqMinDist;
+								})) {
+									blobs.emplace_back(blob, false);
+								} else {
+									*bestPink = INFINITY;
+								}
+							}
+						}
+						greenArray->unmap();
+						pinkArray->unmap();
+						posArray->unmap();
+
+						std::vector<std::pair<double, bool>> angles;
+						for(const auto& blob: blobs) {
+							angles.emplace_back(atan2(blob.first.y - bestPos.y, blob.first.x - bestPos.x), blob.second);
+						}
+						std::pair<double, int> OARID = orientationAndPatternId(angles);
+
 						SSL_DetectionRobot* bot = object.id < 16 ? detection->add_robots_yellow() : detection->add_robots_blue();
 						bot->set_confidence(1.0f);
+						//bot->set_robot_id(OARID.second);
 						bot->set_robot_id(object.id % 16);
 						bot->set_x(bestPos.x);
 						bot->set_y(bestPos.y);
-						bot->set_orientation(object.w);
+						bot->set_orientation(OARID.first);
+						//bot->set_orientation(object.w);
 						bot->set_pixel_x(rawX * 2);
 						bot->set_pixel_y(rawY * 2);
 						bot->set_height(height);
 					}
 				}
 
+				//TODO thresholding (detection/search)
+
 				/*auto posArray = mask.scanArea(*arrayPool);
 				int maskSize = mask.getRuns().size();
 				auto resultArray = arrayPool->acquire<float>(maskSize);
 				//yellow peak SNR 1.8 PSR 1.15
-				//openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {255, 255, 0}, 45.0f, (RGB) {0, 0, 0}).wait();
-				//yellow optimized color peak SNR 5.8 openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {109, 150, 120}, 45.0f, (RGB) {42, 57, 73}).wait();
-				//TODO issues with goal and floor outside field. Black background consideration necessary
-				//blue openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {0, 128, 255}).wait();
+				//openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {255, 255, 0}, 45.0f, (RGB) {0, 0, 0}).wait();
+				//yellow optimized color peak SNR 5.8 openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {109, 150, 120}, 45.0f, (RGB) {42, 57, 73}).wait();
+				//blue openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {0, 128, 255}).wait();
 				//ball
 				openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(maskSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), 21.5f, 21.5f, (RGB) {255, 128, 0}).wait();
-				///openCl->run(kernel, cl::EnqueueArgs(cl::NDRange(maskSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), 21.5f, 21.5f, (RGB) {255, 128, 0}, 21.5f, (RGB){0, 0, 0}).wait();
+				///openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(maskSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), 21.5f, 21.5f, (RGB) {255, 128, 0}, 21.5f, (RGB){0, 0, 0}).wait();
 
 				auto* result = resultArray->mapRead<float>();
 				float min = *std::min_element(result, result + maskSize);
@@ -290,11 +359,6 @@ int main() {
 					}
 				}*/
 
-				/*RLEVector yellowGroundTruth;
-				for(const I2& point : groundTruth.getYellow()) {
-					yellowGroundTruth.add(perspective->getRing({point.x / 2.0, point.y / 2.0}, defaultBotHeight, 0.0, 25.0));
-				}
-
 				/*float min = *std::min_element(result.begin(), result.end());
 				float sidelobeMin = INFINITY;
 				for(int i = 0; i < result.size(); i++) {
@@ -309,19 +373,6 @@ int main() {
 						sidelobeMax = result[i];
 					}
 				}
-
-				/*for(RLEVector& vector : yellowGroundTruth) {
-					for(const Run& run : vector.getRuns()) {
-						uint8_t* row0 = img->getData() + 4*img->getWidth()*run.y + 2*run.x;
-						uint8_t* row1 = row0 + 2*img->getWidth();
-						for(int i = 0; i < run.length; i++) {
-							row0[2*i + 0] = 255;
-							row0[2*i + 1] = 255;
-							row1[2*i + 0] = 255;
-							row1[2*i + 1] = 255;
-						}
-					}
-				}*/
 
 				//float threshold = min*1.15;
 				/*float threshold = max*0.9;
@@ -340,8 +391,9 @@ int main() {
 				//std::cout << "min sidelobe " << min << " " << sidelobeMin << std::endl;
 				std::cout << "max sidelobe " << max << " " << sidelobeMax << std::endl;*/
 			} else {
+				GroundTruth groundTruth("test-data/rc2022/bots-balls-many-1/gt.yml");
 				for(const I2& orange : groundTruth.getOrange()) {
-					V2 ballPos = perspective->image2field({orange.x/2.0, orange.y/2.0}, 21.5);
+					V2 ballPos = perspective->image2field({orange.x/2.0, orange.y/2.0}, ballRadius);
 					SSL_DetectionBall* ball = detection->add_balls();
 					ball->set_confidence(1.0f);
 					//ball->set_area(0);
@@ -361,12 +413,6 @@ int main() {
 
 			detection->set_t_sent(getTime());
 			socket->send(wrapper);
-
-			/*if(frameNumber == 2) {
-				std::cout << "main " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
-				socket->close();
-				return 0;
-			}*/
 		}
 
 		/*cv::Mat cvImg(img->getHeight(), img->getWidth(), CV_8UC3, (uint8_t*)img->getData());
@@ -393,4 +439,7 @@ int main() {
 		std::cout << "main " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 		std::this_thread::sleep_for(std::chrono::microseconds(33333 - (int64_t)((getTime() - startTime) * 1e6)));
 	}
+
+	socket->close();
+	return 0;
 }

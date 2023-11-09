@@ -6,18 +6,17 @@
 #endif
 
 
-kernel void ssd(global const uchar* img, global const int* pos, global float* out, const Perspective perspective, const float height, const float radius, const RGB rgb, const float bgradius, const RGB bg) {
+kernel void ssd(global const uchar* img, global const int* pos, global float* out, const Perspective perspective, const float height, const float radius, const RGB rgb) {
 #ifdef RGGB
 	const int xpos = 2*pos[2*get_global_id(0)];
 	const int ypos = 2*pos[2*get_global_id(0)+1];
 #endif
 
 	const float sqRadius = radius*radius;
-	const float sqBgRadius = bgradius*bgradius;
 	V2 center = image2field(perspective, height, (V2) {(float)xpos, (float)ypos});
 
 	I2 min, max;
-	area(perspective, height, (I2) {xpos, ypos}, center, sqBgRadius, &min, &max);
+	area(perspective, height, (I2) {xpos, ypos}, center, sqRadius, &min, &max);
 
 	float sum = 0.0f;
 	int n = 0;
@@ -26,40 +25,24 @@ kernel void ssd(global const uchar* img, global const int* pos, global float* ou
 			V2 mpos = image2field(perspective, height, (V2) {(float)x, (float)y});
 			V2 diff = {mpos.x - center.x, mpos.y - center.y};
 			float dist = diff.x*diff.x + diff.y*diff.y;
-			if(dist <= sqBgRadius) {
+			if(dist <= sqRadius) {
+#ifdef RGGB
 				float vdiff;
-
-				if(dist <= sqRadius) {
-#ifdef RGGB
-					if(y%2 == 0) {
-						if(x%2 == 0)
-							vdiff = img[x + y*perspective.shape[0]] - (float)rgb.r;
-						else
-							vdiff = img[x + y*perspective.shape[0]] - (float)rgb.g;
+				if(y%2 == 0) {
+					if(x%2 == 0) {
+						vdiff = img[x + y*perspective.shape[0]] - (float)rgb.r;
 					} else {
-						if(x%2 == 0)
-							vdiff = img[x + y*perspective.shape[0]] - (float)rgb.g;
-						else
-							vdiff = img[x + y*perspective.shape[0]] - (float)rgb.b;
+						vdiff = img[x + y*perspective.shape[0]] - (float)rgb.g;
 					}
-#endif
 				} else {
-#ifdef RGGB
-					if(y%2 == 0) {
-						if(x%2 == 0)
-							vdiff = img[x + y*perspective.shape[0]] - (float)bg.r;
-						else
-							vdiff = img[x + y*perspective.shape[0]] - (float)bg.g;
+					if(x%2 == 0) {
+						vdiff = img[x + y*perspective.shape[0]] - (float)rgb.g;
 					} else {
-						if(x%2 == 0)
-							vdiff = img[x + y*perspective.shape[0]] - (float)bg.g;
-						else
-							vdiff = img[x + y*perspective.shape[0]] - (float)bg.b;
+						vdiff = img[x + y*perspective.shape[0]] - (float)rgb.b;
 					}
-#endif
 				}
-
 				sum += vdiff*vdiff;
+#endif
 				n++;
 			}
 		}

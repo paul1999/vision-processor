@@ -61,7 +61,7 @@ V2 Perspective::image2field(V2 pos, double height) {
 			(pos.y - calib.principal_point_y()/2) / (calib.focal_length()/2)
 	};
 
-	double distortion = 1.0 + (normalized.x*normalized.x + normalized.y*normalized.y) * calib.distortion();
+	double distortion = 1.0 /*+ (normalized.x*normalized.x + normalized.y*normalized.y) * calib.distortion()*/; //TODO inversion
 	V3 camRay = rotation({distortion*normalized.x, distortion*normalized.y, 1.0}, rX, rY, rZ);
 
 	if(camRay.z >= 0) { // Over horizon
@@ -154,20 +154,21 @@ RLEVector Perspective::getRing(V2 pos, double height, double inner, double radiu
 	double sqInner = inner*inner;
 	double sqRadius = radius*radius;
 	RLEVector result;
-	result.add(pos.x, pos.y);
+	if(inner == 0)
+		result.add(pos.x, pos.y);
 
 	//TODO outside of perspective
 	//TODO more accurate size (due to distortion)
 	V2 min = pos;
-	while(inRange(root, image2field({min.x-1, pos.y}, height), sqInner, sqRadius) && min.x > 0)
+	while(inRange(root, image2field({min.x-1, pos.y}, height), 0, sqRadius) && min.x > 0)
 		min.x--;
-	while(inRange(root, image2field({pos.x, min.y-1}, height), sqInner, sqRadius) && min.y > 0)
+	while(inRange(root, image2field({pos.x, min.y-1}, height), 0, sqRadius) && min.y > 0)
 		min.y--;
 
 	V2 max = pos;
-	while(inRange(root, image2field({max.x+1, pos.y}, height), sqInner, sqRadius) && max.x+1 < getWidth())
+	while(inRange(root, image2field({max.x+1, pos.y}, height), 0, sqRadius) && max.x+1 < getWidth())
 		max.x++;
-	while(inRange(root, image2field({pos.x, max.y+1}, height), sqInner, sqRadius) && max.y+1 < getHeight())
+	while(inRange(root, image2field({pos.x, max.y+1}, height), 0, sqRadius) && max.y+1 < getHeight())
 		max.y++;
 
 	for(int x = min.x; x <= max.x; x++) {
