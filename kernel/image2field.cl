@@ -59,7 +59,7 @@ typedef struct {
 	int y;
 } I2;
 
-typedef struct {
+typedef struct __attribute__ ((packed)) {
 	uchar r;
 	uchar g;
 	uchar b;

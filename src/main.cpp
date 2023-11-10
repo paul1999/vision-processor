@@ -23,7 +23,8 @@ typedef struct __attribute__ ((packed)) {
 	cl_uchar b;
 } RGB;
 
-/*const int patterns[16] = {
+//1 indicates green, 0 pink, increasing 2d angle starting from bot orientation most significant bit to least significant bit
+const int patterns[16] = {
 		0b0100, // 0
 		0b1100, // 1
 		0b1101, // 2
@@ -40,10 +41,16 @@ typedef struct __attribute__ ((packed)) {
 		0b1000, //13
 		0b0111, //14
 		0b0001  //15
-};*/
+};
 
-const int patternLUT[16] = {
-		9, 15, 4, 7, 0, 3, 10, 14, 13, 11, 5, 6, 1, 2, 12, 8 };
+const double patternAngles[4] = {
+		1.0021839078803572,
+		2.5729802346752537,
+		-2.5729802346752537, //3.7102050725043325
+		-1.0021839078803572 //5.281001399299229
+};
+
+const int patternLUT[16] = { 9, 15, 4, 7, 0, 3, 10, 14, 13, 11, 5, 6, 1, 2, 12, 8 };
 
 std::pair<double, int> orientationAndPatternId(std::vector<std::pair<double, bool>>& blobs) {
 	std::sort(blobs.begin(), blobs.end());
@@ -239,7 +246,9 @@ int main() {
 							(double)rawY
 					}, height);
 
+					//TODO CL_MAP_ALLOC_HOST_PTR instead of CL_MAP_USE_HOST_PTR if possible? <- Im hating NVIDIA
 					//TODO subsampling/supersampling (constant computational time/constant resolution)
+					//ssd starting from 16 pixels +2 steps...? (only half of computational cost increase)
 
 					if(object.id == -1) {
 						SSL_DetectionBall* ball = detection->add_balls();
@@ -251,69 +260,68 @@ int main() {
 						ball->set_pixel_x(rawX * 2);
 						ball->set_pixel_y(rawY * 2);
 					} else {
-						//TODO improve backprojection accuracy
-						//RLEVector sideSearchArea = perspective->getRing(position, height, std::max(0.0, sideBlobDistance - minTrackingRadius/2), sideBlobDistance + minTrackingRadius/2);
-						RLEVector sideSearchArea = perspective->getRing(position, height, std::max(0.0, sideBlobDistance - minTrackingRadius), sideBlobDistance + minTrackingRadius);
+						//TODO better pattern matching/orientation determination
+						RLEVector sideSearchArea = perspective->getRing(position, height, std::max(0.0, sideBlobDistance - minTrackingRadius/2), sideBlobDistance + minTrackingRadius/2);
+						int pattern = patterns[object.id % 16];
 						int searchAreaSize = sideSearchArea.size();
-						double sqMinDist = 4*sideBlobRadius*sideBlobRadius;
 						auto posArray = sideSearchArea.scanArea(*arrayPool);
 						auto greenArray = arrayPool->acquire<float>(searchAreaSize);
 						auto pinkArray = arrayPool->acquire<float>(searchAreaSize);
 						openCl->run(sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), greenArray->getBuffer(), perspective->getClPerspective(), height, (float)sideBlobRadius, (RGB) {0, 255, 128}).wait();
 						openCl->run(sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), pinkArray->getBuffer(), perspective->getClPerspective(), height, (float)sideBlobRadius, (RGB) {255, 0, 255}).wait();
 
-						auto* green = (float*)greenArray->mapRead<float>();
-						auto* pink = (float*)pinkArray->mapRead<float>();
+						auto* green = greenArray->mapRead<float>();
+						auto* pink = pinkArray->mapRead<float>();
 						auto* pos = posArray->mapRead<int>();
-						std::vector<std::pair<V2, bool>> blobs;
-						//TODO better pattern matching
-						while(blobs.size() < 4) {
-							auto bestGreen = std::min_element(green, green + searchAreaSize);
-							auto bestPink = std::min_element(pink, pink + searchAreaSize);
-							if(*bestGreen < *bestPink) {
-								int best = std::distance(green, bestGreen);
-								V2 blob = perspective->image2field({(double)pos[2*best], (double)pos[2*best+1]}, height);
-								if(std::none_of(blobs.begin(), blobs.end(), [&](const std::pair<V2, bool>& item) {
-									double dX = item.first.x - blob.x;
-									double dY = item.first.y - blob.y;
-									return dX*dX + dY*dY < sqMinDist;
-								})) {
-									blobs.emplace_back(blob, true);
-								} else {
-									*bestGreen = INFINITY;
+						auto bestGreen = std::min_element(green, green + searchAreaSize);
+						auto bestPink = std::min_element(pink, pink + searchAreaSize);
+						int anchor = ((*bestGreen < *bestPink && pattern != 0b0000) || pattern == 0b1111) ? 1 : 0;
+						int anchorIndex = std::distance(anchor ? green : pink, anchor ? bestGreen : bestPink);
+						V2 anchorPos = perspective->image2field({(double)pos[2*anchorIndex], (double)pos[2*anchorIndex+1]}, height);
+						double anchorAngle = atan2(anchorPos.y - bestPos.y, anchorPos.x - bestPos.x);
+						double bestScore = INFINITY;
+						int bestPermutation = 0;
+						for(int i = 0; i < 4; i++) {
+							if((bool)(pattern & (1 << (3-i))) != (bool)anchor)
+								continue;
+
+							double score = anchor ? *bestGreen : *bestPink;
+							std::cout << score << " ";
+							double patternAngle = anchorAngle - patternAngles[i];
+							for(int j = 1; j < 4; j++) {
+								auto* color = (pattern & (1 << (3-(i+j)%4))) ? green : pink;
+								double angle = patternAngle + patternAngles[(i+j)%4];
+								V2 targetPos = { bestPos.x + cos(angle)*sideBlobDistance, bestPos.y + sin(angle)*sideBlobDistance };
+
+								double nextDistSq = INFINITY;
+								double nextScore = 0;
+								for(int k = 0; k < searchAreaSize; k++) {
+									V2 testPos = perspective->image2field({(double)pos[2*k], (double)pos[2*k+1]}, height);
+									V2 diff = {testPos.x - targetPos.x, testPos.y - targetPos.y};
+									double distSq = diff.x * diff.x + diff.y * diff.y;
+									if(distSq < nextDistSq) {
+										nextScore = color[k];
+										nextDistSq = distSq;
+									}
 								}
-							} else {
-								int best = std::distance(pink, bestPink);
-								V2 blob = perspective->image2field({(double)pos[2*best], (double)pos[2*best+1]}, height);
-								if(std::none_of(blobs.begin(), blobs.end(), [&](const std::pair<V2, bool>& item) {
-									double dX = item.first.x - blob.x;
-									double dY = item.first.y - blob.y;
-									return dX*dX + dY*dY < sqMinDist;
-								})) {
-									blobs.emplace_back(blob, false);
-								} else {
-									*bestPink = INFINITY;
-								}
+								score += nextScore;
+							}
+
+							if(score < bestScore) {
+								bestScore = score;
+								bestPermutation = i;
 							}
 						}
 						greenArray->unmap();
 						pinkArray->unmap();
 						posArray->unmap();
 
-						std::vector<std::pair<double, bool>> angles;
-						for(const auto& blob: blobs) {
-							angles.emplace_back(atan2(blob.first.y - bestPos.y, blob.first.x - bestPos.x), blob.second);
-						}
-						std::pair<double, int> OARID = orientationAndPatternId(angles);
-
 						SSL_DetectionRobot* bot = object.id < 16 ? detection->add_robots_yellow() : detection->add_robots_blue();
 						bot->set_confidence(1.0f);
-						//bot->set_robot_id(OARID.second);
 						bot->set_robot_id(object.id % 16);
 						bot->set_x(bestPos.x);
 						bot->set_y(bestPos.y);
-						bot->set_orientation(OARID.first);
-						//bot->set_orientation(object.w);
+						bot->set_orientation(anchorAngle - patternAngles[bestPermutation]);
 						bot->set_pixel_x(rawX * 2);
 						bot->set_pixel_y(rawY * 2);
 						bot->set_height(height);
