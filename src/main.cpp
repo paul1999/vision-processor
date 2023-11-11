@@ -322,16 +322,6 @@ void trackObjects(Resources& r, const double timestamp, const cl::Buffer& clBuff
 			pinkArray->unmap();
 			posArray->unmap();
 
-						SSL_DetectionRobot* bot = object.id < 16 ? detection->add_robots_yellow() : detection->add_robots_blue();
-						bot->set_confidence(1.0f);
-						bot->set_robot_id(object.id % 16);
-						bot->set_x(bestPos.x);
-						bot->set_y(bestPos.y);
-						bot->set_orientation(anchorAngle - patternAngles[bestPermutation]);
-						bot->set_pixel_x(rawX * 2);
-						bot->set_pixel_y(rawY * 2);
-						bot->set_height(height);
-					}
 			SSL_DetectionRobot* bot = object.id < 16 ? detection->add_robots_yellow() : detection->add_robots_blue();
 			bot->set_confidence(1.0f);
 			bot->set_robot_id(object.id % 16);
