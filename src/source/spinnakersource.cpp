@@ -42,6 +42,8 @@ SpinnakerSource::SpinnakerSource(int id) {
 	pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Once);
 	pCam->GainAuto.SetValue(Spinnaker::GainAuto_Once);
 	pCam->GammaEnable.SetValue(false);
+	pCam->TLStream.StreamBufferHandlingMode.SetValue(Spinnaker::StreamBufferHandlingMode_NewestOnly);
+	pCam->TLStream.StreamBufferCountManual.SetValue(pCam->TLStream.StreamBufferCountManual.GetMin());
 	pCam->AcquisitionResultingFrameRate.GetValue(); //TODO
 
 	int width = pCam->WidthMax.GetValue();

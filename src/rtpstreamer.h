@@ -42,7 +42,7 @@ private:
 	bool stopEncoding = false;
 	std::thread encoder;
 
-	std::queue<std::shared_ptr<Image>> queue = std::queue<std::shared_ptr<Image>>();
+	std::shared_ptr<Image> queue = nullptr;
 	std::mutex queueMutex = std::mutex();
 	std::condition_variable queueSignal = std::condition_variable();
 	long currentFrameId = 0;

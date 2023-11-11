@@ -150,7 +150,7 @@ static inline void trackBots(const double timestamp, const float defaultBotHeigh
 }
 
 void UDPSocket::detectionTracking(const SSL_DetectionFrame &detection) {
-	const double timestamp = detection.has_t_capture_camera() ? detection.t_capture_camera() : detection.t_capture();
+	const double timestamp = detection.has_t_capture_camera() ? detection.t_capture_camera() : detection.t_capture(); //TODO use regular timestamp if large difference
 
 	const std::vector<TrackingState>& previous = trackedObjects[detection.camera_id()];
 	std::vector<TrackingState> objects;

@@ -31,10 +31,8 @@ RTPStreamer::~RTPStreamer() {
 void RTPStreamer::sendFrame(std::shared_ptr<Image> image) {
 	std::unique_lock<std::mutex> lock(queueMutex);
 
-	if(queue.empty()) {
-		queue.push(std::move(image));
-		queueSignal.notify_one();
-	}
+	queue = std::move(image);
+	queueSignal.notify_one();
 }
 
 //Adopted from CC BY-SA 3.0 https://stackoverflow.com/q/40825300 DankMemes and https://stackoverflow.com/q/46352604 Gaulois94
@@ -191,16 +189,16 @@ void RTPStreamer::encoderRun() {
 		std::shared_ptr<Image> image;
 		{
 			std::unique_lock<std::mutex> lock(queueMutex);
-			while(queue.empty() && !stopEncoding)
-				queueSignal.wait(lock, [&]() { return !queue.empty() || stopEncoding; });
+			while(queue == nullptr && !stopEncoding)
+				queueSignal.wait(lock, [&]() { return queue != nullptr || stopEncoding; });
 
 			if(stopEncoding) {
 				freeResources();
 				return;
 			}
 
-			image = queue.front();
-			queue.pop();
+			image = queue;
+			queue = nullptr;
 		}
 
 		if(image->getWidth() != width || image->getHeight() != height || image->getFormat() != format) {

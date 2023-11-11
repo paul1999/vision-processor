@@ -20,8 +20,10 @@ kernel void ssd(global const uchar* img, global const int* pos, global float* ou
 
 	float sum = 0.0f;
 	int n = 0;
-	for(int y = min.y; y < max.y; y++) {
-		for(int x = min.x; x < max.x; x++) {
+	int xstep = 1 + (max.x - min.x) / 16;
+	int ystep = 1 + (max.y - min.y) / 16;
+	for(int y = min.y; y < max.y; y+=ystep) {
+		for(int x = min.x; x < max.x; x+=xstep) {
 			V2 mpos = image2field(perspective, height, (V2) {(float)x, (float)y});
 			V2 diff = {mpos.x - center.x, mpos.y - center.y};
 			float dist = diff.x*diff.x + diff.y*diff.y;

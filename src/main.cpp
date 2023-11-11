@@ -112,209 +112,215 @@ void addBot(const std::shared_ptr<Perspective>& perspective, const GroundTruth& 
 	bot->set_height(maxBotHeight);
 }
 
-int main() {
-	YAML::Node config = YAML::LoadFile("config.yml");
-
-	auto source = config["source"].as<std::string>("SPINNAKER");
-	std::unique_ptr<VideoSource> camera = nullptr;
+class Resources {
+public:
+	explicit Resources(YAML::Node config) {
+		auto source = config["source"].as<std::string>("SPINNAKER");
 
 #ifdef SPINNAKER
-	if(source == "SPINNAKER")
-		camera = std::make_unique<SpinnakerSource>(config["spinnaker_id"].as<int>(0));
+		if(source == "SPINNAKER")
+			camera = std::make_unique<SpinnakerSource>(config["spinnaker_id"].as<int>(0));
 #endif
 
-	if(source == "IMAGES") {
-		auto paths = config["images"].as<std::vector<std::string>>();
+		if(source == "IMAGES") {
+			auto paths = config["images"].as<std::vector<std::string>>();
 
-		if(paths.empty()) {
-			std::cerr << "Source IMAGES needs at least one image." << std::endl;
-			return 1;
+			if(paths.empty()) {
+				std::cerr << "Source IMAGES needs at least one image." << std::endl;
+				return;
+			}
+
+			camera = std::make_unique<ImageSource>(paths);
 		}
 
-		camera = std::make_unique<ImageSource>(paths);
-	}
+		if(camera == nullptr) {
+			std::cerr << "No camera/image source defined." << std::endl;
+			return;
+		}
 
-	if(camera == nullptr) {
-		std::cerr << "No camera/image source defined." << std::endl;
-		return 1;
-	}
+		camId = config["cam_id"].as<int>(0);
+		defaultBotHeight = config["default_bot_height"].as<double>(150.0);
+		maxBotAcceleration = 1000*config["max_bot_acceleration"].as<double>(6.5);
+		sideBlobDistance = config["side_blob_distance"].as<double>(65.0);
+		centerBlobRadius = config["center_blob_radius"].as<double>(25.0);
+		sideBlobRadius = config["side_blob_radius"].as<double>(20.0);
+		maxBallVelocity = 1000*config["max_ball_velocity"].as<double>(8.0);
+		ballRadius = config["ball_radius"].as<double>(21.5);
+		minTrackingRadius = config["min_tracking_radius"].as<double>(30.0);
 
-	auto camId = config["cam_id"].as<int>(0);
-	auto defaultBotHeight = config["default_bot_height"].as<double>(150.0);
-	auto maxBotAcceleration = 1000*config["max_bot_acceleration"].as<double>(6.5);
-	auto sideBlobDistance = config["side_blob_distance"].as<double>(65.0);
-	auto centerBlobRadius = config["center_blob_radius"].as<double>(25.0);
-	auto sideBlobRadius = config["side_blob_radius"].as<double>(20.0);
-	auto maxBallVelocity = 1000*config["max_ball_velocity"].as<double>(8.0);
-	auto ballRadius = config["ball_radius"].as<double>(21.5);
-	auto minTrackingRadius = config["min_tracking_radius"].as<double>(30.0);
+		socket = std::make_shared<UDPSocket>(config["vision_ip"].as<std::string>("224.5.23.2"), config["vision_port"].as<int>(10006), defaultBotHeight, ballRadius);
+		perspective = std::make_shared<Perspective>(socket, camId);
+		openCl = std::make_shared<OpenCL>();
+		arrayPool = std::make_shared<AlignedArrayPool>();
+		mask = std::make_shared<Mask>(perspective, defaultBotHeight);
+		//TODO Increment IP addresses
+		rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + config["vision_ip"].as<std::string>("224.5.23.2") + ":" + std::to_string(config["stream_base_port"].as<int>(10100) + camId));
 
-	std::shared_ptr<UDPSocket> socket = std::make_shared<UDPSocket>(config["vision_ip"].as<std::string>("224.5.23.2"), config["vision_port"].as<int>(10006), defaultBotHeight, ballRadius);
-	std::shared_ptr<Perspective> perspective = std::make_shared<Perspective>(socket, camId);
-	std::shared_ptr<OpenCL> openCl = std::make_shared<OpenCL>();
-	std::shared_ptr<AlignedArrayPool> arrayPool = std::make_shared<AlignedArrayPool>();
-	Mask mask(perspective, defaultBotHeight);
-	RTPStreamer rtpStreamer(openCl, "rtp://" + config["vision_ip"].as<std::string>("224.5.23.2") + ":" + std::to_string(config["stream_base_port"].as<int>(10100) + camId));
-
-	cl::Kernel botkernel = openCl->compile((
+		botkernel = openCl->compile((
 #include "image2field.cl"
 #include "botssd.cl"
-	), "-D RGGB");
-	cl::Kernel sidekernel = openCl->compile((
+		), "-D RGGB");
+		sidekernel = openCl->compile((
 #include "image2field.cl"
 #include "ssd.cl"
-), "-D RGGB");
-	cl::Kernel ballkernel = openCl->compile((
+		), "-D RGGB");
+		ballkernel = openCl->compile((
 #include "image2field.cl"
 #include "ballssd.cl"
-	), "-D RGGB");
+		), "-D RGGB");
+	}
 
-	//cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
+	std::unique_ptr<VideoSource> camera = nullptr;
 
-	uint32_t frameNumber = 0;
+	int camId;
+	double defaultBotHeight;
+	double maxBotAcceleration;
+	double sideBlobDistance;
+	double centerBlobRadius;
+	double sideBlobRadius;
+	double maxBallVelocity;
+	double ballRadius;
+	double minTrackingRadius;
 
-	while(true) {
-		std::shared_ptr<Image> img = camera->readImage();
+	std::shared_ptr<UDPSocket> socket;
+	std::shared_ptr<Perspective> perspective;
+	std::shared_ptr<OpenCL> openCl;
+	std::shared_ptr<AlignedArrayPool> arrayPool;
+	std::shared_ptr<Mask> mask;
+	std::shared_ptr<RTPStreamer> rtpStreamer;
 
-		perspective->geometryCheck();
-		mask.geometryCheck();
+	cl::Kernel botkernel;
+	cl::Kernel sidekernel;
+	cl::Kernel ballkernel;
+};
 
-		double startTime = getTime();
-		double timestamp = img->getTimestamp() == 0 ? startTime : img->getTimestamp();
+void trackObjects(Resources& r, const double timestamp, const cl::Buffer& clBuffer, const std::vector<TrackingState>& objects, SSL_DetectionFrame* detection, std::vector<int>& filtered, uint8_t* data) {
+	std::vector<int> tracked;
+	for(const TrackingState& object : objects) {
+		if(std::any_of(filtered.begin(), filtered.end(), [&] (int i) { return i == object.id; }))
+			continue;
 
-		if(perspective->getGeometryVersion()) {
-			SSL_WrapperPacket wrapper;
-			SSL_DetectionFrame* detection = wrapper.mutable_detection();
-			detection->set_frame_number(frameNumber++);
-			detection->set_t_capture(startTime);
-			if(img->getTimestamp() != 0)
-				detection->set_t_capture_camera(img->getTimestamp());
-			detection->set_camera_id(camId);
+		double timeDelta = timestamp - object.timestamp;
+		//double timeDelta = 0.033333;
+		double height = object.z + object.vz * timeDelta;
+		V2 position = r.perspective->field2image({
+			object.x + object.vx * timeDelta,
+			object.y + object.vy * timeDelta,
+			height,
+		});
 
-			cl::Buffer clBuffer = openCl->toBuffer(false, img); //TODO aligned array with OpenCL buffer already provided
+		if(position.x < 0 || position.y < 0 || position.x >= r.perspective->getWidth() || position.y >= r.perspective->getHeight()) {
+			std::cout << "Lost " << object.id << " " << timeDelta << std::endl;
+			continue;
+		}
 
-			if(socket->getTrackedObjects().count(camId)) {
-				//TODO do for all camIds, filter already detected from other cameras
-				for(const TrackingState& object : socket->getTrackedObjects()[camId]) {
-					double timeDelta = timestamp - object.timestamp;
-					//double timeDelta = 0.033333;
-					double height = object.z + object.vz * timeDelta;
-					V2 position = perspective->field2image({
-						object.x + object.vx * timeDelta,
-						object.y + object.vy * timeDelta,
-						height,
-					});
+		//TODO fix correct search radius (accel/decel)
+		RLEVector searchArea = r.perspective->getRing(
+				position,
+				height,
+				0.0,
+				std::max(r.minTrackingRadius, object.id != -1 ? r.maxBotAcceleration*timeDelta*timeDelta/2.0 : r.maxBallVelocity*timeDelta)
+		);
 
-					if(position.x < 0 || position.y < 0 || position.x >= perspective->getWidth() || position.y >= perspective->getHeight())
-						continue;
+		int rawX, rawY;
+		{
+			auto posArray = searchArea.scanArea(*r.arrayPool);
+			int searchAreaSize = searchArea.size();
+			auto resultArray = r.arrayPool->acquire<float>(searchAreaSize);
 
-					//TODO fix correct search radius (accel/decel)
-					RLEVector searchArea = perspective->getRing(
-						position,
-						height,
-						0.0,
-						std::max(minTrackingRadius, object.id != -1 ? maxBotAcceleration*timeDelta*timeDelta/2.0 : maxBallVelocity*timeDelta)
-					);
+			if(object.id == -1) {
+				//r.openCl->run(r.ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), height, (float)r.ballRadius, (RGB) {255, 128, 0}).wait();
+				r.openCl->run(r.sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), height, (float)r.ballRadius, (RGB) {255, 128, 0}).wait();
+			} else if(object.id < 16) {
+				//r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), (float)r.defaultBotHeight, (float)r.centerBlobRadius, (RGB) {255, 255, 0}, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {0, 0, 0}).wait();
+				r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), (float)r.defaultBotHeight, (float)r.centerBlobRadius, (RGB) {255, 255, 128}, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {32, 32, 32}).wait();
+			} else {
+				//r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), (float)r.defaultBotHeight, (float)r.centerBlobRadius, (RGB) {0, 128, 255}, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {0, 0, 0}).wait();
+				r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), (float)r.defaultBotHeight, (float)r.centerBlobRadius, (RGB) {0, 128, 255}, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {0, 0, 0}).wait();
+			}
 
-					int rawX, rawY;
-					{
-						auto posArray = searchArea.scanArea(*arrayPool);
-						int searchAreaSize = searchArea.size();
-						auto resultArray = arrayPool->acquire<float>(searchAreaSize);
+			auto* result = resultArray->mapRead<float>();
+			int best = std::distance(result, std::min_element(result, result + searchAreaSize));
+			resultArray->unmap();
 
-						if(object.id == -1) {
-							openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, (float)ballRadius, (RGB) {255, 128, 0}).wait();
-							//openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), height, 21.5f, (RGB) {150, 130, 90}).wait();
-						} else if(object.id < 16) {
-							openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), (float)defaultBotHeight, (float)centerBlobRadius, (RGB) {255, 255, 0}, (float)(sideBlobDistance - sideBlobRadius), (RGB) {0, 0, 0}).wait();
-						} else {
-							openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), (float)defaultBotHeight, (float)centerBlobRadius, (RGB) {0, 128, 255}, (float)(sideBlobDistance - sideBlobRadius), (RGB) {0, 0, 0}).wait();
+			auto* pos = posArray->mapRead<int>();
+			rawX = pos[2*best];
+			rawY = pos[2*best + 1];
+			posArray->unmap();
+		}
+
+		V2 bestPos = r.perspective->image2field({ (double)rawX, (double)rawY }, height);
+
+		//TODO CL_MAP_ALLOC_HOST_PTR instead of CL_MAP_USE_HOST_PTR if possible? <- Im hating NVIDIA
+		//TODO subsampling/supersampling (constant computational time/constant resolution)
+		//ssd starting from 16 pixels +2 steps...? (only half of computational cost increase)
+
+		if(object.id == -1) {
+			SSL_DetectionBall* ball = detection->add_balls();
+			ball->set_confidence(1.0f);
+			//ball->set_area(0);
+			ball->set_x(bestPos.x);
+			ball->set_y(bestPos.y);
+			//ball->set_z(0.0f);
+			ball->set_pixel_x(rawX * 2);
+			ball->set_pixel_y(rawY * 2);
+		} else {
+			//TODO better pattern matching/orientation determination
+			RLEVector sideSearchArea = r.perspective->getRing(position, height, std::max(0.0, r.sideBlobDistance - r.minTrackingRadius/2), r.sideBlobDistance + r.minTrackingRadius/2);
+			int pattern = patterns[object.id % 16];
+			int searchAreaSize = sideSearchArea.size();
+			auto posArray = sideSearchArea.scanArea(*r.arrayPool);
+			auto greenArray = r.arrayPool->acquire<float>(searchAreaSize);
+			auto pinkArray = r.arrayPool->acquire<float>(searchAreaSize);
+			//r.openCl->run(r.sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), greenArray->getBuffer(), r.perspective->getClPerspective(), height, (float)r.sideBlobRadius, (RGB) {0, 255, 128}).wait();
+			r.openCl->run(r.sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), greenArray->getBuffer(), r.perspective->getClPerspective(), height, (float)r.sideBlobRadius, (RGB) {64, 128, 48}).wait();
+			//r.openCl->run(r.sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), pinkArray->getBuffer(), r.perspective->getClPerspective(), height, (float)r.sideBlobRadius, (RGB) {255, 0, 255}).wait();
+			r.openCl->run(r.sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), pinkArray->getBuffer(), r.perspective->getClPerspective(), height, (float)r.sideBlobRadius, (RGB) {255, 128, 128}).wait();
+
+			auto* green = greenArray->mapRead<float>();
+			auto* pink = pinkArray->mapRead<float>();
+			auto* pos = posArray->mapRead<int>();
+			auto bestGreen = std::min_element(green, green + searchAreaSize);
+			auto bestPink = std::min_element(pink, pink + searchAreaSize);
+			int anchor = ((*bestGreen < *bestPink && pattern != 0b0000) || pattern == 0b1111) ? 1 : 0;
+			int anchorIndex = std::distance(anchor ? green : pink, anchor ? bestGreen : bestPink);
+			V2 anchorPos = r.perspective->image2field({(double)pos[2*anchorIndex], (double)pos[2*anchorIndex+1]}, height);
+			double anchorAngle = atan2(anchorPos.y - bestPos.y, anchorPos.x - bestPos.x);
+			double bestScore = INFINITY;
+			int bestPermutation = 0;
+			for(int i = 0; i < 4; i++) {
+				if((bool)(pattern & (1 << (3-i))) != (bool)anchor)
+					continue;
+
+				double score = anchor ? *bestGreen : *bestPink;
+				double patternAngle = anchorAngle - patternAngles[i];
+				for(int j = 1; j < 4; j++) {
+					auto* color = (pattern & (1 << (3-(i+j)%4))) ? green : pink;
+					double angle = patternAngle + patternAngles[(i+j)%4];
+					V2 targetPos = { bestPos.x + cos(angle)*r.sideBlobDistance, bestPos.y + sin(angle)*r.sideBlobDistance };
+
+					double nextDistSq = INFINITY;
+					double nextScore = 0;
+					for(int k = 0; k < searchAreaSize; k++) {
+						V2 testPos = r.perspective->image2field({(double)pos[2*k], (double)pos[2*k+1]}, height);
+						V2 diff = {testPos.x - targetPos.x, testPos.y - targetPos.y};
+						double distSq = diff.x * diff.x + diff.y * diff.y;
+						if(distSq < nextDistSq) {
+							nextScore = color[k];
+							nextDistSq = distSq;
 						}
-
-						auto* result = resultArray->mapRead<float>();
-						int best = std::distance(result, std::min_element(result, result + searchAreaSize));
-						resultArray->unmap();
-
-						auto* pos = posArray->mapRead<int>();
-						rawX = pos[2*best];
-						rawY = pos[2*best + 1];
-						posArray->unmap();
 					}
+					score += nextScore;
+				}
 
-					V2 bestPos = perspective->image2field({
-							(double)rawX,
-							(double)rawY
-					}, height);
-
-					//TODO CL_MAP_ALLOC_HOST_PTR instead of CL_MAP_USE_HOST_PTR if possible? <- Im hating NVIDIA
-					//TODO subsampling/supersampling (constant computational time/constant resolution)
-					//ssd starting from 16 pixels +2 steps...? (only half of computational cost increase)
-
-					if(object.id == -1) {
-						SSL_DetectionBall* ball = detection->add_balls();
-						ball->set_confidence(1.0f);
-						//ball->set_area(0);
-						ball->set_x(bestPos.x);
-						ball->set_y(bestPos.y);
-						//ball->set_z(0.0f);
-						ball->set_pixel_x(rawX * 2);
-						ball->set_pixel_y(rawY * 2);
-					} else {
-						//TODO better pattern matching/orientation determination
-						RLEVector sideSearchArea = perspective->getRing(position, height, std::max(0.0, sideBlobDistance - minTrackingRadius/2), sideBlobDistance + minTrackingRadius/2);
-						int pattern = patterns[object.id % 16];
-						int searchAreaSize = sideSearchArea.size();
-						auto posArray = sideSearchArea.scanArea(*arrayPool);
-						auto greenArray = arrayPool->acquire<float>(searchAreaSize);
-						auto pinkArray = arrayPool->acquire<float>(searchAreaSize);
-						openCl->run(sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), greenArray->getBuffer(), perspective->getClPerspective(), height, (float)sideBlobRadius, (RGB) {0, 255, 128}).wait();
-						openCl->run(sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), pinkArray->getBuffer(), perspective->getClPerspective(), height, (float)sideBlobRadius, (RGB) {255, 0, 255}).wait();
-
-						auto* green = greenArray->mapRead<float>();
-						auto* pink = pinkArray->mapRead<float>();
-						auto* pos = posArray->mapRead<int>();
-						auto bestGreen = std::min_element(green, green + searchAreaSize);
-						auto bestPink = std::min_element(pink, pink + searchAreaSize);
-						int anchor = ((*bestGreen < *bestPink && pattern != 0b0000) || pattern == 0b1111) ? 1 : 0;
-						int anchorIndex = std::distance(anchor ? green : pink, anchor ? bestGreen : bestPink);
-						V2 anchorPos = perspective->image2field({(double)pos[2*anchorIndex], (double)pos[2*anchorIndex+1]}, height);
-						double anchorAngle = atan2(anchorPos.y - bestPos.y, anchorPos.x - bestPos.x);
-						double bestScore = INFINITY;
-						int bestPermutation = 0;
-						for(int i = 0; i < 4; i++) {
-							if((bool)(pattern & (1 << (3-i))) != (bool)anchor)
-								continue;
-
-							double score = anchor ? *bestGreen : *bestPink;
-							std::cout << score << " ";
-							double patternAngle = anchorAngle - patternAngles[i];
-							for(int j = 1; j < 4; j++) {
-								auto* color = (pattern & (1 << (3-(i+j)%4))) ? green : pink;
-								double angle = patternAngle + patternAngles[(i+j)%4];
-								V2 targetPos = { bestPos.x + cos(angle)*sideBlobDistance, bestPos.y + sin(angle)*sideBlobDistance };
-
-								double nextDistSq = INFINITY;
-								double nextScore = 0;
-								for(int k = 0; k < searchAreaSize; k++) {
-									V2 testPos = perspective->image2field({(double)pos[2*k], (double)pos[2*k+1]}, height);
-									V2 diff = {testPos.x - targetPos.x, testPos.y - targetPos.y};
-									double distSq = diff.x * diff.x + diff.y * diff.y;
-									if(distSq < nextDistSq) {
-										nextScore = color[k];
-										nextDistSq = distSq;
-									}
-								}
-								score += nextScore;
-							}
-
-							if(score < bestScore) {
-								bestScore = score;
-								bestPermutation = i;
-							}
-						}
-						greenArray->unmap();
-						pinkArray->unmap();
-						posArray->unmap();
+				if(score < bestScore) {
+					bestScore = score;
+					bestPermutation = i;
+				}
+			}
+			greenArray->unmap();
+			pinkArray->unmap();
+			posArray->unmap();
 
 						SSL_DetectionRobot* bot = object.id < 16 ? detection->add_robots_yellow() : detection->add_robots_blue();
 						bot->set_confidence(1.0f);
@@ -326,6 +332,92 @@ int main() {
 						bot->set_pixel_y(rawY * 2);
 						bot->set_height(height);
 					}
+			SSL_DetectionRobot* bot = object.id < 16 ? detection->add_robots_yellow() : detection->add_robots_blue();
+			bot->set_confidence(1.0f);
+			bot->set_robot_id(object.id % 16);
+			bot->set_x(bestPos.x);
+			bot->set_y(bestPos.y);
+			bot->set_orientation(anchorAngle - patternAngles[bestPermutation]);
+			bot->set_pixel_x(rawX * 2);
+			bot->set_pixel_y(rawY * 2);
+			bot->set_height(height);
+		}
+
+		RLEVector debugArea = r.perspective->getRing({ (double)rawX, (double)rawY }, height, 15.0, 25.0);
+		for(const Run& run : debugArea.getRuns()) {
+			//TODO only RGGB
+			uint8_t* row0 = data + 4*r.perspective->getWidth()*run.y + 2*run.x;
+			uint8_t* row1 = row0 + 2*r.perspective->getWidth();
+			for(int i = 0; i < run.length; i++) {
+				row0[2*i + 0] = 255;
+				row0[2*i + 1] = 255;
+				row1[2*i + 0] = 255;
+				row1[2*i + 1] = 255;
+			}
+		}
+
+		if(std::none_of(tracked.begin(), tracked.end(), [&] (int i) { return i == object.id; }))
+			tracked.push_back(object.id);
+	}
+
+	filtered.insert(filtered.end(), tracked.begin(), tracked.end());
+}
+
+int main() {
+	Resources r(YAML::LoadFile("config.yml"));
+
+	//cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
+
+	uint32_t frameNumber = 0;
+	bool gtLoaded = true;
+
+	while(true) {
+		std::shared_ptr<Image> img = r.camera->readImage();
+
+		r.perspective->geometryCheck();
+		r.mask->geometryCheck();
+
+		double startTime = getTime();
+		//double timestamp = img->getTimestamp() == 0 ? startTime : img->getTimestamp();
+		double timestamp = startTime;
+
+		if(r.perspective->getGeometryVersion()) {
+			SSL_WrapperPacket wrapper;
+			SSL_DetectionFrame* detection = wrapper.mutable_detection();
+			detection->set_frame_number(frameNumber++);
+			detection->set_t_capture(startTime);
+			//if(img->getTimestamp() != 0)
+			//	detection->set_t_capture_camera(img->getTimestamp());
+			detection->set_camera_id(r.camId);
+
+			cl::Buffer clBuffer = r.openCl->toBuffer(false, img); //TODO aligned array with OpenCL buffer already provided
+
+			if(!gtLoaded) {
+				GroundTruth groundTruth("test-data/rc2022/bots-balls-many-1/gt.yml");
+				for(const I2& orange : groundTruth.getOrange()) {
+					V2 ballPos = r.perspective->image2field({orange.x/2.0, orange.y/2.0}, r.ballRadius);
+					SSL_DetectionBall* ball = detection->add_balls();
+					ball->set_confidence(1.0f);
+					//ball->set_area(0);
+					ball->set_x(ballPos.x);
+					ball->set_y(ballPos.y);
+					//ball->set_z(0.0f);
+					ball->set_pixel_x(orange.x);
+					ball->set_pixel_y(orange.y);
+				}
+
+				for(const I2& blob : groundTruth.getYellow())
+					addBot(r.perspective, groundTruth, r.defaultBotHeight, blob, detection->add_robots_yellow());
+
+				for(const I2& blob : groundTruth.getBlue())
+					addBot(r.perspective, groundTruth, r.defaultBotHeight, blob, detection->add_robots_blue());
+
+				gtLoaded = true;
+			} else {
+				std::vector<int> filtered;
+				trackObjects(r, timestamp, clBuffer, r.socket->getTrackedObjects()[r.camId], detection, filtered, img->getData());
+				for(auto& tracked : r.socket->getTrackedObjects()) {
+					trackObjects(r, startTime, clBuffer, tracked.second, detection, filtered, img->getData());
 				}
 
 				//TODO thresholding (detection/search)
@@ -355,7 +447,7 @@ int main() {
 				posArray->unmap();
 				rtpStreamer.sendFrame(r);*/
 
-				/*for(Run& run : mask.getRuns()) {
+				/*for(const Run& run : r.mask->getRuns().getRuns()) {
 					//TODO only RGGB
 					uint8_t* row0 = img->getData() + 4*img->getWidth()*run.y + 2*run.x;
 					uint8_t* row1 = row0 + 2*img->getWidth();
@@ -398,29 +490,10 @@ int main() {
 				//std::cout << "minmax " << result[0] << " " << result[result.size()/2] << " " << result[result.size()-1] << std::endl;
 				//std::cout << "min sidelobe " << min << " " << sidelobeMin << std::endl;
 				std::cout << "max sidelobe " << max << " " << sidelobeMax << std::endl;*/
-			} else {
-				GroundTruth groundTruth("test-data/rc2022/bots-balls-many-1/gt.yml");
-				for(const I2& orange : groundTruth.getOrange()) {
-					V2 ballPos = perspective->image2field({orange.x/2.0, orange.y/2.0}, ballRadius);
-					SSL_DetectionBall* ball = detection->add_balls();
-					ball->set_confidence(1.0f);
-					//ball->set_area(0);
-					ball->set_x(ballPos.x);
-					ball->set_y(ballPos.y);
-					//ball->set_z(0.0f);
-					ball->set_pixel_x(orange.x);
-					ball->set_pixel_y(orange.y);
-				}
-
-				for(const I2& blob : groundTruth.getYellow())
-					addBot(perspective, groundTruth, defaultBotHeight, blob, detection->add_robots_yellow());
-
-				for(const I2& blob : groundTruth.getBlue())
-					addBot(perspective, groundTruth, defaultBotHeight, blob, detection->add_robots_blue());
 			}
 
 			detection->set_t_sent(getTime());
-			socket->send(wrapper);
+			r.socket->send(wrapper);
 		}
 
 		/*cv::Mat cvImg(img->getHeight(), img->getWidth(), CV_8UC3, (uint8_t*)img->getData());
@@ -443,11 +516,11 @@ int main() {
 		std::shared_ptr<Image> out = std::make_shared<CVImage>(cvOut, BGR888);
 		rtpStreamer.sendFrame(out);*/
 
-		rtpStreamer.sendFrame(img);
+		r.rtpStreamer->sendFrame(img);
 		std::cout << "main " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 		std::this_thread::sleep_for(std::chrono::microseconds(33333 - (int64_t)((getTime() - startTime) * 1e6)));
 	}
 
-	socket->close();
+	r.socket->close();
 	return 0;
 }
