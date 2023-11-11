@@ -60,5 +60,11 @@ images:
 # Vision multicast port
 #vision_port: 10006
 
-# Camera feed base port (cam_id is added to maintain separation)
-#stream_base_port: 10100
+# Camera stream ip prefix
+#stream_ip_base_prefix: 224.5.23.
+
+# Camera stream ip end base (cam_id is added to maintain separation)
+#stream_ip_base_end: 100
+
+# Camera stream port
+#stream_port: 10100

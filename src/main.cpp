@@ -153,8 +153,7 @@ public:
 		openCl = std::make_shared<OpenCL>();
 		arrayPool = std::make_shared<AlignedArrayPool>();
 		mask = std::make_shared<Mask>(perspective, defaultBotHeight);
-		//TODO Increment IP addresses
-		rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + config["vision_ip"].as<std::string>("224.5.23.2") + ":" + std::to_string(config["stream_base_port"].as<int>(10100) + camId));
+		rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + config["stream_ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(config["stream_ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(config["stream_port"].as<int>(10100)));
 
 		botkernel = openCl->compile((
 #include "image2field.cl"
