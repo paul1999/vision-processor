@@ -49,7 +49,7 @@ void RTPStreamer::allocResources() {
 
 		codecCtx = avcodec_alloc_context3(codec);
 
-		codecCtx->bit_rate = 1500000;
+		codecCtx->bit_rate = 3500000;
 		codecCtx->width = width;
 		codecCtx->height = height;
 		codecCtx->time_base.num = 1;

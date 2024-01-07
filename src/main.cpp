@@ -10,6 +10,7 @@
 #include "GroundTruth.h"
 #include "messages_robocup_ssl_wrapper.pb.h"
 #include "AlignedArray.h"
+#include "source/opencvsource.h"
 
 #include <yaml-cpp/yaml.h>
 
@@ -122,6 +123,9 @@ public:
 			camera = std::make_unique<SpinnakerSource>(config["spinnaker_id"].as<int>(0));
 #endif
 
+		if(source == "OPENCV")
+			camera = std::make_unique<OpenCVSource>(config["opencv_path"].as<std::string>("/dev/video0"));
+
 		if(source == "IMAGES") {
 			auto paths = config["images"].as<std::vector<std::string>>();
 
@@ -139,6 +143,7 @@ public:
 		}
 
 		camId = config["cam_id"].as<int>(0);
+		cameraAmount = config["camera_amount"].as<int>(1);
 		defaultBotHeight = config["default_bot_height"].as<double>(150.0);
 		maxBotAcceleration = 1000*config["max_bot_acceleration"].as<double>(6.5);
 		sideBlobDistance = config["side_blob_distance"].as<double>(65.0);
@@ -172,6 +177,7 @@ public:
 	std::unique_ptr<VideoSource> camera = nullptr;
 
 	int camId;
+	int cameraAmount;
 	double defaultBotHeight;
 	double maxBotAcceleration;
 	double sideBlobDistance;
@@ -250,7 +256,6 @@ void trackObjects(Resources& r, const double timestamp, const cl::Buffer& clBuff
 
 		V2 bestPos = r.perspective->image2field({ (double)rawX, (double)rawY }, height);
 
-		//TODO CL_MAP_ALLOC_HOST_PTR instead of CL_MAP_USE_HOST_PTR if possible? <- Im hating NVIDIA
 		//TODO subsampling/supersampling (constant computational time/constant resolution)
 		//ssd starting from 16 pixels +2 steps...? (only half of computational cost increase)
 
@@ -352,13 +357,53 @@ void trackObjects(Resources& r, const double timestamp, const cl::Buffer& clBuff
 	filtered.insert(filtered.end(), tracked.begin(), tracked.end());
 }
 
+float l2norm(float dx, float dy) {
+	return sqrtf(dx*dx + dy*dy);
+}
+
+//Bases 0|0: rootEnd -> segmentStart
+std::pair<std::list<cv::Vec4f>::const_iterator, float> getBest(
+		const float maxRange, const float maxAngle, const float maxPerpendicularDistance,
+		const std::list<cv::Vec4f>& lines, const int rootBase, const int segBase) {
+	const cv::Vec4f& root = lines.front();
+	float rootAngle = atan2f(root[(rootBase+3)%4] - root[rootBase+1], root[(rootBase+2)%4] - root[rootBase]);
+
+	auto best = lines.cend();
+	float bestScore = MAXFLOAT;
+
+	auto it = lines.cbegin();
+	while(++it != lines.cend()) {
+		const cv::Vec4f& segment = *it;
+		float range = l2norm(segment[segBase] - root[(rootBase+2)%4], segment[segBase+1] - root[(rootBase+3)%4]);
+		if(range > maxRange)
+			continue;
+
+		float segmentAngle = atan2f(segment[(segBase+3)%4] - segment[segBase+1], segment[(segBase+2)%4] - segment[segBase]);
+		float angleDiff = atan2f(sinf(segmentAngle-rootAngle), cosf(segmentAngle-rootAngle));
+		if(abs(angleDiff) > maxAngle)
+			continue;
+
+		//TODO max perpendicular distance increasing with range?
+		float perpendicualarDistance = cosf(rootAngle) * (root[(rootBase+3)%4] - segment[segBase+1]) - sinf(rootAngle) * (root[(rootBase+2)%4] - segment[segBase]);
+		if(abs(perpendicualarDistance) > maxPerpendicularDistance)
+			continue;
+
+		if(perpendicualarDistance > bestScore)
+			continue;
+
+		std::cout << rootAngle << " " << segmentAngle << std::endl;
+		bestScore = perpendicualarDistance;
+		best = it;
+	}
+
+	return {best, bestScore};
+}
+
 int main() {
 	Resources r(YAML::LoadFile("config.yml"));
 
-	//cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
-
 	uint32_t frameNumber = 0;
-	bool gtLoaded = true;
+	bool gtLoaded = false;
 
 	while(true) {
 		std::shared_ptr<Image> img = r.camera->readImage();
@@ -375,8 +420,8 @@ int main() {
 			SSL_DetectionFrame* detection = wrapper.mutable_detection();
 			detection->set_frame_number(frameNumber++);
 			detection->set_t_capture(startTime);
-			//if(img->getTimestamp() != 0)
-			//	detection->set_t_capture_camera(img->getTimestamp());
+			if(img->getTimestamp() != 0)
+				detection->set_t_capture_camera(img->getTimestamp());
 			detection->set_camera_id(r.camId);
 
 			cl::Buffer clBuffer = r.openCl->toBuffer(false, img); //TODO aligned array with OpenCL buffer already provided
@@ -483,33 +528,165 @@ int main() {
 
 			detection->set_t_sent(getTime());
 			r.socket->send(wrapper);
+		} else if(r.socket->getGeometryVersion()) {
+			const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
+			int xSize = 1;
+			int ySize = 1;
+			for(int i = r.cameraAmount; i > 1; i /= 2) {
+				if(field.field_length()/xSize >= field.field_width()/ySize)
+					xSize *= 2;
+				else
+					ySize *= 2;
+			}
+
+			int xPos = 0;
+			int yPos = 0;
+			for(int i = r.camId % r.cameraAmount; i > 0; i--) {
+				yPos++;
+				if(yPos == ySize) {
+					yPos = 0;
+					xPos++;
+				}
+			}
+
+			int extentLarge = field.field_length()/xSize + (xPos == 0 ? field.boundary_width() : 0) + (xPos == xSize-1 ? field.boundary_width() : 0);
+			int extentSmall = field.field_width()/ySize + (yPos == 0 ? field.boundary_width() : 0) + (yPos == ySize-1 ? field.boundary_width() : 0);
+			if(extentLarge < extentSmall)
+				std::swap(extentSmall, extentLarge);
+
+			int cameraLarge = img->getWidth();
+			int cameraSmall = img->getHeight();
+			if(cameraLarge < cameraSmall)
+				std::swap(cameraSmall, cameraLarge);
+
+			float largeRatio = cameraLarge/(float)extentLarge;
+			float smallRatio = cameraSmall/(float)extentSmall;
+			if(largeRatio < smallRatio)
+				std::swap(smallRatio, largeRatio);
+
+			int halfLineWidth = std::ceil(largeRatio*field.line_thickness()/2.f);
+			std::cout << "Line width: " << halfLineWidth << std::endl;
+		} else {
+			//TODO only RGGB
+			cv::Mat cvImg(img->getHeight()*img->pixelHeight(), img->getWidth()*img->pixelWidth(), CV_8UC1, img->getData());
+			std::shared_ptr<Image> gray = BufferImage::create(PixelFormat::U8, img->getWidth()*2, img->getHeight()*2);
+			cv::Mat cvBgr;
+			cv::cvtColor(cvImg, cvBgr, cv::COLOR_BayerBG2BGR);
+			cv::Mat cvGray(gray->getHeight(), gray->getWidth(), CV_8UC1, gray->getData());
+			cv::cvtColor(cvImg, cvGray, cv::COLOR_BayerBG2GRAY);
+
+			int halfLineWidth = 4; //3, 7;
+			const int width = gray->getWidth();
+			std::shared_ptr<Image> thresholded = BufferImage::create(PixelFormat::U8, width, gray->getHeight());
+			cv::Mat cvThresholded(gray->getHeight(), width, CV_8UC1, thresholded->getData());
+
+			/*cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, {halfLineWidth,halfLineWidth});
+			//cv::morphologyEx(cvGray, cvThresholded, cv::MORPH_TOPHAT, kernel);*/
+
+			const uint8_t* data = gray->getData();
+			int diff = 5; //TODO config
+			for(int y = halfLineWidth; y < gray->getHeight() - halfLineWidth; y++) {
+				for(int x = halfLineWidth; x < width - halfLineWidth; x++) {
+					int value = data[x+y*width];
+					thresholded->getData()[x+y*width] = (
+																(value - data[x - halfLineWidth + y * width] > diff && value - data[x + halfLineWidth + y * width] > diff) ||
+																(value - data[x+ (y - halfLineWidth) * width] > diff && value - data[x + (y + halfLineWidth) * width] > diff)
+					) ? 255 : 0;
+				}
+			}
+
+			cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
+			cv::Mat4f linesMat;
+			detector->detect(cvThresholded, linesMat);
+			//std::cout << linesMat << std::endl;
+			/*for(int i = 0; i < width*gray->getHeight(); i++) {
+				img->getData()[i] = 0;
+			}*/
+			/*//Line thinning (Morphological) - Hough transform - peak picking
+			//Pixel resolution, angular resolution, accumulator threshold, min line length, max line gap
+			//cv::HoughLinesP(gray, linesMat, 10.0, 0.31415, 100, 100, 5);
+			cv::HoughLinesP(gray, linesMat, 20.0, 0.31415, 100, 100, 5);*/
+
+			std::list<cv::Vec4f> lines;
+			for(int i = 0; i < linesMat.rows; i++)
+				lines.push_back(linesMat(0, i));
+
+			std::cout << "Line segments: " << lines.size() << std::endl;
+
+			std::vector<std::vector<cv::Vec4f>> compoundLines;
+			auto it = lines.begin();
+			while(it != lines.end()) {
+				std::vector<cv::Vec4f> compound;
+				compound.push_back(*it);
+
+				cv::Vec4f root;
+				do {
+					root = compound.front();
+
+					//TODO certify functionality
+					//TODO compare values
+					auto bestEnd = getBest(20.0, 0.1, 4.0, lines, 2, 2); // segmentEnd -> rootStart
+					auto bestStart = getBest(20.0, 0.1, 4.0, lines, 2, 0); // segmentStart -> rootStart
+
+					if(bestEnd.second < bestStart.second) {
+						compound.insert(compound.cbegin(), *bestEnd.first);
+						lines.erase(bestEnd.first);
+					} else if(bestStart.second < MAXFLOAT) {
+						const cv::Vec4f& bestResult = *bestStart.first;
+						compound.insert(compound.cbegin(), cv::Vec4f(bestResult[2], bestResult[3], bestResult[0], bestResult[1]));
+						lines.erase(bestStart.first);
+					}
+				} while(root != compound.front());
+
+				do {
+					root = compound.back();
+
+					auto bestStart = getBest(20.0, 0.1, 4.0, lines, 0, 0); //rootEnd -> segmentStart
+					auto bestEnd = getBest(20.0, 0.1, 4.0, lines, 0, 2); //rootEnd -> segmentEnd
+
+					if(bestStart.second < bestEnd.second) {
+						compound.push_back(*bestStart.first);
+						lines.erase(bestStart.first);
+					} else if(bestEnd.second < MAXFLOAT) {
+						const cv::Vec4f& bestResult = *bestEnd.first;
+						compound.emplace_back(bestResult[2], bestResult[3], bestResult[0], bestResult[1]);
+						lines.erase(bestEnd.first);
+					}
+				} while(root != compound.back());
+
+				it = lines.erase(it);
+				compoundLines.push_back(compound);
+			}
+
+			std::cout << "Compound lines: " << compoundLines.size() << std::endl;
+			std::cout << "linesearch: " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
+
+			cv::imwrite("thresholded.png", cvThresholded);
+
+			detector->drawSegments(cvBgr, linesMat);
+			cv::imwrite("lineSegments.png", cvBgr);
+
+			for(const auto& compound : compoundLines) {
+				for(int i = 1; i < compound.size(); i++) {
+					cv::line(cvBgr, {(int)compound[i-1][2], (int)compound[i-1][3]}, {(int)compound[i][0], (int)compound[i][1]}, 0x00FF00);
+				}
+
+				for(const auto& segment : compound)
+					std::cout << " " << segment[0] << "," << segment[1] << "->" << segment[2] << "," << segment[3];
+				std::cout << std::endl;
+			}
+
+			cv::imwrite("lines.png", cvBgr);
+			img = thresholded;
 		}
-
-		/*cv::Mat cvImg(img->getHeight(), img->getWidth(), CV_8UC3, (uint8_t*)img->getData());
-
-		//BGR -> Grayscale
-		cv::Mat gray;
-		cv::cvtColor(cvImg, gray, cv::COLOR_BGR2GRAY);
-		//Threshold (128)
-		cv::threshold(gray, gray, 93, 255, cv::THRESH_BINARY);
-		//Line thinning (Morphological)
-		//Hough transform
-		//peak picking
-		cv::Mat4f lines;
-		//Pixel resolution, angular resolution, accumulator threshold, min line length, max line gap
-		//cv::HoughLinesP(gray, lines, 10.0, 0.31415, 100, 100, 5);
-		cv::HoughLinesP(gray, lines, 20.0, 0.31415, 100, 100, 5);
-		//detector->detect(gray, lines);
-		cv::Mat cvOut(cvImg.rows, cvImg.cols, CV_8UC3, cv::Scalar(0));
-		detector->drawSegments(cvOut, lines);
-		std::shared_ptr<Image> out = std::make_shared<CVImage>(cvOut, BGR888);
-		rtpStreamer.sendFrame(out);*/
 
 		r.rtpStreamer->sendFrame(img);
 		std::cout << "main " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 		std::this_thread::sleep_for(std::chrono::microseconds(33333 - (int64_t)((getTime() - startTime) * 1e6)));
+		break;
 	}
 
 	r.socket->close();
+	r.rtpStreamer = nullptr;
 	return 0;
 }

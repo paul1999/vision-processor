@@ -53,7 +53,7 @@ int Image::pixelWidth() {
 		case BGR888:
 			return 3;
 		case RGGB8:
-			return 2; // 2 Image planes, TODO 1.5
+			return 2;
 		case NV12:
 		case U8:
 		case I8:
@@ -64,7 +64,7 @@ int Image::pixelWidth() {
 int Image::pixelHeight() {
 	switch(format) {
 		case RGGB8:
-		case NV12:
+		case NV12: // TODO 1,5 Image planes
 			return 2;
 		case BGR888:
 		case F32:

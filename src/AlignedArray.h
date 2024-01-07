@@ -10,6 +10,9 @@ public:
 	explicit AlignedArray(int size): size(size) {
 		data = std::aligned_alloc(PAGE_SIZE, size);
 		buffer = cl::Buffer((cl_mem_flags) CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, (cl::size_type) size, data, nullptr);
+		//data = nullptr;
+		//buffer = cl::Buffer((cl_mem_flags) CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_WRITE, (cl::size_type) size, data, nullptr);
+		//std::cout << data << std::endl;
 	}
 	~AlignedArray() {
 		std::free(data);

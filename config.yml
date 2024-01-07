@@ -3,20 +3,27 @@
 # Camera ID handled by this VisionProcessor instance.
 #cam_id: 0
 
+# Total camera amount over the field
+#camera_amount: 1
+
 # Camera source type. Availability depending on libraries installed.
-# SPINNAKER, IMAGES
+# SPINNAKER, IMAGES, OPENCV
 source: IMAGES
 
 # Spinnaker camera id
 #spinnaker_id: 0
 
+#OpenCV camera device or video file path
+#opencv_path: /dev/video0
+
 # List of image file system paths for IMAGES source.
 #images: []
 images:
+#- "test-data/labempty/cam0/00000.png"
 - "test-data/rc2022/bots-balls-many-1/00000.png"
-- "test-data/rc2022/bots-balls-many-1/00001.png"
-- "test-data/rc2022/bots-balls-many-1/00002.png"
-- "test-data/rc2022/bots-balls-many-1/00003.png"
+#- "test-data/rc2022/bots-balls-many-1/00001.png"
+#- "test-data/rc2022/bots-balls-many-1/00002.png"
+#- "test-data/rc2022/bots-balls-many-1/00003.png"
 #- "test-data/rc2019/1/cam0/00000.png"
 #- "test-data/rc2019/1/cam0/00001.png"
 #- "test-data/rc2019/1/cam0/00002.png"

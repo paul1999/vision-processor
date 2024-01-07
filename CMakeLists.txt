@@ -11,7 +11,7 @@ set(CMAKE_VERBOSE_MAKEFILE 1)
 add_compile_options(-fopt-info-vec-optimized-missed)
 
 find_package(yaml-cpp REQUIRED)
-find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil)
 
