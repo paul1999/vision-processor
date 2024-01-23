@@ -37,8 +37,8 @@ images:
 #- "test-data/rc2022/bots-center-ball-1-1/00002.png"
 #- "test-data/rc2022/bots-center-ball-1-1/00003.png"
 
-# Default bot height in mm
-#default_bot_height: 150.0
+# Team bot heights yml file (heights in mm)
+#bot_heights_file: robot-heights.yml
 
 # Max tracked bot acceleration in m/s^2
 #max_bot_acceleration: 6.5
@@ -61,17 +61,20 @@ images:
 # Min tracking radius in mm
 #min_tracking_radius: 30.0
 
-# Vision multicast IP address
-#vision_ip: "224.5.23.2"
+network:
+  # Game controller multicast ip address
+  #gc_ip: "224.5.23.1"
+  # Game controller multicast port
+  #gc_port: 10003
 
-# Vision multicast port
-#vision_port: 10006
+  # Vision multicast IP address
+  #vision_ip: "224.5.23.2"
+  # Vision multicast port
+  #vision_port: 10006
 
-# Camera stream ip prefix
-#stream_ip_base_prefix: 224.5.23.
-
-# Camera stream ip end base (cam_id is added to maintain separation)
-#stream_ip_base_end: 100
-
-# Camera stream port
-#stream_port: 10100
+  # Camera stream ip prefix
+  #stream_ip_base_prefix: 224.5.23.
+  # Camera stream ip end base (cam_id is added to maintain separation)
+  #stream_ip_base_end: 100
+  # Camera stream port
+  #stream_port: 10100

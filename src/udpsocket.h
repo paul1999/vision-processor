@@ -17,6 +17,27 @@
 #endif
 
 
+class UDPSocket {
+public:
+	UDPSocket(const std::string& ip, uint16_t port);
+	~UDPSocket();
+
+	void send(google::protobuf::Message& msg);
+	void close();
+
+protected:
+	virtual void run() = 0;
+	void recv(google::protobuf::Message& msg) const;
+
+	bool closing = false;
+private:
+	int socket_;
+	struct sockaddr addr_;
+
+	std::thread receiver;
+};
+
+
 struct TrackingState {
 	int id; // -1: ball, 0-15: yellow bot, 16-31: blue bot
 	double timestamp;
@@ -25,30 +46,18 @@ struct TrackingState {
 };
 
 
-class UDPSocket
-{
+class VisionSocket: public UDPSocket {
 public:
-	UDPSocket(const std::string& ip, uint16_t port, float defaultBotHeight, float ballRadius);
-	~UDPSocket();
-
-	void send(google::protobuf::Message& msg);
-	void close();
+	VisionSocket(const std::string &ip, uint16_t port, float defaultBotHeight, float ballRadius): UDPSocket(ip, port), defaultBotHeight(defaultBotHeight), ballRadius(ballRadius) {}
 
 	int getGeometryVersion() const { return geometryVersion; }
 	SSL_GeometryData& getGeometry() { return geometry; }
 
 	std::map<int, std::vector<TrackingState>>& getTrackedObjects() { return trackedObjects; }
 private:
-	void receiverRun();
-	void recv(google::protobuf::Message& msg) const;
+	void run() override;
 
 	void detectionTracking(const SSL_DetectionFrame& detection);
-
-	int socket_;
-	struct sockaddr addr_;
-
-	std::thread receiver;
-	bool closing = false;
 
 	const float defaultBotHeight;
 	const float ballRadius;
@@ -57,4 +66,21 @@ private:
 	SSL_GeometryData geometry;
 
 	std::map<int, std::vector<TrackingState>> trackedObjects;
+};
+
+class GCSocket: public UDPSocket {
+public:
+	GCSocket(const std::string &ip, uint16_t port, const std::map<std::string, double>& botHeights);
+
+	double getDefaultBotHeight() const { return defaultBotHeight; }
+	double getYellowBotHeight() const { return yellowBotHeight; }
+	double getBlueBotHeight() const { return blueBotHeight; }
+
+private:
+	void run() override;
+
+	std::map<std::string, double> botHeights;
+	double defaultBotHeight;
+	double yellowBotHeight;
+	double blueBotHeight;
 };

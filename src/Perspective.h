@@ -28,7 +28,7 @@ typedef struct __attribute__ ((packed)) {
 
 class Perspective {
 public:
-	Perspective(std::shared_ptr<UDPSocket> socket, int camId): socket(std::move(socket)), camId(camId) {}
+	Perspective(std::shared_ptr<VisionSocket> socket, int camId): socket(std::move(socket)), camId(camId) {}
 	void geometryCheck();
 
 	V2 image2field(V2 pos, double height);
@@ -45,7 +45,7 @@ public:
 	RLEVector getRing(V2 pos, double height, double inner, double radius);
 
 private:
-	const std::shared_ptr<UDPSocket> socket;
+	const std::shared_ptr<VisionSocket> socket;
 	const int camId;
 
 	int geometryVersion = 0;

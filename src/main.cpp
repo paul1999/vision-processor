@@ -11,6 +11,7 @@
 #include "messages_robocup_ssl_wrapper.pb.h"
 #include "AlignedArray.h"
 #include "source/opencvsource.h"
+#include "distortion.h"
 
 #include <yaml-cpp/yaml.h>
 
@@ -144,7 +145,6 @@ public:
 
 		camId = config["cam_id"].as<int>(0);
 		cameraAmount = config["camera_amount"].as<int>(1);
-		defaultBotHeight = config["default_bot_height"].as<double>(150.0);
 		maxBotAcceleration = 1000*config["max_bot_acceleration"].as<double>(6.5);
 		sideBlobDistance = config["side_blob_distance"].as<double>(65.0);
 		centerBlobRadius = config["center_blob_radius"].as<double>(25.0);
@@ -153,12 +153,14 @@ public:
 		ballRadius = config["ball_radius"].as<double>(21.5);
 		minTrackingRadius = config["min_tracking_radius"].as<double>(30.0);
 
-		socket = std::make_shared<UDPSocket>(config["vision_ip"].as<std::string>("224.5.23.2"), config["vision_port"].as<int>(10006), defaultBotHeight, ballRadius);
+		YAML::Node network = config["network"];
+		gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(config["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());
+		socket = std::make_shared<VisionSocket>(network["vision_ip"].as<std::string>("224.5.23.2"), network["vision_port"].as<int>(10006), gcSocket->getDefaultBotHeight(), ballRadius);
 		perspective = std::make_shared<Perspective>(socket, camId);
 		openCl = std::make_shared<OpenCL>();
 		arrayPool = std::make_shared<AlignedArrayPool>();
-		mask = std::make_shared<Mask>(perspective, defaultBotHeight);
-		rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + config["stream_ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(config["stream_ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(config["stream_port"].as<int>(10100)));
+		mask = std::make_shared<Mask>(perspective, gcSocket->getDefaultBotHeight());
+		rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + network["stream_ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(network["stream_ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(network["stream_port"].as<int>(10100)));
 
 		botkernel = openCl->compile((
 #include "image2field.cl"
@@ -178,7 +180,6 @@ public:
 
 	int camId;
 	int cameraAmount;
-	double defaultBotHeight;
 	double maxBotAcceleration;
 	double sideBlobDistance;
 	double centerBlobRadius;
@@ -187,7 +188,8 @@ public:
 	double ballRadius;
 	double minTrackingRadius;
 
-	std::shared_ptr<UDPSocket> socket;
+	std::shared_ptr<GCSocket> gcSocket;
+	std::shared_ptr<VisionSocket> socket;
 	std::shared_ptr<Perspective> perspective;
 	std::shared_ptr<OpenCL> openCl;
 	std::shared_ptr<AlignedArrayPool> arrayPool;
@@ -238,10 +240,10 @@ void trackObjects(Resources& r, const double timestamp, const cl::Buffer& clBuff
 				r.openCl->run(r.sidekernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), height, (float)r.ballRadius, (RGB) {255, 128, 0}).wait();
 			} else if(object.id < 16) {
 				//r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), (float)r.defaultBotHeight, (float)r.centerBlobRadius, (RGB) {255, 255, 0}, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {0, 0, 0}).wait();
-				r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), (float)r.defaultBotHeight, (float)r.centerBlobRadius, (RGB) {255, 255, 128}, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {32, 32, 32}).wait();
+				r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), (float)r.gcSocket->getYellowBotHeight(), (float)r.centerBlobRadius, (RGB) {255, 255, 128}, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {32, 32, 32}).wait();
 			} else {
 				//r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), (float)r.defaultBotHeight, (float)r.centerBlobRadius, (RGB) {0, 128, 255}, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {0, 0, 0}).wait();
-				r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), (float)r.defaultBotHeight, (float)r.centerBlobRadius, (RGB) {0, 128, 255}, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {0, 0, 0}).wait();
+				r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(searchAreaSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), r.perspective->getClPerspective(), (float)r.gcSocket->getBlueBotHeight(), (float)r.centerBlobRadius, (RGB) {0, 128, 255}, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {0, 0, 0}).wait();
 			}
 
 			auto* result = resultArray->mapRead<float>();
@@ -391,12 +393,26 @@ std::pair<std::list<cv::Vec4f>::const_iterator, float> getBest(
 		if(perpendicualarDistance > bestScore)
 			continue;
 
-		std::cout << rootAngle << " " << segmentAngle << std::endl;
+		//std::cout << rootAngle << " " << segmentAngle << std::endl;
 		bestScore = perpendicualarDistance;
 		best = it;
 	}
 
 	return {best, bestScore};
+}
+
+Eigen::Vector2f undistort(const Eigen::Vector2f k, const int width, const Eigen::Vector2f p) {
+	Eigen::Vector2f n = p/width;
+	n(0) -= 0.5f;
+	n(1) -= 0.5f;
+
+	float r2 = n(0)*n(0) + n(1)*n(1);
+	float factor = 1 + k(0)*r2 + k(1)*r2*r2;
+
+	n *= factor;
+	n(0) += 0.5f;
+	n(1) += 0.5f;
+	return n*width;
 }
 
 int main() {
@@ -441,10 +457,10 @@ int main() {
 				}
 
 				for(const I2& blob : groundTruth.getYellow())
-					addBot(r.perspective, groundTruth, r.defaultBotHeight, blob, detection->add_robots_yellow());
+					addBot(r.perspective, groundTruth, r.gcSocket->getYellowBotHeight(), blob, detection->add_robots_yellow());
 
 				for(const I2& blob : groundTruth.getBlue())
-					addBot(r.perspective, groundTruth, r.defaultBotHeight, blob, detection->add_robots_blue());
+					addBot(r.perspective, groundTruth, r.gcSocket->getBlueBotHeight(), blob, detection->add_robots_blue());
 
 				gtLoaded = true;
 			} else {
@@ -666,17 +682,46 @@ int main() {
 			detector->drawSegments(cvBgr, linesMat);
 			cv::imwrite("lineSegments.png", cvBgr);
 
+			std::vector<std::vector<Eigen::Vector2f>> l;
 			for(const auto& compound : compoundLines) {
 				for(int i = 1; i < compound.size(); i++) {
-					cv::line(cvBgr, {(int)compound[i-1][2], (int)compound[i-1][3]}, {(int)compound[i][0], (int)compound[i][1]}, 0x00FF00);
+					cv::arrowedLine(cvBgr, {(int)compound[i-1][2], (int)compound[i-1][3]}, {(int)compound[i][0], (int)compound[i][1]}, CV_RGB(0, 0, 255));
 				}
 
-				for(const auto& segment : compound)
-					std::cout << " " << segment[0] << "," << segment[1] << "->" << segment[2] << "," << segment[3];
-				std::cout << std::endl;
+				std::vector<Eigen::Vector2f> points;
+				for(const auto& segment : compound) {
+					//std::cout << " " << segment[0] << "," << segment[1] << "->" << segment[2] << "," << segment[3];
+					//TODO horrendously wrong scaling
+					//points.emplace_back(segment[0]*2/img->getWidth() - 0.5f, segment[1]*2/img->getHeight() - 0.5f);
+					//points.emplace_back(segment[2]*2/img->getWidth() - 0.5f, segment[3]*2/img->getHeight() - 0.5f);
+					points.emplace_back(segment[0]/img->getWidth() - 0.5f, segment[1]/img->getWidth() - 0.5f);
+					points.emplace_back(segment[2]/img->getWidth() - 0.5f, segment[3]/img->getWidth() - 0.5f);
+				}
+				//std::cout << std::endl;
+				l.push_back(points);
 			}
 
 			cv::imwrite("lines.png", cvBgr);
+			Eigen::Vector2f k = distortion(l);
+
+			for(const auto& compound : compoundLines) {
+				if(compound.size() == 1)
+					continue;
+
+				cv::arrowedLine(cvBgr, {(int)compound.front()[0], (int)compound.front()[1]}, {(int)compound.back()[2], (int)compound.back()[3]}, CV_RGB(0, 255, 0));
+			}
+			cv::imwrite("lines2.png", cvBgr);
+
+			for(const auto& compound : compoundLines) {
+				if(compound.size() == 1)
+					continue;
+
+				Eigen::Vector2f start = undistort(k, img->getWidth(), {compound.front()[0], compound.front()[1]});
+				Eigen::Vector2f end = undistort(k, img->getWidth(), {compound.back()[2], compound.back()[3]});
+				cv::arrowedLine(cvBgr, {(int)start(0), (int)start(1)}, {(int)end(0), (int)end(1)}, CV_RGB(0, 255, 255));
+			}
+			cv::imwrite("lines3.png", cvBgr);
+
 			img = thresholded;
 		}
 

@@ -1,13 +1,13 @@
 #include "udpsocket.h"
 #include "messages_robocup_ssl_wrapper.pb.h"
+#include "ssl_gc_referee_message.pb.h"
 
 #include <cmath>
 #include <iostream>
 #include <cstring>
 #include <google/protobuf/util/message_differencer.h>
 
-UDPSocket::UDPSocket(const std::string &ip, uint16_t port, float defaultBotHeight, float ballRadius): defaultBotHeight(defaultBotHeight), ballRadius(ballRadius)
-{
+UDPSocket::UDPSocket(const std::string& ip, uint16_t port) {
 	//Adapted from https://gist.github.com/hostilefork/f7cae3dc33e7416f2dd25a402857b6c6
 
 #ifdef _WIN32
@@ -51,7 +51,7 @@ UDPSocket::UDPSocket(const std::string &ip, uint16_t port, float defaultBotHeigh
 		std::cerr << "Could not join multicast group" << std::endl;
 	}
 
-	receiver = std::thread(&UDPSocket::receiverRun, this);
+	receiver = std::thread(&UDPSocket::run, this);
 }
 
 UDPSocket::~UDPSocket() {
@@ -63,8 +63,7 @@ UDPSocket::~UDPSocket() {
 void UDPSocket::send(google::protobuf::Message& msg) {
 	std::string str;
 	msg.SerializeToString(&str);
-	if(sendto(socket_, str.data(), str.length(), 0, &addr_, sizeof(addr_)) < 0)
-	{
+	if(sendto(socket_, str.data(), str.length(), 0, &addr_, sizeof(addr_)) < 0) {
 		std::cerr << "[UDPSocket] UDP Frame send failed: " << strerror(errno) << " " << strerrorname_np(errno) << std::endl;
 	}
 }
@@ -83,15 +82,16 @@ void UDPSocket::recv(google::protobuf::Message& msg) const {
 		return;
 
 	if (bytesRead < 0) {
-		std::cerr << "[UDPSocket] UDP Frame recv failed: " << strerror(errno) << " " << strerrorname_np(errno) << std::endl;
+		std::cerr << "[VisionSocket] UDP Frame recv failed: " << strerror(errno) << " " << strerrorname_np(errno) << std::endl;
 		return;
 	}
 
 	msg.ParseFromArray(msgbuf, bytesRead);
 }
 
-void UDPSocket::receiverRun() {
-	std::cout << "[UDPSocket] Awaiting geometry" << std::endl;
+
+void VisionSocket::run() {
+	std::cout << "[VisionSocket] Awaiting geometry" << std::endl;
 	while(true) {
 		SSL_WrapperPacket wrapper;
 		recv(wrapper);
@@ -104,7 +104,7 @@ void UDPSocket::receiverRun() {
 
 		if(wrapper.has_geometry()) {
 			if(!google::protobuf::util::MessageDifferencer::Equals(geometry, wrapper.geometry())) {
-				std::cout << "[UDPSocket] New geometry received" << std::endl;
+				std::cout << "[VisionSocket] New geometry received" << std::endl;
 				geometry.CopyFrom(wrapper.geometry());
 				geometryVersion++;
 			}
@@ -149,7 +149,7 @@ static inline void trackBots(const double timestamp, const float defaultBotHeigh
 	}
 }
 
-void UDPSocket::detectionTracking(const SSL_DetectionFrame &detection) {
+void VisionSocket::detectionTracking(const SSL_DetectionFrame &detection) {
 	const double timestamp = detection.t_capture();
 
 	const std::vector<TrackingState>& previous = trackedObjects[detection.camera_id()];
@@ -196,4 +196,33 @@ void UDPSocket::detectionTracking(const SSL_DetectionFrame &detection) {
 	trackBots(timestamp, defaultBotHeight, detection.robots_blue(), previous, objects, 16);
 
 	trackedObjects[detection.camera_id()] = objects;
+}
+
+GCSocket::GCSocket(const std::string &ip, uint16_t port, const std::map<std::string, double>& botHeights): UDPSocket(ip, port), botHeights(botHeights), defaultBotHeight(0) {
+	for (const auto& entry : botHeights) {
+		defaultBotHeight += entry.second;
+	}
+	defaultBotHeight /= botHeights.size();
+	yellowBotHeight = defaultBotHeight;
+	blueBotHeight = defaultBotHeight;
+}
+
+void GCSocket::run() {
+	std::cout << "[GCSocket] Awaiting teams" << std::endl;
+	while(true) {
+		Referee referee;
+		recv(referee);
+		if(closing)
+			return;
+
+		if(botHeights.find(referee.yellow().name()) != botHeights.end() && botHeights[referee.yellow().name()] != yellowBotHeight) {
+			yellowBotHeight = botHeights[referee.yellow().name()];
+			std::cout << "[GCSocket] Updated yellow bot height to " << yellowBotHeight << "mm" << std::endl;
+		}
+
+		if(botHeights.find(referee.blue().name()) != botHeights.end() && botHeights[referee.blue().name()] != blueBotHeight) {
+			blueBotHeight = botHeights[referee.blue().name()];
+			std::cout << "[GCSocket] Updated blue bot height to " << blueBotHeight << "mm" << std::endl;
+		}
+	}
 }

@@ -60,6 +60,9 @@ V2 Perspective::image2field(V2 pos, double height) {
 			(pos.x - calib.principal_point_x()/2) / (calib.focal_length()/2),
 			(pos.y - calib.principal_point_y()/2) / (calib.focal_length()/2)
 	};
+	//normalized = (pos-principal) / focal_length
+	// distortion = 1 + a/f*a/f+b/f*b/f = 1 + a^2/f^2 + b^2/f^2
+	// a/f * (1 + ka^2/f^2 + kb^2/f^2), a/f * (1 + ka^2/f^2 + kb^2/f^2)
 
 	double distortion = 1.0 /*+ (normalized.x*normalized.x + normalized.y*normalized.y) * calib.distortion()*/; //TODO inversion
 	V3 camRay = rotation({distortion*normalized.x, distortion*normalized.y, 1.0}, rX, rY, rZ);
