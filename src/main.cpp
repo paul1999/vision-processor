@@ -620,7 +620,5 @@ int main() {
 		break;
 	}
 
-	r.socket->close();
-	r.rtpStreamer = nullptr;
 	return 0;
 }

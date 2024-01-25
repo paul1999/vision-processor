@@ -55,6 +55,11 @@ UDPSocket::UDPSocket(const std::string& ip, uint16_t port) {
 }
 
 UDPSocket::~UDPSocket() {
+	closing = true;
+	shutdown(socket_, SHUT_RD);
+	::close(socket_);
+	receiver.join();
+
 #ifdef _WIN32
 	WSACleanup();
 #endif
@@ -66,12 +71,6 @@ void UDPSocket::send(const google::protobuf::Message& msg) {
 	if(sendto(socket_, str.data(), str.length(), 0, &addr_, sizeof(addr_)) < 0) {
 		std::cerr << "[UDPSocket] UDP Frame send failed: " << strerror(errno) << " " << strerrorname_np(errno) << std::endl;
 	}
-}
-
-void UDPSocket::close() {
-	closing = true;
-	::close(socket_);
-	receiver.join();
 }
 
 void UDPSocket::recv(google::protobuf::Message& msg) const {

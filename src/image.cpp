@@ -22,7 +22,7 @@ const PixelFormat PixelFormat::BGR888 = PixelFormat(3, 1, true, CV_8UC3, "void k
 const PixelFormat PixelFormat::U8 = PixelFormat(1, 1, false, CV_8UC1, "void kernel c(global const uchar* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = in[i]; }");
 const PixelFormat PixelFormat::I8 = PixelFormat(1, 1, false, CV_8UC1, "void kernel c(global const char* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i] + 127; }");
 const PixelFormat PixelFormat::F32 = PixelFormat(4, 1, false, CV_32FC1, "void kernel c(global const float* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i]; }");  //(uchar)fabs(in[i]) + 127
-//TODO incorrect size du to planar architecture (1.5)
+//TODO oversized du to planar architecture (1.5)
 const PixelFormat PixelFormat::NV12 = PixelFormat(1, 2, true, CV_8UC1, "void kernel c(global const uchar* in, global uchar* out) {"
 															  "	const int yi = get_global_id(0) + get_global_id(1)*get_global_size(0);"
 															  "	const int uvi = UV_OFFSET + get_global_id(0)/2 + get_global_id(1)/2*get_global_size(0);"

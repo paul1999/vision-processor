@@ -23,7 +23,6 @@ public:
 	~UDPSocket();
 
 	void send(const google::protobuf::Message& msg);
-	void close();
 
 protected:
 	virtual void run() = 0;
