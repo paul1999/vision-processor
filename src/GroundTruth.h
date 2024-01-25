@@ -1,28 +1,17 @@
 #pragma once
 
-
 #include <string>
 #include <vector>
 
-struct I2 {
-	int x;
-	int y;
-};
+#include <google/protobuf/message.h>
+
 
 class GroundTruth {
 public:
-	explicit GroundTruth(const std::string& source);
+	explicit GroundTruth(const std::string& source, int cameraId, double timestamp);
 
-	const std::vector<I2>& getYellow() const { return yellow; }
-	const std::vector<I2>& getBlue() const { return blue; }
-	const std::vector<I2>& getOrange() const { return orange; }
-	const std::vector<I2>& getGreen() const { return green; }
-	const std::vector<I2>& getPink() const { return pink; }
+	const google::protobuf::Message& getMessage() const { return *message; }
 
 private:
-	std::vector<I2> yellow;
-	std::vector<I2> blue;
-	std::vector<I2> orange;
-	std::vector<I2> green;
-	std::vector<I2> pink;
+	std::unique_ptr<google::protobuf::Message> message;
 };

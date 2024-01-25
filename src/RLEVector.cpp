@@ -54,10 +54,6 @@ std::vector<Run> RLEVector::getPart(int start, int end) {
 	return result;
 }
 
-void RLEVector::subtract(const RLEVector &vector) {
-	//TODO
-}
-
 static inline bool lowerOrEqual(const Run& value, const Run& element) {
 	//return value.y < element.y || (value.y == element.y && value.x <= element.x); //Das letzte Element, für das diese Bedingung gilt oder .end()
 	//return element.y < value.y || (element.y == value.y && element.x < value.x); //first value where this is false (lower_bound)
@@ -95,9 +91,9 @@ void RLEVector::add(const RLEVector &vector) {
 	}
 }
 
-std::shared_ptr<AlignedArray> RLEVector::scanArea(AlignedArrayPool& arrayPool) {
+std::shared_ptr<CLArray> RLEVector::scanArea(AlignedArrayPool& arrayPool) {
 	auto alignedArray = arrayPool.acquire<int>(2*size());
-	int* array = alignedArray->mapWrite<int>();
+	CLMap<int> array = alignedArray->write<int>();
 	int i = 0;
 	for(const Run& run : runs) {
 		for(int x = run.x; x < run.x+run.length; x++) {
@@ -105,6 +101,5 @@ std::shared_ptr<AlignedArray> RLEVector::scanArea(AlignedArrayPool& arrayPool) {
 			array[i++] = run.y;
 		}
 	}
-	alignedArray->unmap();
 	return alignedArray;
 }

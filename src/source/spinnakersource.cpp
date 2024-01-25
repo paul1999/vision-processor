@@ -1,14 +1,21 @@
+#ifdef SPINNAKER
+
 #include "spinnakersource.h"
 
-#ifdef SPINNAKER
 
 class SpinnakerImage : public Image {
 public:
 	// Image size halfed (RGB resolution)
-	explicit SpinnakerImage(const Spinnaker::ImagePtr& pImage): Image(RGGB8, (int)pImage->GetWidth() / 2, (int)pImage->GetHeight() / 2, pImage->GetTimeStamp() / 1e9, (unsigned char*)pImage->GetData()), pImage(pImage) {}
-	~SpinnakerImage() override { pImage->Release(); }
+	// TODO timestamp unusable due to bad resolution: pImage->GetTimeStamp() / 1e9
+	SpinnakerImage(SpinnakerSource& source, const Spinnaker::ImagePtr& pImage): Image(*source.borrow(pImage)), source(source), pImage(pImage) {}
+
+	~SpinnakerImage() override {
+		pImage->Release();
+		source.restore(*this);
+	}
 
 private:
+	SpinnakerSource& source;
 	const Spinnaker::ImagePtr pImage;
 };
 
@@ -48,12 +55,14 @@ SpinnakerSource::SpinnakerSource(int id) {
 
 	int width = pCam->WidthMax.GetValue();
 	int height = pCam->HeightMax.GetValue();
-	std::vector<void*> bufferPtrs;
 	for(int i = 0; i < 3; i++) {
-		std::shared_ptr<Image> buffer = BufferImage::create(RGGB8, width/2, height/2);
-		bufferPtrs.push_back(buffer->getData());
-		buffers.push_back(buffer);
+		std::shared_ptr<Image> buffer = std::make_shared<Image>(&PixelFormat::RGGB8, width/2, height/2);
+		buffers[buffer] = std::make_unique<CLMap<uint8_t>>(buffer->write<uint8_t>());
 	}
+
+	std::vector<void*> bufferPtrs;
+	for (auto& item: buffers)
+		bufferPtrs.push_back(**item.second);
 
 	pCam->SetBufferOwnership(Spinnaker::SPINNAKER_BUFFER_OWNERSHIP_USER);
 	pCam->SetUserBuffers(bufferPtrs.data(), buffers.size(), width*height);
@@ -66,12 +75,35 @@ SpinnakerSource::SpinnakerSource(int id) {
 }
 
 std::shared_ptr<Image> SpinnakerSource::readImage() {
-	return std::make_shared<SpinnakerImage>(pCam->GetNextImage());
+	return std::make_shared<SpinnakerImage>(*this, pCam->GetNextImage());
 }
 
 SpinnakerSource::~SpinnakerSource() {
 	pCam->EndAcquisition();
 }
 
-#endif
+std::shared_ptr<Image> SpinnakerSource::borrow(const Spinnaker::ImagePtr& pImage) {
+	void* data = pImage->GetData();
+	for (auto& item : buffers) {
+		if(**item.second == data) {
+			item.second = nullptr;
+			return item.first;
+		}
+	}
 
+	std::cerr << "[Spinnaker] Did not get image with given buffer, creating new buffer; expect OpenCL performance degradation" << std::endl;
+	std::shared_ptr<Image> image = std::make_shared<Image>(&PixelFormat::RGGB8, (int)pImage->GetWidth() / 2, (int)pImage->GetHeight() / 2, (unsigned char*)pImage->GetData());
+	buffers[image] = nullptr;
+	return image;
+}
+
+void SpinnakerSource::restore(const Image& image) {
+	for (auto& item : buffers) {
+		if(item.first->buffer == image.buffer) {
+			item.second = std::make_unique<CLMap<uint8_t>>(item.first->write<uint8_t>());
+			return;
+		}
+	}
+}
+
+#endif

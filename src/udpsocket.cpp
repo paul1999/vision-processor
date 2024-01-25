@@ -60,7 +60,7 @@ UDPSocket::~UDPSocket() {
 #endif
 }
 
-void UDPSocket::send(google::protobuf::Message& msg) {
+void UDPSocket::send(const google::protobuf::Message& msg) {
 	std::string str;
 	msg.SerializeToString(&str);
 	if(sendto(socket_, str.data(), str.length(), 0, &addr_, sizeof(addr_)) < 0) {

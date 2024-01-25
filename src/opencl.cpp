@@ -57,7 +57,3 @@ cl::Kernel OpenCL::compile(const std::string& code, const std::string& options) 
 	program.createKernels(&kernels);
 	return kernels[0];
 }
-
-cl::Buffer OpenCL::toBuffer(bool read, std::shared_ptr<Image>& image) {
-	return {(cl_mem_flags) CL_MEM_USE_HOST_PTR | (read ? CL_MEM_READ_ONLY : CL_MEM_WRITE_ONLY), (cl::size_type) image->getWidth()*image->getHeight()*image->pixelSize(), image->getData(), nullptr};
-}

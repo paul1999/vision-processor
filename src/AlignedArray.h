@@ -1,60 +1,24 @@
 #pragma once
 
-#include <CL/opencl.hpp>
-#include <sys/user.h>
-#include <iostream>
+#include "CLArray.h"
+
 #include <map>
 
-class AlignedArray {
-public:
-	explicit AlignedArray(int size): size(size) {
-		data = std::aligned_alloc(PAGE_SIZE, size);
-		buffer = cl::Buffer((cl_mem_flags) CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, (cl::size_type) size, data, nullptr);
-		//data = nullptr;
-		//buffer = cl::Buffer((cl_mem_flags) CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_WRITE, (cl::size_type) size, data, nullptr);
-		//std::cout << data << std::endl;
-	}
-	~AlignedArray() {
-		std::free(data);
-	}
+//Acquiring PAGE_SIZE (adapted from https://stackoverflow.com/a/2460809 CC BY-SA 2.5 by Giuseppe Guerrini)
+#ifdef _WIN32
+#include <w32api/ddk/winddk.h>
+#else
+#include <sys/user.h>
+#include <any>
 
-	template<typename T>
-	const T* mapRead() {
-		map = cl::enqueueMapBuffer(buffer, true, CL_MAP_READ, 0, size);
-		if(map == NULL) // Spurious -56 error codes from the NVIDIA driver solved by trying again...
-			map = cl::enqueueMapBuffer(buffer, true, CL_MAP_READ, 0, size);
-		return (T*)map;
-	}
-	template<typename T>
-	T* mapWrite() {
-		map = cl::enqueueMapBuffer(buffer, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, size);
-		return (T*)map;
-	}
-	template<typename T>
-	T* mapPartialWrite() {
-		map = cl::enqueueMapBuffer(buffer, true, CL_MAP_WRITE, 0, size);
-		return (T*)map;
-	}
-	void unmap() {
-		cl::enqueueUnmapMemObject(buffer, map);
-	}
-
-	[[nodiscard]] cl::Buffer& getBuffer() { return buffer; }
-
-private:
-	const int size;
-
-	void* data;
-	void* map;
-	cl::Buffer buffer;
-};
+#endif
 
 //TODO threadsafety?
 //Pool design adapted from Jonathan Mee https://stackoverflow.com/a/27828584 CC BY-SA 3.0
 class AlignedArrayPool {
 public:
 	template<typename T>
-	std::shared_ptr<AlignedArray> acquire(int size) {
+	std::shared_ptr<CLArray> acquire(int size) {
 		size *= sizeof(T);
 		if(size % PAGE_SIZE != 0) {
 			size -= size % PAGE_SIZE;
@@ -63,15 +27,15 @@ public:
 
 		auto& sizedPool = pool[size];
 
-		auto iterator = std::find_if(sizedPool.begin(), sizedPool.end(), [](const std::shared_ptr<AlignedArray>& i){return i.use_count() == 1;});
+		auto iterator = std::find_if(sizedPool.begin(), sizedPool.end(), [](const std::shared_ptr<CLArray>& i){return i.use_count() == 1;});
 		if(iterator != sizedPool.end())
 			return *iterator;
 
-		auto array = std::make_shared<AlignedArray>(size);
+		auto array = std::make_shared<CLArray>(size);
 		sizedPool.push_back(array);
 		return std::move(array);
 	}
 
 private:
-	std::map<int, std::vector<std::shared_ptr<AlignedArray>>> pool;
+	std::map<int, std::vector<std::shared_ptr<CLArray>>> pool;
 };

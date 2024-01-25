@@ -97,7 +97,7 @@ void RTPStreamer::allocResources() {
 		exit(1);
 	}
 
-	buffer = std::make_unique<AlignedArray>(width*height*3/2);
+	buffer = std::make_unique<CLArray>(width * height * 3 / 2);
 
 	frame = av_frame_alloc();
 	frame->format = codecCtx->pix_fmt;
@@ -109,57 +109,13 @@ void RTPStreamer::allocResources() {
 	pkt = av_packet_alloc();
 
 	int uvOffset = width*height;
-	uint8_t* uv = buffer->mapWrite<uint8_t>() + uvOffset;
-	std::string options = "-D UV_OFFSET=" + std::to_string(uvOffset);
-	switch(this->format) {
-		case RGGB8:
-			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) {"
-											 "	const int i0 = 2*get_global_id(0) + 2*get_global_id(1)*2*get_global_size(0);"
-											 "	const int i1 = i0 + 2*get_global_size(0);"
-											 "	const int uvout = UV_OFFSET + get_global_id(0)/2*2 + get_global_id(1)/2*get_global_size(0);"
-											 "	const short r = in[i0]; const short g0 = in[i0+1]; const short g1 = in[i1]; const short b = in[i1+1];"
-											 "	out[get_global_id(0) + get_global_id(1)*get_global_size(0)] = (uchar)((66*r + 64*g0 + 65*g1 + 25*b) / 256 + 16);"
-											 "	out[uvout] = (uchar)((-38*r + -37*g0 + -37*g1 + 112*b) / 256 + 128);"
-											 "  out[uvout+1] = (uchar)((112*r + -47*g0 + -47*g1 + -18*b) / 256 + 128);"
-											 "}", options);
-			break;
-		case BGR888:
-			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) {"
-											 "	const int i = 3*get_global_id(0) + get_global_id(1)*3*get_global_size(0);"
-											 "	const int uvout = UV_OFFSET + get_global_id(0)/2*2 + get_global_id(1)/2*get_global_size(0);"
-											 "	const short b = in[i]; const short g = in[i+1]; const short r = in[i+2];"
-											 "	out[get_global_id(0) + get_global_id(1)*get_global_size(0)] = (uchar)((66*r + 129*g + 25*b) / 256 + 16);"
-											 "	out[uvout] = (uchar)((-38*r + -74*g + 112*b) / 256 + 128);"
-											 "  out[uvout+1] = (uchar)((112*r + -94*g + -18*b) / 256 + 128);"
-											 "}", options);
-			break;
-		case U8:
-			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = in[i]; }");
-			for(int i = 0; i < width * (height/2); i++)
-				uv[i] = 127;
-			break;
-		case I8:
-			converter = openCl->compile("void kernel c(global const char* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i] + 127; }");
-			for(int i = 0; i < width * (height/2); i++)
-				uv[i] = 127;
-			break;
-		case F32:
-			converter = openCl->compile("void kernel c(global const float* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i]; }"); //(uchar)fabs(in[i]) + 127
-			for(int i = 0; i < width * (height/2); i++)
-				uv[i] = 127;
-			break;
-		case NV12:
-			converter = openCl->compile("void kernel c(global const uchar* in, global uchar* out) {"
-											 "	const int yi = get_global_id(0) + get_global_id(1)*get_global_size(0);"
-											 "	const int uvi = UV_OFFSET + get_global_id(0)/2 + get_global_id(1)/2*get_global_size(0);"
-											 "	out[yi] = in[yi];"
-											 "	out[uvi] = in[uvi];"
-											 "	out[uvi+1] = in[uvi+1];"
-											 "}", options);
-			break;
-	}
+	converter = openCl->compile(this->format->clKernelToNV12, "-D UV_OFFSET=" + std::to_string(uvOffset));
 
-	buffer->unmap();
+	if(!this->format->color) {
+		CLMap<uint8_t> uv = buffer->write<uint8_t>();
+		for(int i = 0; i < width * (height/2); i++)
+			uv[uvOffset + i] = 127;
+	}
 }
 
 void RTPStreamer::freeResources() {
@@ -201,25 +157,25 @@ void RTPStreamer::encoderRun() {
 			queue = nullptr;
 		}
 
-		if(image->getWidth() != width || image->getHeight() != height || image->getFormat() != format) {
+		if(image->width != width || image->height != height || image->format != format) {
 			freeResources();
-			width = image->getWidth();
-			height = image->getHeight();
-			format = image->getFormat();
+			width = image->width;
+			height = image->height;
+			format = image->format;
 		}
 
 		allocResources();
 
 		auto startTime = std::chrono::high_resolution_clock::now();
-		cl::Buffer inBuffer = openCl->toBuffer(false, image);
-		openCl->run(converter, cl::EnqueueArgs(cl::NDRange(width, height)), inBuffer, buffer->getBuffer()).wait();
+		openCl->run(converter, cl::EnqueueArgs(cl::NDRange(width, height)), image->buffer, buffer->buffer).wait();
 
-		auto* data = (uint8_t*)buffer->mapRead<uint8_t>();
-		frame->pts = currentFrameId++;
-		frame->data[0] = data;
-		frame->data[1] = data + width*height;
-		avcodec_send_frame(codecCtx, frame);
-		buffer->unmap();
+		{
+			CLMap<uint8_t> data = buffer->read<uint8_t>();
+			frame->pts = currentFrameId++;
+			frame->data[0] = *data;
+			frame->data[1] = *data + width*height;
+			avcodec_send_frame(codecCtx, frame);
+		}
 
 		int status = avcodec_receive_packet(codecCtx, pkt);
 		if(status == 0) {

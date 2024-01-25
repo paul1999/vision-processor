@@ -22,7 +22,7 @@ public:
 	UDPSocket(const std::string& ip, uint16_t port);
 	~UDPSocket();
 
-	void send(google::protobuf::Message& msg);
+	void send(const google::protobuf::Message& msg);
 	void close();
 
 protected:

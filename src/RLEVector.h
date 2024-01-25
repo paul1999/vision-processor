@@ -18,12 +18,11 @@ public:
 	int size();
 
 	void add(const RLEVector& vector);
-	void subtract(const RLEVector& vector);
 	std::vector<Run> getPart(int start, int end);
 
 	const std::vector<Run>& getRuns() { return runs; }
 
-	std::shared_ptr<AlignedArray> scanArea(AlignedArrayPool& arrayPool);
+	std::shared_ptr<CLArray> scanArea(AlignedArrayPool& arrayPool);
 
 private:
 	std::vector<Run> runs;

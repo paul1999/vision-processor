@@ -11,7 +11,7 @@ public:
 	Mask(std::shared_ptr<Perspective> perspective, double maxBotHeight): perspective(std::move(perspective)), maxBotHeight(maxBotHeight) {}
 
 	void geometryCheck();
-	std::shared_ptr<AlignedArray> scanArea(AlignedArrayPool& arrayPool);
+	std::shared_ptr<CLArray> scanArea(AlignedArrayPool& arrayPool);
 
 	RLEVector& getRuns() { return mask; }
 

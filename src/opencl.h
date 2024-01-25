@@ -18,8 +18,6 @@ public:
 		return functor(args, std::forward<Ts>(ts)...);
 	}
 
-	static cl::Buffer toBuffer(bool read, std::shared_ptr<Image>& image);
-
 private:
 	bool searchDevice(const std::vector<cl::Platform>& platforms, cl_device_type type);
 

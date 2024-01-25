@@ -37,7 +37,7 @@ private:
 	const int frametime_us;
 	int width = 0;
 	int height = 0;
-	PixelFormat format = U8;
+	const PixelFormat* format = &PixelFormat::U8;
 
 	bool stopEncoding = false;
 	std::thread encoder;
@@ -53,6 +53,6 @@ private:
 	AVFrame* frame = nullptr;
 	AVPacket* pkt = nullptr;
 
-	std::unique_ptr<AlignedArray> buffer = nullptr;
+	std::unique_ptr<CLArray> buffer = nullptr;
 	cl::Kernel converter;
 };
