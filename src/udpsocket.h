@@ -72,15 +72,13 @@ class GCSocket: public UDPSocket {
 public:
 	GCSocket(const std::string &ip, uint16_t port, const std::map<std::string, double>& botHeights);
 
-	double getDefaultBotHeight() const { return defaultBotHeight; }
-	double getYellowBotHeight() const { return yellowBotHeight; }
-	double getBlueBotHeight() const { return blueBotHeight; }
+	double maxBotHeight;
+	double defaultBotHeight;
+	double yellowBotHeight;
+	double blueBotHeight;
 
 private:
 	void run() override;
 
 	std::map<std::string, double> botHeights;
-	double defaultBotHeight;
-	double yellowBotHeight;
-	double blueBotHeight;
 };

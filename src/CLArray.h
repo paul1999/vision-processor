@@ -44,7 +44,7 @@ public:
 	template<typename T> CLMap<T> write() { return std::move(CLMap<T>(buffer, size, CL_MAP_WRITE_INVALIDATE_REGION)); }
 	template<typename T> CLMap<T> readWrite() { return std::move(CLMap<T>(buffer, size, CL_MAP_WRITE)); }
 
-	const cl::Buffer buffer; //TODO releaseMemObject
+	const cl::Buffer buffer; //TODO releaseMemObject?
 
 private:
 	const int size;

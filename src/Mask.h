@@ -8,7 +8,7 @@
 
 class Mask {
 public:
-	Mask(std::shared_ptr<Perspective> perspective, double maxBotHeight): perspective(std::move(perspective)), maxBotHeight(maxBotHeight) {}
+	Mask(std::shared_ptr<Perspective> perspective, double maxBotHeight, double ballRadius): perspective(std::move(perspective)), maxBotHeight(maxBotHeight), ballRadius(ballRadius) {}
 
 	void geometryCheck();
 	std::shared_ptr<CLArray> scanArea(AlignedArrayPool& arrayPool);
@@ -16,6 +16,7 @@ public:
 	RLEVector& getRuns() { return mask; }
 
 private:
+	double ballRadius;
 	double maxBotHeight;
 	std::shared_ptr<Perspective> perspective;
 

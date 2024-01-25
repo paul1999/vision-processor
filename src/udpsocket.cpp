@@ -198,8 +198,11 @@ void VisionSocket::detectionTracking(const SSL_DetectionFrame &detection) {
 	trackedObjects[detection.camera_id()] = objects;
 }
 
-GCSocket::GCSocket(const std::string &ip, uint16_t port, const std::map<std::string, double>& botHeights): UDPSocket(ip, port), botHeights(botHeights), defaultBotHeight(0) {
+GCSocket::GCSocket(const std::string &ip, uint16_t port, const std::map<std::string, double>& botHeights): UDPSocket(ip, port), botHeights(botHeights), defaultBotHeight(0), maxBotHeight(0) {
 	for (const auto& entry : botHeights) {
+		if(entry.second > maxBotHeight)
+			maxBotHeight = entry.second;
+
 		defaultBotHeight += entry.second;
 	}
 	defaultBotHeight /= botHeights.size();
