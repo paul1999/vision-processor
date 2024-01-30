@@ -55,11 +55,7 @@ std::vector<Run> RLEVector::getPart(int start, int end) {
 }
 
 static inline bool lowerOrEqual(const Run& value, const Run& element) {
-	//return value.y < element.y || (value.y == element.y && value.x <= element.x); //Das letzte Element, für das diese Bedingung gilt oder .end()
-	//return element.y < value.y || (element.y == value.y && element.x < value.x); //first value where this is false (lower_bound)
-	//return value.y < element.y || (value.y == element.y && value.x < element.x); //first value where this is true
 	return element.y < value.y || (element.y == value.y && element.x <= value.x);
-	//return element.y < value.y || (element.y == value.y && element.x < value.x);
 }
 
 void RLEVector::add(const Run& run) {
@@ -85,9 +81,46 @@ void RLEVector::add(const Run& run) {
 	}
 }
 
+void RLEVector::remove(const Run &run) {
+	auto rpos = std::upper_bound(runs.rbegin(), runs.rend(), run, lowerOrEqual); // rpos prior to first conflicting run
+	auto pos = rpos.base(); //base points to first element after rpos
+
+	if(rpos == runs.rend() || rpos->y < run.y || rpos->x + rpos->length < run.x) {
+		// at start or rpos completely prior to first run
+	} else if (rpos->x < run.x) {
+		// rpos starts prior to run
+		int length = rpos->length;
+		rpos->length = run.x - rpos->x;
+		if(rpos->x + length > run.x + run.length) {
+			// and stops prior to run
+			add(Run{run.x+run.length, rpos->y, (rpos->x+length) - (run.x+run.length)});
+			return;
+		}
+	} else {
+		pos--;
+	}
+
+	// from here on run start guaranteed prior to pos
+	while(pos != runs.end() && run.y == pos->y && run.x + run.length >= pos->x) {
+		if (pos->x + pos->length > run.x + run.length) {
+			pos->length = (pos->x + pos->length) - (run.x + run.length);
+			pos->x = run.x + run.length;
+			return;
+		}
+
+		pos = runs.erase(pos);
+	}
+}
+
 void RLEVector::add(const RLEVector &vector) {
 	for(const auto& run : vector.runs) {
 		add(run);
+	}
+}
+
+void RLEVector::remove(const RLEVector &vector) {
+	for(const auto& run : vector.runs) {
+		remove(run);
 	}
 }
 

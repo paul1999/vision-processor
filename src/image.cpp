@@ -77,12 +77,12 @@ Image Image::toRGGB() const {
 	if(format == &PixelFormat::RGGB8) {
 		return *this;
 	} else if(format == &PixelFormat::BGR888) {
-		Image image(&PixelFormat::RGGB8, width, height);
-		CLMap<uint8_t> read = image.read<uint8_t>();
+		Image image(&PixelFormat::RGGB8, width/2, height/2);
+		CLMap<uint8_t> read = ::Image::read<uint8_t>();
 		CLMap<uint8_t> write = image.write<uint8_t>();
-		for(int y = 0; y < 2*height; y++) {
-			for(int x = 0; x < 2*width; x++) {
-				write[x + 2 * width * y] = (y % 2 ?
+		for(int y = 0; y < height; y++) {
+			for(int x = 0; x < width; x++) {
+				write[x + width * y] = (y % 2 ?
 						(x%2 ? read[3 * (x + width * y) + 0] : read[3 * (x + width * y) + 1]) :
 						(x%2 ? read[3 * (x + width * y) + 1] : read[3 * (x + width * y) + 2])
 				);
@@ -97,7 +97,10 @@ Image Image::toRGGB() const {
 
 CVMap::CVMap(const Image& image, int clRWType): buffer(image.buffer) {
 	int size = image.height*image.width*image.format->pixelSize();
-	map = cl::enqueueMapBuffer(buffer, true, clRWType, 0, size);
+	int error;
+	map = cl::enqueueMapBuffer(buffer, true, clRWType, 0, size, nullptr, nullptr, &error);
+	if(error != 0)
+		std::cerr << "[CLMap] enqueue map buffer returned " << error << std::endl;
 
 	if(image.format->cvType == CV_8UC1)
 		mat = cv::Mat(image.height*image.format->rowStride, image.width*image.format->stride, image.format->cvType, map);

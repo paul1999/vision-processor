@@ -9,7 +9,10 @@ template<typename T>
 class CLMap {
 public:
 	explicit CLMap(const cl::Buffer& buffer, int size, int clRWType): buffer(buffer) {
-		map = (T*) cl::enqueueMapBuffer(buffer, true, clRWType, 0, size);
+		int error;
+		map = (T*) cl::enqueueMapBuffer(buffer, true, clRWType, 0, size, nullptr, nullptr, &error);
+		if(error != 0)
+			std::cerr << "[CLMap] enqueue map buffer returned " << error << std::endl;
 	}
 	~CLMap() {
 		if(unmoved)
@@ -38,14 +41,12 @@ class CLArray {
 public:
 	explicit CLArray(int size): size(size), buffer((cl_mem_flags) CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_WRITE, (cl::size_type) size, nullptr, nullptr) {}
 	//data = std::aligned_alloc(PAGE_SIZE, size);
-	CLArray(void* data, const int size) : size(size), buffer((cl_mem_flags) CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, (cl::size_type) size, data, nullptr) {}
+	CLArray(void* data, const int size) : size(size), buffer((cl_mem_flags) CL_MEM_COPY_HOST_PTR | CL_MEM_READ_WRITE, (cl::size_type) size, data, nullptr) {}
 
 	template<typename T> CLMap<T> read() const { return std::move(CLMap<T>(buffer, size, CL_MAP_READ)); }
 	template<typename T> CLMap<T> write() { return std::move(CLMap<T>(buffer, size, CL_MAP_WRITE_INVALIDATE_REGION)); }
 	template<typename T> CLMap<T> readWrite() { return std::move(CLMap<T>(buffer, size, CL_MAP_WRITE)); }
 
 	const cl::Buffer buffer; //TODO releaseMemObject?
-
-private:
 	const int size;
 };

@@ -73,40 +73,37 @@ void UDPSocket::send(const google::protobuf::Message& msg) {
 	}
 }
 
-void UDPSocket::recv(google::protobuf::Message& msg) const {
-	char msgbuf[65535];
-
-	int bytesRead = read(socket_, msgbuf, 65535);
-	if(closing)
-		return;
-
-	if (bytesRead < 0) {
-		std::cerr << "[VisionSocket] UDP Frame recv failed: " << strerror(errno) << " " << strerrorname_np(errno) << std::endl;
-		return;
-	}
-
-	msg.ParseFromArray(msgbuf, bytesRead);
-}
-
-
-void VisionSocket::run() {
-	std::cout << "[VisionSocket] Awaiting geometry" << std::endl;
+void UDPSocket::run() {
 	while(true) {
-		SSL_WrapperPacket wrapper;
-		recv(wrapper);
+		char msgbuf[65535];
+
+		int bytesRead = read(socket_, msgbuf, 65535);
 		if(closing)
 			return;
 
-		if(wrapper.has_detection()) {
-			detectionTracking(wrapper.detection());
+		if (bytesRead < 0) {
+			std::cerr << "[UDPSocket] UDP Frame recv failed: " << strerror(errno) << " " << strerrorname_np(errno) << std::endl;
+			return;
 		}
 
-		if(wrapper.has_geometry()) {
-			if(!google::protobuf::util::MessageDifferencer::Equals(geometry, wrapper.geometry())) {
-				std::cout << "[VisionSocket] New geometry received" << std::endl;
-				geometry.CopyFrom(wrapper.geometry());
-				geometryVersion++;
-			}
+		parse(msgbuf, bytesRead);
+	}
+}
+
+
+void VisionSocket::parse(char *data, int length) {
+	SSL_WrapperPacket wrapper;
+	wrapper.ParseFromArray(data, length);
+
+	if(wrapper.has_detection()) {
+		detectionTracking(wrapper.detection());
+	}
+
+	if(wrapper.has_geometry()) {
+		if(!google::protobuf::util::MessageDifferencer::Equals(geometry, wrapper.geometry())) {
+			std::cout << "[VisionSocket] New geometry received" << std::endl;
+			geometry.CopyFrom(wrapper.geometry());
+			geometryVersion++;
 		}
 	}
 }
@@ -197,6 +194,7 @@ void VisionSocket::detectionTracking(const SSL_DetectionFrame &detection) {
 	trackedObjects[detection.camera_id()] = objects;
 }
 
+
 GCSocket::GCSocket(const std::string &ip, uint16_t port, const std::map<std::string, double>& botHeights): UDPSocket(ip, port), botHeights(botHeights), defaultBotHeight(0), maxBotHeight(0) {
 	for (const auto& entry : botHeights) {
 		if(entry.second > maxBotHeight)
@@ -209,22 +207,17 @@ GCSocket::GCSocket(const std::string &ip, uint16_t port, const std::map<std::str
 	blueBotHeight = defaultBotHeight;
 }
 
-void GCSocket::run() {
-	std::cout << "[GCSocket] Awaiting teams" << std::endl;
-	while(true) {
-		Referee referee;
-		recv(referee);
-		if(closing)
-			return;
+void GCSocket::parse(char *data, int length) {
+	Referee referee;
+	referee.ParseFromArray(data, length);
 
-		if(botHeights.find(referee.yellow().name()) != botHeights.end() && botHeights[referee.yellow().name()] != yellowBotHeight) {
-			yellowBotHeight = botHeights[referee.yellow().name()];
-			std::cout << "[GCSocket] Updated yellow bot height to " << yellowBotHeight << "mm" << std::endl;
-		}
+	if(botHeights.find(referee.yellow().name()) != botHeights.end() && botHeights[referee.yellow().name()] != yellowBotHeight) {
+		yellowBotHeight = botHeights[referee.yellow().name()];
+		std::cout << "[GCSocket] Updated yellow bot height to " << yellowBotHeight << "mm" << std::endl;
+	}
 
-		if(botHeights.find(referee.blue().name()) != botHeights.end() && botHeights[referee.blue().name()] != blueBotHeight) {
-			blueBotHeight = botHeights[referee.blue().name()];
-			std::cout << "[GCSocket] Updated blue bot height to " << blueBotHeight << "mm" << std::endl;
-		}
+	if(botHeights.find(referee.blue().name()) != botHeights.end() && botHeights[referee.blue().name()] != blueBotHeight) {
+		blueBotHeight = botHeights[referee.blue().name()];
+		std::cout << "[GCSocket] Updated blue bot height to " << blueBotHeight << "mm" << std::endl;
 	}
 }

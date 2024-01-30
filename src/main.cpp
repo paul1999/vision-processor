@@ -319,6 +319,95 @@ Eigen::Vector2f undistort(const Eigen::Vector2f k, const int width, const Eigen:
 	return n*width;
 }
 
+void getAreas(Resources& r, RLEVector& field, RLEVector& other, std::vector<RLEVector>& blobs, int type) {
+	for(auto& camera : r.socket->getTrackedObjects()) {
+		for (const auto& object: camera.second) {
+			V2 position = r.perspective->field2image({object.x, object.y, object.z});
+
+			RLEVector area = r.perspective->getRing(position, object.z, 0.0, 20.0 + (object.id == -1 ? r.ballRadius : 90.0));
+			field.remove(area);
+			other.add(area);
+
+			if(type * 16 <= object.id && (type + 1) * 16 > object.id) { //Targeted
+				RLEVector blob = r.perspective->getRing(position, object.z, 0.0, 20.0 + (object.id == -1 ? r.ballRadius : r.centerBlobRadius));
+
+				other.remove(blob);
+				blobs.push_back(blob);
+			}
+		}
+	}
+}
+
+float getMin(Resources& r, Image& img, RLEVector& area, bool bot, RGB& rgb, const std::string& name) {
+	int areaSize = area.size();
+	auto posArray = area.scanArea(*r.arrayPool);
+	auto resultArray = r.arrayPool->acquire<float>(areaSize);
+	int error;
+	if(bot) {
+		//error = r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), img.buffer, posArray->buffer, resultArray->buffer, r.perspective->getClPerspective(), (float)r.gcSocket->defaultBotHeight, (float)r.centerBlobRadius, rgb, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {0, 0, 0}).wait();
+		error = r.openCl->run(r.sidekernel, cl::EnqueueArgs(cl::NDRange(areaSize)), img.buffer, posArray->buffer, resultArray->buffer, r.perspective->getClPerspective(), (float)r.gcSocket->defaultBotHeight, (float)r.centerBlobRadius, rgb).wait();
+	} else {
+		//TODO ggf. sidekernel
+		error = r.openCl->run(r.ballkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), img.buffer, posArray->buffer, resultArray->buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius, rgb).wait();
+	}
+
+	if(error != 0)
+		std::cerr << "Kernel " << error << std::endl;
+
+	auto result = resultArray->read<float>();
+	float min = *std::min_element(*result, *result + areaSize);
+
+	auto pos = posArray->read<int>();
+	Image gray = img.toGrayscale();
+	auto cv = gray.cvReadWrite();
+	for(int i = 0; i < posArray->size/4; i+=2) {
+		int x = pos[i];
+		int y = pos[i+1];
+		cv->data[2*x + 2*y*gray.width] = std::max(255 - (result[i/2]-min), 0.f);
+	}
+	cv::imwrite(name, *cv);
+
+	return min;
+}
+
+void printSSR(Resources& r, Image& img, int type, RGB rgb) {
+	RLEVector field = r.mask->getRuns();
+	RLEVector other;
+	std::vector<RLEVector> blobs;
+	getAreas(r, field, other, blobs, type);
+	/*Image bgr = img.toBGR();
+	CVMap cv = bgr.cvReadWrite();
+	for(auto& run : field.getRuns()) {
+		cv::line(*cv, cv::Point(run.x*2, run.y*2), cv::Point((run.x+run.length)*2, run.y*2), CV_RGB(0, 255, 0));
+	}
+	cv::imwrite("field" + std::to_string(type) + ".png", *cv);
+	for(auto& run : other.getRuns()) {
+		cv::line(*cv, cv::Point(run.x*2, run.y*2), cv::Point((run.x+run.length)*2, run.y*2), CV_RGB(0, 0, 255));
+	}
+	cv::imwrite("other" + std::to_string(type) + ".png", *cv);
+	for(auto& blob : blobs) {
+		for(auto& run : blob.getRuns()) {
+			cv::line(*cv, cv::Point(run.x*2, run.y*2), cv::Point((run.x+run.length)*2, run.y*2), CV_RGB(255, 0, 0));
+		}
+	}
+	cv::imwrite("blobs" + std::to_string(type) + ".png", *cv);*/
+
+	float bestField = getMin(r, img, field, type >= 0, rgb, "field" + std::to_string(type) + ".png");
+	float bestOther = getMin(r, img, other, type >= 0, rgb, "other" + std::to_string(type) + ".png");
+
+	float bestBlob = MAXFLOAT;
+	float worstBlob = 0.0;
+	for(auto& blob : blobs) {
+		float result = getMin(r, img, blob, type >= 0, rgb, "blob" + std::to_string(type) + "-" + std::to_string((unsigned long long) &blob) + ".png");
+		if(bestBlob > result)
+			bestBlob = result;
+		if(worstBlob < result)
+			worstBlob = result;
+	}
+
+	std::cout << "[SSR " << type << "] Field:" << (bestField / worstBlob) << " Other:" << (bestOther / worstBlob) << " Best:" << (bestField / bestBlob) << std::endl;
+}
+
 int main() {
 	Resources r(YAML::LoadFile("config.yml"));
 
@@ -343,87 +432,23 @@ int main() {
 				detection->set_t_capture_camera(img->timestamp);
 			detection->set_camera_id(r.camId);
 
-			std::vector<int> filtered;
 			Image raw = img->toRGGB();
 			//TODO track object capability in other colorspaces
+			/*std::vector<int> filtered;
 			trackObjects(r, timestamp, raw.buffer, r.socket->getTrackedObjects()[r.camId], detection, filtered);
 			for(auto& tracked : r.socket->getTrackedObjects()) {
 				trackObjects(r, startTime, raw.buffer, tracked.second, detection, filtered);
-			}
+			}*/
 
 			//TODO thresholding (detection/search)
 
-			/*auto posArray = mask.scanArea(*arrayPool);
-			int maskSize = mask.getRuns().size();
-			auto resultArray = arrayPool->acquire<float>(maskSize);
-			//yellow peak SNR 1.8 PSR 1.15
-			//openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {255, 255, 0}, 45.0f, (RGB) {0, 0, 0}).wait();
-			//yellow optimized color peak SNR 5.8 openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {109, 150, 120}, 45.0f, (RGB) {42, 57, 73}).wait();
-			//blue openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(result.size())), clBuffer, clPos, clResult, perspective->getClPerspective(), (float)defaultBotHeight, 25.0f, (RGB) {0, 128, 255}).wait();
-			//ball
-			openCl->run(ballkernel, cl::EnqueueArgs(cl::NDRange(maskSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), 21.5f, 21.5f, (RGB) {255, 128, 0}).wait();
-			///openCl->run(botkernel, cl::EnqueueArgs(cl::NDRange(maskSize)), clBuffer, posArray->getBuffer(), resultArray->getBuffer(), perspective->getClPerspective(), 21.5f, 21.5f, (RGB) {255, 128, 0}, 21.5f, (RGB){0, 0, 0}).wait();
-
-			auto* result = resultArray->mapRead<float>();
-			float min = *std::min_element(result, result + maskSize);
-			float factor = 255 / (*std::max_element(result, result + maskSize) - min);
-			std::cout << factor << " " << min << std::endl;
-
-			auto* pos = posArray->mapRead<int>();
-			std::shared_ptr<Image> r = BufferImage::create(PixelFormat::F32, img->getWidth(), img->getHeight());
-			for(int i = 0; i < maskSize; i++) {
-				((float*)r->getData())[img->getWidth()*pos[2*i+1] + pos[2*i]] = (result[i] - min) * factor;
-			}
-			resultArray->unmap();
-			posArray->unmap();
-			rtpStreamer.sendFrame(r);*/
-
-			/*for(const Run& run : r.mask->getRuns().getRuns()) {
-				//TODO only RGGB
-				uint8_t* row0 = img->getData() + 4*img->getWidth()*run.y + 2*run.x;
-				uint8_t* row1 = row0 + 2*img->getWidth();
-				for(int i = 0; i < run.length; i++) {
-					row0[2*i + 0] = 127;
-					row0[2*i + 1] = 127;
-					row1[2*i + 0] = 127;
-					row1[2*i + 1] = 127;
-				}
-			}*/
-
-			/*float min = *std::min_element(result.begin(), result.end());
-			float sidelobeMin = INFINITY;
-			for(int i = 0; i < result.size(); i++) {
-				if(result[i] < sidelobeMin && !yellowGroundTruth.contains(pos[2*i], pos[2*i+1])) {
-					sidelobeMin = result[i];
-				}
-			}*/
-			/*float max = *std::max_element(result.begin(), result.end());
-			float sidelobeMax = -INFINITY;
-			for(int i = 0; i < result.size(); i++) {
-				if(result[i] > sidelobeMax && !yellowGroundTruth.contains(pos[2 * i], pos[2 * i + 1])) {
-					sidelobeMax = result[i];
-				}
-			}
-
-			//float threshold = min*1.15;
-			/*float threshold = max*0.9;
-			for(int i = 0; i < result.size(); i++) {
-				if(result[i] > threshold) {
-					uint8_t* row0 = img->getData() + 4*img->getWidth()*pos[2*i+1] + 2*pos[2*i];
-					uint8_t* row1 = row0 + 2*img->getWidth();
-					row0[0] = 255;
-					row0[1] = 255;
-					row1[0] = 255;
-					row1[1] = 0;
-				}
-			}
-			//std::sort(result.begin(), result.end());
-			//std::cout << "minmax " << result[0] << " " << result[result.size()/2] << " " << result[result.size()-1] << std::endl;
-			//std::cout << "min sidelobe " << min << " " << sidelobeMin << std::endl;
-			std::cout << "max sidelobe " << max << " " << sidelobeMax << std::endl;*/
+			printSSR(r, raw, 0, (RGB) {255, 255, 0});
+			printSSR(r, raw, 1, (RGB) {0, 128, 255});
+			printSSR(r, raw, -1, (RGB) {255, 128, 0});
 
 			detection->set_t_sent(getTime());
-			r.socket->send(wrapper);
+			//r.socket->send(wrapper);
+			break;
 		} else if(r.socket->getGeometryVersion()) {
 			const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
 			int xSize = 1;
@@ -462,9 +487,9 @@ int main() {
 
 			int halfLineWidth = std::ceil(largeRatio*field.line_thickness()/2.f);
 			std::cout << "Line width: " << halfLineWidth << std::endl;
-		} else {
+		//} else {
 			Image gray = img->toGrayscale();
-			int halfLineWidth = 4; //3, 7;
+			//int halfLineWidth = 4; //3, 7;
 			const int width = gray.width;
 			std::shared_ptr<Image> thresholded = std::make_shared<Image>(&PixelFormat::U8, width, gray.height);
 
@@ -617,7 +642,6 @@ int main() {
 		r.rtpStreamer->sendFrame(img);
 		std::cout << "main " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 		std::this_thread::sleep_for(std::chrono::microseconds(33333 - (int64_t)((getTime() - startTime) * 1e6)));
-		break;
 	}
 
 	return 0;

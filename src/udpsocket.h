@@ -24,12 +24,11 @@ public:
 
 	void send(const google::protobuf::Message& msg);
 
-protected:
-	virtual void run() = 0;
-	void recv(google::protobuf::Message& msg) const;
+private:
+	virtual void parse(char* data, int length) = 0;
+	void run();
 
 	bool closing = false;
-private:
 	int socket_;
 	struct sockaddr addr_;
 
@@ -54,7 +53,7 @@ public:
 
 	std::map<int, std::vector<TrackingState>>& getTrackedObjects() { return trackedObjects; }
 private:
-	void run() override;
+	void parse(char* data, int length) override;
 
 	void detectionTracking(const SSL_DetectionFrame& detection);
 
@@ -77,7 +76,7 @@ public:
 	double blueBotHeight;
 
 private:
-	void run() override;
+	void parse(char* data, int length) override;
 
 	std::map<std::string, double> botHeights;
 };
