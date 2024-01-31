@@ -79,4 +79,12 @@ inline void area(const Perspective perspective, const float height, const I2 pos
 		min->y--;
 	while(inRange(center, image2field(perspective, height, (V2) {(float)pos.x, (float)max->y+1}), sqRadius))
 		max->y++;
+	if(min->x < 0)
+		min->x = 0;
+	if(min->y < 0)
+		min->y = 0;
+	if(max->x >= perspective.shape[0])
+		max->x = perspective.shape[0];
+	if(max->y >= perspective.shape[1])
+		max->y = perspective.shape[1];
 }

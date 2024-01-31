@@ -57,6 +57,9 @@ const double patternAngles[4] = {
 class Resources {
 public:
 	explicit Resources(YAML::Node config) {
+		openCl = std::make_shared<OpenCL>();
+		arrayPool = std::make_shared<AlignedArrayPool>();
+
 		auto source = config["source"].as<std::string>("SPINNAKER");
 
 #ifdef SPINNAKER
@@ -92,13 +95,12 @@ public:
 		maxBallVelocity = 1000*config["max_ball_velocity"].as<double>(8.0);
 		ballRadius = config["ball_radius"].as<double>(21.5);
 		minTrackingRadius = config["min_tracking_radius"].as<double>(30.0);
+		groundTruth = config["ground_truth"].as<std::string>("");
 
-		YAML::Node network = config["network"];
+		YAML::Node network = config["network"].IsDefined() ? config["network"] : YAML::Node();
 		gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(config["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());
 		socket = std::make_shared<VisionSocket>(network["vision_ip"].as<std::string>("224.5.23.2"), network["vision_port"].as<int>(10006), gcSocket->defaultBotHeight, ballRadius);
 		perspective = std::make_shared<Perspective>(socket, camId);
-		openCl = std::make_shared<OpenCL>();
-		arrayPool = std::make_shared<AlignedArrayPool>();
 		mask = std::make_shared<Mask>(perspective, gcSocket->maxBotHeight, ballRadius);
 		rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + network["stream_ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(network["stream_ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(network["stream_port"].as<int>(10100)));
 
@@ -134,6 +136,8 @@ public:
 	double maxBallVelocity;
 	double ballRadius;
 	double minTrackingRadius;
+
+	std::string groundTruth;
 
 	std::shared_ptr<GCSocket> gcSocket;
 	std::shared_ptr<VisionSocket> socket;
@@ -377,6 +381,7 @@ std::pair<float, float> getMinAndMedian(Resources& r, Image& img, RLEVector& are
 			int x = pos[i];
 			int y = pos[i+1];
 			cv->data[2*x + 2*y*gray.width] = std::max(255 - (result[i/2]-min), 0.f);
+			cv->data[2*x + 2*y*gray.width+1] = 255;
 		}
 		cv::imwrite(name, *cv);
 	}
@@ -408,10 +413,11 @@ void printSSR(Resources& r, Image& img, int type, RGB rgb) {
 	std::cout << "[SSR Min " << type << "] Field:" << (bestField.first / worstBlob) << " Other:" << (bestOther.first / worstBlob) << " Best:" << (bestField.first / bestBlob) << std::endl;
 }
 
-int main() {
-	Resources r(YAML::LoadFile("config.yml"));
+int main(int argc, char* argv[]) {
+	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
 
-	r.socket->send(GroundTruth("test-data/rc2022/bots-balls-many-1/gt.yml", r.camId, getTime()).getMessage());
+	if(!r.groundTruth.empty())
+		r.socket->send(GroundTruth(r.groundTruth, r.camId, getTime()).getMessage());
 
 	uint32_t frameId = 0;
 	while(true) {
@@ -438,6 +444,7 @@ int main() {
 			Image diff(raw.format, raw.width, raw.height, raw.timestamp);
 			r.openCl->run(r.diffkernel, cl::EnqueueArgs(cl::NDRange((diff.width-1)*raw.format->stride, (diff.height-1)*raw.format->rowStride)), raw.buffer, diff.buffer, raw.format->stride, raw.format->rowStride).wait();
 			std::cout << "diff " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
+			cv::imwrite("diff.png", *diff.toBGR().cvRead());
 			//TODO track object capability in other colorspaces
 			/*std::vector<int> filtered;
 			trackObjects(r, timestamp, raw.buffer, r.socket->getTrackedObjects()[r.camId], detection, filtered);
@@ -643,9 +650,6 @@ int main() {
 
 			img = thresholded;
 		}
-		/*Image diff(img->format, img->width, img->height, img->timestamp);
-		r.openCl->run(r.diffkernel, cl::EnqueueArgs(cl::NDRange((diff.width-1)*img->format->stride, (diff.height-1)*img->format->rowStride)), img->buffer, diff.buffer, img->format->stride, img->format->rowStride).wait();
-		cv::imwrite("diff.png", *diff.cvRead());*/
 
 		r.rtpStreamer->sendFrame(img);
 		std::cout << "main " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
