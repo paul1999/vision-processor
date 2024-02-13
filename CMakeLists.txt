@@ -38,4 +38,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE src ${YAML_INCLUDE_DIRS} ${Op
 target_link_libraries(${PROJECT_NAME} ${YAML_CPP_LIBRARIES} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL ${Protobuf_LIBRARIES})
 target_compile_definitions(${PROJECT_NAME} PRIVATE CL_HPP_TARGET_OPENCL_VERSION=300)
 
+file(GLOB_RECURSE HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h")
+target_precompile_headers(${PROJECT_NAME} PRIVATE ${HEADERS})
+
 install(TARGETS ${PROJECT_NAME} DESTINATION /usr/local/bin)

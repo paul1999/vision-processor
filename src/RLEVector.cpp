@@ -76,7 +76,7 @@ void RLEVector::add(const Run& run) {
 
 	auto next = pos+1;
 	while(next != runs.end() && pos->x + pos->length >= next->x && pos->y == next->y) {
-		pos->length = next->x + next->length - pos->x;
+		pos->length = std::max(next->x + next->length, pos->x + pos->length) - pos->x;
 		next = runs.erase(next);
 	}
 }

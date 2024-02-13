@@ -1,19 +1,10 @@
 #include <iostream>
+#include <yaml-cpp/yaml.h>
 
-#include "source/imagesource.h"
-#include "rtpstreamer.h"
-#include "source/spinnakersource.h"
-#include "opencl.h"
-#include "udpsocket.h"
-#include "Perspective.h"
-#include "Mask.h"
-#include "GroundTruth.h"
 #include "messages_robocup_ssl_wrapper.pb.h"
-#include "AlignedArray.h"
-#include "source/opencvsource.h"
+#include "Resources.h"
 #include "distortion.h"
 
-#include <yaml-cpp/yaml.h>
 
 double getTime() {
 	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
@@ -54,110 +45,10 @@ const double patternAngles[4] = {
 
 //const int patternLUT[16] = { 9, 15, 4, 7, 0, 3, 10, 14, 13, 11, 5, 6, 1, 2, 12, 8 };
 
-class Resources {
-public:
-	explicit Resources(YAML::Node config) {
-		openCl = std::make_shared<OpenCL>();
-		arrayPool = std::make_shared<AlignedArrayPool>();
-
-		auto source = config["source"].as<std::string>("SPINNAKER");
-
-#ifdef SPINNAKER
-		if(source == "SPINNAKER")
-			camera = std::make_unique<SpinnakerSource>(config["spinnaker_id"].as<int>(0));
-#endif
-
-		if(source == "OPENCV")
-			camera = std::make_unique<OpenCVSource>(config["opencv_path"].as<std::string>("/dev/video0"));
-
-		if(source == "IMAGES") {
-			auto paths = config["images"].as<std::vector<std::string>>();
-
-			if(paths.empty()) {
-				std::cerr << "Source IMAGES needs at least one image." << std::endl;
-				return;
-			}
-
-			camera = std::make_unique<ImageSource>(paths);
-		}
-
-		if(camera == nullptr) {
-			std::cerr << "No camera/image source defined." << std::endl;
-			return;
-		}
-
-		camId = config["cam_id"].as<int>(0);
-		cameraAmount = config["camera_amount"].as<int>(1);
-		maxBotAcceleration = 1000*config["max_bot_acceleration"].as<double>(6.5);
-		sideBlobDistance = config["side_blob_distance"].as<double>(65.0);
-		centerBlobRadius = config["center_blob_radius"].as<double>(25.0);
-		sideBlobRadius = config["side_blob_radius"].as<double>(20.0);
-		maxBallVelocity = 1000*config["max_ball_velocity"].as<double>(8.0);
-		ballRadius = config["ball_radius"].as<double>(21.5);
-		minTrackingRadius = config["min_tracking_radius"].as<double>(30.0);
-		groundTruth = config["ground_truth"].as<std::string>("");
-
-		YAML::Node network = config["network"].IsDefined() ? config["network"] : YAML::Node();
-		gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(config["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());
-		socket = std::make_shared<VisionSocket>(network["vision_ip"].as<std::string>("224.5.23.2"), network["vision_port"].as<int>(10006), gcSocket->defaultBotHeight, ballRadius);
-		perspective = std::make_shared<Perspective>(socket, camId);
-		mask = std::make_shared<Mask>(perspective, gcSocket->maxBotHeight, ballRadius);
-		rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + network["stream_ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(network["stream_ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(network["stream_port"].as<int>(10100)));
-
-		diffkernel = openCl->compile((
-#include "diff.cl"
-		));
-		ringkernel = openCl->compile((
-#include "image2field.cl"
-#include "ringssd.cl"
-		), "-D RGGB");
-		botkernel = openCl->compile((
-#include "image2field.cl"
-#include "botssd.cl"
-		), "-D RGGB");
-		sidekernel = openCl->compile((
-#include "image2field.cl"
-#include "ssd.cl"
-		), "-D RGGB");
-		ballkernel = openCl->compile((
-#include "image2field.cl"
-#include "ballssd.cl"
-		), "-D RGGB");
-	}
-
-	std::unique_ptr<VideoSource> camera = nullptr;
-
-	int camId;
-	int cameraAmount;
-	double maxBotAcceleration;
-	double sideBlobDistance;
-	double centerBlobRadius;
-	double sideBlobRadius;
-	double maxBallVelocity;
-	double ballRadius;
-	double minTrackingRadius;
-
-	std::string groundTruth;
-
-	std::shared_ptr<GCSocket> gcSocket;
-	std::shared_ptr<VisionSocket> socket;
-	std::shared_ptr<Perspective> perspective;
-	std::shared_ptr<OpenCL> openCl;
-	std::shared_ptr<AlignedArrayPool> arrayPool;
-	std::shared_ptr<Mask> mask;
-	std::shared_ptr<RTPStreamer> rtpStreamer;
-
-	cl::Kernel diffkernel;
-	cl::Kernel ringkernel;
-	cl::Kernel botkernel;
-	cl::Kernel sidekernel;
-	cl::Kernel ballkernel;
-};
-
 void trackObjects(Resources& r, const double timestamp, const cl::Buffer& clBuffer, const std::vector<TrackingState>& objects, SSL_DetectionFrame* detection, std::vector<int>& filtered) {
 	std::vector<int> tracked;
 	for(const TrackingState& object : objects) {
-		if(std::any_of(filtered.begin(), filtered.end(), [&] (int i) { return i == object.id; }))
+		if(std::any_of(filtered.begin(), filtered.end(), [&] (int i) { return i == object.id; })) //TODO better filtering of ball areas
 			continue;
 
 		double timeDelta = timestamp - object.timestamp;
@@ -287,19 +178,6 @@ void trackObjects(Resources& r, const double timestamp, const cl::Buffer& clBuff
 			bot->set_height(height);
 		}
 
-		/*RLEVector debugArea = r.perspective->getRing({ (double)rawX, (double)rawY }, height, 15.0, 25.0);
-		for(const Run& run : debugArea.getRuns()) {
-			//TODO only RGGB
-			uint8_t* row0 = *data + 4*r.perspective->getWidth()*run.y + 2*run.x;
-			uint8_t* row1 = row0 + 2*r.perspective->getWidth();
-			for(int i = 0; i < run.length; i++) {
-				row0[2*i + 0] = 255;
-				row0[2*i + 1] = 255;
-				row1[2*i + 0] = 255;
-				row1[2*i + 1] = 255;
-			}
-		}*/
-
 		if(std::none_of(tracked.begin(), tracked.end(), [&] (int i) { return i == object.id; }))
 			tracked.push_back(object.id);
 	}
@@ -337,12 +215,12 @@ void getAreas(Resources& r, RLEVector& field, RLEVector& other, std::vector<RLEV
 		for (const auto& object: camera.second) {
 			V2 position = r.perspective->field2image({object.x, object.y, object.z});
 
-			RLEVector area = r.perspective->getRing(position, object.z, 0.0, 20.0 + (object.id == -1 ? r.ballRadius : 90.0));
+			RLEVector area = r.perspective->getRing(position, object.z, 0.0, object.id == -1 ? r.ballRadius : 90.0);
 			field.remove(area);
 			other.add(area);
 
 			if(type * 16 <= object.id && (type + 1) * 16 > object.id) { //Targeted
-				RLEVector blob = r.perspective->getRing(position, object.z, 0.0, 20.0 + (object.id == -1 ? r.ballRadius : r.centerBlobRadius));
+				RLEVector blob = r.perspective->getRing(position, object.z, 0.0, object.id == -1 ? r.ballRadius : r.centerBlobRadius);
 
 				other.remove(blob);
 				blobs.push_back(blob);
@@ -370,8 +248,26 @@ std::pair<float, float> getMinAndMedian(Resources& r, Image& img, RLEVector& are
 		std::cerr << "Kernel " << error << std::endl;
 
 	auto result = resultArray->read<float>();
-	std::sort(*result, *result+areaSize);
-	float min = result[0];
+	auto min = *std::min_element(*result, *result+areaSize);
+	/*int minId = std::distance(*result, min);
+	RLEVector ring = r.perspective->getRing((V2){(double)posArray->read<int>()[2*minId], (double)posArray->read<int>()[2*minId+1]}, bot ? r.gcSocket->defaultBotHeight : r.ballRadius, (bot ? r.centerBlobRadius : r.ballRadius) - 5.0, (bot ? r.centerBlobRadius : r.ballRadius) + 5.0);
+	int rr = 0;
+	int g = 0;
+	int b = 0;
+	auto map = img.read<uint8_t>();
+	for(const Run& run : ring.getRuns()) {
+		for(int x = run.x; x < run.x+run.length; x++) {
+			//TODO RGGB only
+			rr += map[2*x + 4*run.y*img.width];
+			g += map[2*x + 4*run.y*img.width + 1];
+			g += map[2*x + (2*run.y + 1)*2*img.width];
+			b += map[2*x + (2*run.y + 1)*2*img.width + 1];
+		}
+	}
+	rr /= ring.size();
+	g /= 2*ring.size();
+	b /= ring.size();
+	std::cout << name << " " << rr << " " << g << " " << b << std::endl;*/
 
 	if(!name.empty()) {
 		auto pos = posArray->read<int>();
@@ -386,6 +282,7 @@ std::pair<float, float> getMinAndMedian(Resources& r, Image& img, RLEVector& are
 		cv::imwrite(name, *cv);
 	}
 
+	std::nth_element(*result, *result+areaSize/2, *result+areaSize);
 	return {min, result[areaSize/2]};
 }
 
@@ -409,8 +306,54 @@ void printSSR(Resources& r, Image& img, int type, RGB rgb) {
 			worstBlob = result.first;
 	}
 
-	std::cout << "[SSR Med " << type << "] Field:" << (bestField.second / worstBlob) << " Other:" << (bestOther.second / worstBlob) << " Best:" << (bestField.second / bestBlob) << std::endl;
-	std::cout << "[SSR Min " << type << "] Field:" << (bestField.first / worstBlob) << " Other:" << (bestOther.first / worstBlob) << " Best:" << (bestField.first / bestBlob) << std::endl;
+	if(blobs.empty()) {
+		std::cout << "[Med " << type << "] Field:" << bestField.second << " Other:" << bestOther.second << std::endl;
+		std::cout << "[Min " << type << "] Field:" << bestField.first << " Other:" << bestOther.first << std::endl;
+	} else {
+		std::cout << "[Med " << type << "] Field:" << bestField.second << " Other:" << bestOther.second << std::endl;
+		std::cout << "[Min " << type << "] Field:" << bestField.first << " Other:" << bestOther.first << " Best:" << bestBlob << " Worst: " << worstBlob << std::endl;
+		std::cout << "[SSR Med " << type << "] Field:" << (bestField.second / worstBlob) << " Best:" << (bestField.second / bestBlob) << std::endl;
+		std::cout << "[SSR Min " << type << "] Field:" << (bestField.first / worstBlob) << " Other:" << (bestOther.first / worstBlob) << " Best:" << (bestField.first / bestBlob) << std::endl;
+	}
+}
+
+int halfLineWidthEstimation(const Resources& r, const Image& img) {
+	const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
+	int xSize = 1;
+	int ySize = 1;
+	for(int i = r.cameraAmount; i > 1; i /= 2) {
+		if(field.field_length()/xSize >= field.field_width()/ySize)
+			xSize *= 2;
+		else
+			ySize *= 2;
+	}
+
+	int xPos = 0;
+	int yPos = 0;
+	for(int i = r.camId % r.cameraAmount; i > 0; i--) {
+		yPos++;
+		if(yPos == ySize) {
+			yPos = 0;
+			xPos++;
+		}
+	}
+
+	int extentLarge = field.field_length()/xSize + (xPos == 0 ? field.boundary_width() : 0) + (xPos == xSize-1 ? field.boundary_width() : 0);
+	int extentSmall = field.field_width()/ySize + (yPos == 0 ? field.boundary_width() : 0) + (yPos == ySize-1 ? field.boundary_width() : 0);
+	if(extentLarge < extentSmall)
+		std::swap(extentSmall, extentLarge);
+
+	int cameraLarge = img.width;
+	int cameraSmall = img.height;
+	if(cameraLarge < cameraSmall)
+		std::swap(cameraSmall, cameraLarge);
+
+	float largeRatio = cameraLarge/(float)extentLarge;
+	float smallRatio = cameraSmall/(float)extentSmall;
+	if(largeRatio < smallRatio)
+		std::swap(smallRatio, largeRatio);
+
+	return std::ceil(largeRatio*field.line_thickness()/2.f);
 }
 
 int main(int argc, char* argv[]) {
@@ -424,6 +367,7 @@ int main(int argc, char* argv[]) {
 		std::shared_ptr<Image> img = r.camera->readImage();
 
 		r.perspective->geometryCheck();
+		//TODO Extent (min/max x/y axisparallel for 3D based search)
 		r.mask->geometryCheck();
 
 		double startTime = getTime();
@@ -445,6 +389,13 @@ int main(int argc, char* argv[]) {
 			r.openCl->run(r.diffkernel, cl::EnqueueArgs(cl::NDRange((diff.width-1)*raw.format->stride, (diff.height-1)*raw.format->rowStride)), raw.buffer, diff.buffer, raw.format->stride, raw.format->rowStride).wait();
 			std::cout << "diff " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 			cv::imwrite("diff.png", *diff.toBGR().cvRead());
+
+			uint8_t diffMax;
+			{
+				CLMap<uint8_t> map = diff.read<uint8_t>();
+				diffMax = *std::max_element(*map, *map + diff.width*diff.height*diff.format->pixelSize());
+			}
+
 			//TODO track object capability in other colorspaces
 			/*std::vector<int> filtered;
 			trackObjects(r, timestamp, raw.buffer, r.socket->getTrackedObjects()[r.camId], detection, filtered);
@@ -454,62 +405,26 @@ int main(int argc, char* argv[]) {
 
 			//TODO thresholding (detection/search)
 
-			printSSR(r, diff, 0, (RGB) {64, 64, 0});
-			printSSR(r, diff, 1, (RGB) {0, 32, 64});
-			printSSR(r, diff, -1, (RGB) {64, 32, 0});
+			//TODO hard threshold possible/advisable?
+			const uint8_t diffHalf = diffMax/2;
+			const uint8_t diffQuarter = diffMax/4;
+			printSSR(r, diff, 0, (RGB) {diffMax, diffMax, diffQuarter});
+			printSSR(r, diff, 1, (RGB) {diffQuarter, diffHalf, diffMax});
+			printSSR(r, diff, -1, (RGB) {diffMax, diffHalf, diffQuarter});
 
 			detection->set_t_sent(getTime());
-			//r.socket->send(wrapper);
+			r.socket->send(wrapper);
 			break;
 		} else if(r.socket->getGeometryVersion()) {
-			const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
-			int xSize = 1;
-			int ySize = 1;
-			for(int i = r.cameraAmount; i > 1; i /= 2) {
-				if(field.field_length()/xSize >= field.field_width()/ySize)
-					xSize *= 2;
-				else
-					ySize *= 2;
-			}
-
-			int xPos = 0;
-			int yPos = 0;
-			for(int i = r.camId % r.cameraAmount; i > 0; i--) {
-				yPos++;
-				if(yPos == ySize) {
-					yPos = 0;
-					xPos++;
-				}
-			}
-
-			int extentLarge = field.field_length()/xSize + (xPos == 0 ? field.boundary_width() : 0) + (xPos == xSize-1 ? field.boundary_width() : 0);
-			int extentSmall = field.field_width()/ySize + (yPos == 0 ? field.boundary_width() : 0) + (yPos == ySize-1 ? field.boundary_width() : 0);
-			if(extentLarge < extentSmall)
-				std::swap(extentSmall, extentLarge);
-
-			int cameraLarge = img->width;
-			int cameraSmall = img->height;
-			if(cameraLarge < cameraSmall)
-				std::swap(cameraSmall, cameraLarge);
-
-			float largeRatio = cameraLarge/(float)extentLarge;
-			float smallRatio = cameraSmall/(float)extentSmall;
-			if(largeRatio < smallRatio)
-				std::swap(smallRatio, largeRatio);
-
-			int halfLineWidth = std::ceil(largeRatio*field.line_thickness()/2.f);
-			std::cout << "Line width: " << halfLineWidth << std::endl;
 		//} else {
+			int halfLineWidth = halfLineWidthEstimation(r, *img); // 4, 3, 7
+			std::cout << "Line width: " << halfLineWidth << std::endl;
 			Image gray = img->toGrayscale();
-			//int halfLineWidth = 4; //3, 7;
-			const int width = gray.width;
-			std::shared_ptr<Image> thresholded = std::make_shared<Image>(&PixelFormat::U8, width, gray.height);
 
-			/*cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, {halfLineWidth,halfLineWidth});
-			//cv::morphologyEx(cvGray, cvThresholded, cv::MORPH_TOPHAT, kernel);*/
-
+			std::shared_ptr<Image> thresholded = std::make_shared<Image>(&PixelFormat::U8, gray.width, gray.height);
 			{
 				const CLMap<uint8_t> data = gray.read<uint8_t>();
+				const int width = gray.width;
 				int diff = 5; //TODO config
 				CLMap<uint8_t> tData = thresholded->write<uint8_t>();
 				for (int y = halfLineWidth; y < gray.height - halfLineWidth; y++) {
@@ -532,14 +447,6 @@ int main(int argc, char* argv[]) {
 			cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
 			cv::Mat4f linesMat;
 			detector->detect(*thresholded->cvRead(), linesMat);
-			//std::cout << linesMat << std::endl;
-			/*for(int i = 0; i < width*gray->getHeight(); i++) {
-				img->getData()[i] = 0;
-			}*/
-			/*//Line thinning (Morphological) - Hough transform - peak picking
-			//Pixel resolution, angular resolution, accumulator threshold, min line length, max line gap
-			//cv::HoughLinesP(gray, linesMat, 10.0, 0.31415, 100, 100, 5);
-			cv::HoughLinesP(gray, linesMat, 20.0, 0.31415, 100, 100, 5);*/
 
 			std::list<cv::Vec4f> lines;
 			for(int i = 0; i < linesMat.rows; i++)

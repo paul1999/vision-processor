@@ -64,7 +64,7 @@ V2 Perspective::image2field(V2 pos, double height) {
 	// distortion = 1 + a/f*a/f+b/f*b/f = 1 + a^2/f^2 + b^2/f^2
 	// a/f * (1 + ka^2/f^2 + kb^2/f^2), a/f * (1 + ka^2/f^2 + kb^2/f^2)
 
-	double distortion = 1.0 /*+ (normalized.x*normalized.x + normalized.y*normalized.y) * calib.distortion()*/; //TODO inversion
+	double distortion = 1.0 + (normalized.x*normalized.x + normalized.y*normalized.y) * calib.distortion(); //TODO inversion
 	V3 camRay = rotation({distortion*normalized.x, distortion*normalized.y, 1.0}, rX, rY, rZ);
 
 	if(camRay.z >= 0) { // Over horizon
@@ -92,13 +92,19 @@ V2 Perspective::field2image(V3 pos) {
 
 	//Apply distortion
 	if(calib.distortion() >= DBL_MIN) {
-		double length = sqrt(camRay.x*camRay.x + camRay.y*camRay.y);
+		V3 original = camRay;
+		for(int i = 0; i < 100; i++) { //TODO optimize
+			double r2 = camRay.x*camRay.x + camRay.y*camRay.y;
+			double dr = 1 + calib.distortion()*r2;
+			camRay.x = original.x/dr; camRay.y = original.y/dr;
+		}
+		/*double length = sqrt(camRay.x*camRay.x + camRay.y*camRay.y);
 		double d = calib.distortion();
 		double b = -9.0 * d * d * length + d * sqrt(d * (12.0 + 81.0 * d * length * length));
 		b = (b < 0.0) ? (-pow(b, 1.0 / 3.0)) : pow(b, 1.0 / 3.0);
 		double distortion = pow(2.0 / 3.0, 1.0 / 3.0) / b - b / (pow(2.0 * 3.0 * 3.0, 1.0 / 3.0) * d);
 		camRay.x *= distortion;
-		camRay.y *= distortion;
+		camRay.y *= distortion;*/
 	}
 
 	return {
