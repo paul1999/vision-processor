@@ -17,6 +17,7 @@ bool isnan(float);
 float native_sqrt(float);
 uchar convert_uchar_sat(float);
 float fabs(float);
+float round(float);
 
 #define INFINITY 9999999999999.9f
 #define NAN 9999999999999.9f
