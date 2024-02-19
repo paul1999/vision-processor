@@ -11,6 +11,8 @@ public:
 	std::shared_ptr<Image> readImage() override {
 		cv::Mat mat;
 		capture.read(mat);
+		if(mat.empty())
+			return nullptr;
 
 		std::shared_ptr<Image> image = std::make_shared<Image>(&PixelFormat::BGR888, mat.cols, mat.rows);
 		CLMap<uint8_t> data = image->write<uint8_t>();

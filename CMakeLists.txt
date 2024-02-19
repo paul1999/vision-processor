@@ -11,7 +11,7 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 #add_compile_options(-fopt-info-vec-optimized-missed)
 
 find_package(yaml-cpp REQUIRED)
-find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio bgsegm)
 find_package(PkgConfig REQUIRED)
 find_package(Eigen3 REQUIRED)
 pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil)

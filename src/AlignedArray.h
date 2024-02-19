@@ -1,6 +1,6 @@
 #pragma once
 
-#include "CLArray.h"
+#include "opencl.h"
 
 #include <map>
 

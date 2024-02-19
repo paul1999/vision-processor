@@ -15,13 +15,15 @@ public:
 	explicit ImageSource(const std::vector<std::string>& paths) {
 		for(auto& path : paths) {
 			cv::Mat mat = cv::imread(path);
-			std::shared_ptr<Image> image = std::make_shared<Image>(&PixelFormat::BGR888, mat.cols, mat.rows);
+			int i = path.find("/")+1;
+			std::shared_ptr<Image> image = std::make_shared<Image>(&PixelFormat::BGR888, mat.cols, mat.rows, path.substr(i, path.find("/", i)-i));
 			mat.copyTo(*image->cvWrite());
 			images.push_back(image);
 		}
 	}
 
 	std::shared_ptr<Image> readImage() override {
+		//images.pop_back();
 		return images[std::rand() % images.size()];
 	}
 

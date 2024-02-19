@@ -4,7 +4,8 @@
 #include <memory>
 #include <string>
 #include <opencv2/core/mat.hpp>
-#include "CLArray.h"
+#include <utility>
+#include "opencl.h"
 
 class PixelFormat {
 public:
@@ -34,8 +35,9 @@ class CVMap;
 class Image : public CLArray {
 public:
 	Image(const Image& other) = default;
-	Image(const PixelFormat* format, int width, int height): CLArray(width*height*format->pixelSize()), format(format), width(width), height(height), timestamp(0) {}
-	Image(const PixelFormat* format, int width, int height, double timestamp): CLArray(width*height*format->pixelSize()), format(format), width(width), height(height), timestamp(timestamp) {}
+	Image(const PixelFormat* format, int width, int height): CLArray(width*height*format->pixelSize()), format(format), width(width), height(height), timestamp(0), name() {}
+	Image(const PixelFormat* format, int width, int height, std::string name): CLArray(width*height*format->pixelSize()), format(format), width(width), height(height), timestamp(0), name(std::move(name)) {}
+	Image(const PixelFormat* format, int width, int height, double timestamp): CLArray(width*height*format->pixelSize()), format(format), width(width), height(height), timestamp(timestamp), name() {}
 
 	//Only use these constructors if not possible otherwise due to necessary copy (because of potential alignment mismatch for zero-copy support)
 	Image(const PixelFormat* format, int width, int height, unsigned char* data): CLArray(data, width*height*format->pixelSize()), format(format), width(width), height(height), timestamp(0) {}
@@ -56,7 +58,21 @@ public:
 	const int height;
 	// timestamp of 0 indicates unavailability
 	const double timestamp;
+	const std::string name;
 };
+
+/*class CLImage {
+	explicit CLImage(int width, int height, int planes);
+
+	template<typename T> CLMap<T> read() const { return std::move(CLMap<T>(buffer, size, CL_MAP_READ)); }
+	template<typename T> CLMap<T> write() { return std::move(CLMap<T>(buffer, size, CL_MAP_WRITE_INVALIDATE_REGION)); }
+	template<typename T> CLMap<T> readWrite() { return std::move(CLMap<T>(buffer, size, CL_MAP_WRITE)); }
+
+	const cl::Image2DArray image;
+	const int width;
+	const int height;
+	const int planes;
+};*/
 
 
 class CVMap {

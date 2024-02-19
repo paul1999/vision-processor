@@ -13,4 +13,5 @@ kernel void diff(global const uchar* img, global uchar* out, const int xStride, 
 	const float h = (float)img[imgPos+xStride] - img[imgPos];
 	const float v = (float)img[imgPos+yStride*imgWidth] - img[imgPos];
 	out[x + y*imgWidth] = convert_uchar_sat(native_sqrt(h*h + v*v));
+	//out[x + y*imgWidth] = (h*h + v*v) >> 9; (with h and v as short)
 }

@@ -7,39 +7,32 @@
 
 
 inline void px(global const uchar* img, const Perspective perspective, const RGB rgb, const int x, const int y, float* sum, int* n) {
-	if(x < 0 || y < 0 || x >= perspective.shape[0] || y >= perspective.shape[1])
+	if(x < 0 || y < 0 || x >= perspective.shape[0]/2 || y >= perspective.shape[1]/2) //TODO is RGGB only
 		return;
 
 	(*n)++;
 	float vdiff;
 #ifdef RGGB
-	//TODO thicker line
-	if(y%2 == 0) {
-		if(x%2 == 0) {
-			vdiff = img[x + y*perspective.shape[0]] - (float)rgb.r;
-		} else {
-			vdiff = img[x + y*perspective.shape[0]] - (float)rgb.g;
-		}
-	} else {
-		if(x%2 == 0) {
-			vdiff = img[x + y*perspective.shape[0]] - (float)rgb.g;
-		} else {
-			vdiff = img[x + y*perspective.shape[0]] - (float)rgb.b;
-		}
-	}
-#endif
+	vdiff = img[2*x + 2*y*perspective.shape[0]] - (float)rgb.r;
 	*sum += vdiff*vdiff;
+	vdiff = img[2*x+1 + 2*y*perspective.shape[0]] - (float)rgb.g;
+	*sum += vdiff*vdiff;
+	vdiff = img[2*x + (2*y+1)*perspective.shape[0]] - (float)rgb.g;
+	*sum += vdiff*vdiff;
+	vdiff = img[2*x+1 + (2*y+1)*perspective.shape[0]] - (float)rgb.b;
+	*sum += vdiff*vdiff;
+#endif
 }
 
-
-kernel void ssd(global const uchar* img, global const int* pos, global float* out, const Perspective perspective, const float height, const float radius, const float rradius, const RGB rgb) {
+//https://www.thecrazyprogrammer.com/2016/12/bresenhams-midpoint-circle-algorithm-c-c.html
+kernel void ssd(global const uchar* img, global const int* pos, global float* out, const Perspective perspective, const float height, const float radius, const RGB rgb) {
+	int xpos = pos[2*get_global_id(0)]; //TODO pos as float
+	int ypos = pos[2*get_global_id(0)+1];
 #ifdef RGGB
-	const int xpos = 2*pos[2*get_global_id(0)];
-	const int ypos = 2*pos[2*get_global_id(0)+1];
+	V2 center = image2field(perspective, height, (V2) {(float)2*xpos, (float)2*ypos});
+	V2 offcenter = image2field(perspective, height, (V2) {(float)2*xpos+2, (float)2*ypos+2});
 #endif
 
-	V2 center = image2field(perspective, height, (V2) {(float)xpos, (float)ypos});
-	V2 offcenter = image2field(perspective, height, (V2) {(float)xpos+1, (float)ypos+1});
 	V2 posdiff = {offcenter.x-center.x, offcenter.y-center.y};
 	float rPerPixel = native_sqrt(posdiff.x*posdiff.x + posdiff.y*posdiff.y);
 	float err = radius/rPerPixel;

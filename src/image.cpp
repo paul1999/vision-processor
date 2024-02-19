@@ -64,8 +64,16 @@ Image Image::toBGR() const {
 	if(format == &PixelFormat::BGR888) {
 		return *this;
 	} else if(format == &PixelFormat::RGGB8) {
-		Image image(&PixelFormat::BGR888, 2*width, 2*height);
-		cv::cvtColor(*cvRead(), *image.cvWrite(), cv::COLOR_BayerBG2BGR);
+		Image image(&PixelFormat::BGR888, width, height);
+		CLMap<uint8_t> read = ::Image::read<uint8_t>();
+		CLMap<uint8_t> write = image.write<uint8_t>();
+		for(int y = 0; y < height; y++) {
+			for(int x = 0; x < width; x++) {
+				write[3*(x + width * y) + 0] = read[2*x+1 + 2*width * (2*y+1)];
+				write[3*(x + width * y) + 1] = ((uint16_t)read[2*x+1 + 2*width * 2*y] + read[2*x + 2*width * (2*y+1)]) / 2;
+				write[3*(x + width * y) + 2] = read[2*x + 2*width * 2*y];
+			}
+		}
 		return image;
 	} else {
 		std::cerr << "[Image] Unimplemented conversion to BGR" << std::endl;
@@ -116,3 +124,7 @@ CVMap::~CVMap() {
 CVMap::CVMap(CVMap&& other) noexcept: buffer(other.buffer), map(other.map), mat(std::move(other.mat)) {
 	other.unmoved = false;
 }
+
+/*CLImage::CLImage(int width, int height, int planes): width(width), height(height), planes(planes) {
+
+}*/

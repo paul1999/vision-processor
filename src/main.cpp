@@ -1,20 +1,17 @@
 #include <iostream>
+#include <opencv2/bgsegm.hpp>
 #include <yaml-cpp/yaml.h>
 
 #include "messages_robocup_ssl_wrapper.pb.h"
 #include "Resources.h"
 #include "distortion.h"
+#include "GroundTruth.h"
+#include <opencv2/video/background_segm.hpp>
 
 
 double getTime() {
 	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
 }
-
-typedef struct __attribute__ ((packed)) {
-	cl_uchar r;
-	cl_uchar g;
-	cl_uchar b;
-} RGB;
 
 //1 indicates green, 0 pink, increasing 2d angle starting from bot orientation most significant bit to least significant bit
 const int patterns[16] = {
@@ -229,6 +226,75 @@ void getAreas(Resources& r, RLEVector& field, RLEVector& other, std::vector<RLEV
 	}
 }
 
+struct Match {
+	int x, y;
+	float score;
+};
+
+std::vector<Match> scanColor(Resources& r, Image& diff, CLArray& pos, CLArray& result, const int areaSize, RGB color, float height, float radius, float& median) {
+	color.r = (uint8_t)(color.r * r.contrast);
+	color.g = (uint8_t)(color.g * r.contrast);
+	color.b = (uint8_t)(color.b * r.contrast);
+
+	OpenCL::wait(r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), diff.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius, color));
+	auto map = result.read<float>();
+	auto posMap = pos.read<int>();
+
+	std::vector<float> resultCopy(*map, *map+areaSize);
+	std::nth_element(resultCopy.begin(), resultCopy.begin()+areaSize/2, resultCopy.end());
+	median = resultCopy[areaSize/2];
+
+	std::vector<Match> matches;
+
+	std::cout << "[Scan] matches R" << (int)color.r << "G" << (int)color.g << "B" << (int)color.b << ": ";
+	float threshold = median*0.5f; //TODO configurable/better threshold
+	for(int i = 0; i < areaSize; i++) {
+		if(map[i] < threshold) {
+			matches.push_back({posMap[2*i], posMap[2*i+1], map[i]});
+			std::cout << posMap[2*i] << "," << posMap[2*i+1] << ";" << map[i] << " ";
+		}
+	}
+	std::cout << std::endl;
+
+	return std::move(matches);
+}
+
+void scan(Resources& r, Image& diff, int start, int end) {
+	//TODO slow update/convergence: contrast, median, color
+	RLEVector area = r.mask->getRuns().getPart(start, end);
+
+	{
+		const Run& front = area.getRuns().front();
+		const Run& back = area.getRuns().back();
+		const CLMap<uint8_t> map = diff.read<uint8_t>();
+		//TODO dont use parts outside of field
+		r.contrast = *std::max_element(*map + (front.x + front.y*diff.width)*diff.format->pixelSize(), *map + (back.x+back.length + back.y*diff.width)*diff.format->pixelSize()) / 255.0;
+		std::cout << "[Scan] contrast: " << r.contrast << std::endl;
+		r.contrast *= 0.75;
+	}
+
+	/*std::vector<V2> points;
+	for(double y = -r.perspective->getFieldWidth()/2.0; y <= r.perspective->getFieldWidth()/2.0; y += 2.0) {
+		for(double x = -r.perspective->getFieldLength()/2.0; x <= r.perspective->getFieldLength()/2.0; x += 2.0) {
+			V2 pos = r.perspective->field2image({x, y, r.ballRadius}); //TODO adapt height
+			if(pos.x >= 0.0 && pos.y >= 0.0 && pos.x < diff.width && pos.y < diff.height) //TODO correct position (diff)
+				points.push_back(pos);
+		}
+	}*/
+	//TODO toPosArray
+
+
+	int areaSize = end - start;
+	auto posArray = area.scanArea(*r.arrayPool);
+	auto resultArray = r.arrayPool->acquire<float>(areaSize);
+	std::vector<Match> orange = scanColor(r, diff, *posArray, *resultArray, areaSize, r.orange, (float)r.ballRadius, (float)r.ballRadius, r.orangeMedian);
+	std::vector<Match> yellow = scanColor(r, diff, *posArray, *resultArray, areaSize, r.yellow, (float)r.gcSocket->yellowBotHeight, (float)r.centerBlobRadius, r.yellowMedian);
+	std::vector<Match> blue = scanColor(r, diff, *posArray, *resultArray, areaSize, r.blue, (float)r.gcSocket->blueBotHeight, (float)r.centerBlobRadius, r.blueMedian);
+	std::vector<Match> green = scanColor(r, diff, *posArray, *resultArray, areaSize, r.green, (float)r.gcSocket->defaultBotHeight, (float)r.sideBlobRadius, r.greenMedian);
+	std::vector<Match> pink = scanColor(r, diff, *posArray, *resultArray, areaSize, r.pink, (float)r.gcSocket->defaultBotHeight, (float)r.sideBlobRadius, r.pinkMedian);
+	//TODO non local maximum match suppression
+}
+
 std::pair<float, float> getMinAndMedian(Resources& r, Image& img, RLEVector& area, bool bot, RGB& rgb, const std::string& name) {
 	int areaSize = area.size();
 	auto posArray = area.scanArea(*r.arrayPool);
@@ -237,11 +303,11 @@ std::pair<float, float> getMinAndMedian(Resources& r, Image& img, RLEVector& are
 	if(bot) {
 		//error = r.openCl->run(r.botkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), img.buffer, posArray->buffer, resultArray->buffer, r.perspective->getClPerspective(), (float)r.gcSocket->defaultBotHeight, (float)r.centerBlobRadius, rgb, (float)(r.sideBlobDistance - r.sideBlobRadius), (RGB) {0, 0, 0}).wait();
 		//error = r.openCl->run(r.sidekernel, cl::EnqueueArgs(cl::NDRange(areaSize)), img.buffer, posArray->buffer, resultArray->buffer, r.perspective->getClPerspective(), (float)r.gcSocket->defaultBotHeight, (float)r.centerBlobRadius, rgb).wait();
-		error = r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), img.buffer, posArray->buffer, resultArray->buffer, r.perspective->getClPerspective(), (float)r.gcSocket->defaultBotHeight, (float)r.centerBlobRadius, 5.0f, rgb).wait();
+		error = r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), img.buffer, posArray->buffer, resultArray->buffer, r.perspective->getClPerspective(), (float)r.gcSocket->defaultBotHeight, (float)r.centerBlobRadius, rgb).wait();
 	} else {
 		//error = r.openCl->run(r.ballkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), img.buffer, posArray->buffer, resultArray->buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius, rgb).wait();
 		//error = r.openCl->run(r.sidekernel, cl::EnqueueArgs(cl::NDRange(areaSize)), img.buffer, posArray->buffer, resultArray->buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius, rgb).wait();
-		error = r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), img.buffer, posArray->buffer, resultArray->buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius, 5.0f, rgb).wait();
+		error = r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), img.buffer, posArray->buffer, resultArray->buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius, rgb).wait();
 	}
 
 	if(error != 0)
@@ -277,9 +343,9 @@ std::pair<float, float> getMinAndMedian(Resources& r, Image& img, RLEVector& are
 			int x = pos[i];
 			int y = pos[i+1];
 			cv->data[2*x + 2*y*gray.width] = std::max(255 - (result[i/2]-min), 0.f);
-			cv->data[2*x + 2*y*gray.width+1] = 255;
+			//cv->data[2*x + 2*y*gray.width+1] = 255;
 		}
-		cv::imwrite(name, *cv);
+		cv::imwrite(img.name + "." + name, *cv);
 	}
 
 	std::nth_element(*result, *result+areaSize/2, *result+areaSize);
@@ -293,8 +359,8 @@ void printSSR(Resources& r, Image& img, int type, RGB rgb) {
 	getAreas(r, field, other, blobs, type);
 
 	getMinAndMedian(r, img, r.mask->getRuns(), type >= 0, rgb, "mask" + std::to_string(type) + ".png");
-	std::pair<float, float> bestField = getMinAndMedian(r, img, field, type >= 0, rgb, "field" + std::to_string(type) + ".png");
-	std::pair<float, float> bestOther = getMinAndMedian(r, img, other, type >= 0, rgb, "other" + std::to_string(type) + ".png");
+	std::pair<float, float> bestField = getMinAndMedian(r, img, field, type >= 0, rgb, /*"field" + std::to_string(type) + ".png"*/"");
+	std::pair<float, float> bestOther = getMinAndMedian(r, img, other, type >= 0, rgb, /*"other" + std::to_string(type) + ".png"*/"");
 
 	float bestBlob = MAXFLOAT;
 	float worstBlob = 0.0;
@@ -362,9 +428,39 @@ int main(int argc, char* argv[]) {
 	if(!r.groundTruth.empty())
 		r.socket->send(GroundTruth(r.groundTruth, r.camId, getTime()).getMessage());
 
+	/*cl::Image2D yuvBg;
+	{
+		double startTime = getTime();
+		int error;
+		//cl::Image2D bgrBg(cl::Context::getDefault(), CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, cl::ImageFormat(CL_RGB, CL_UNSIGNED_INT8), bg->width, bg->height, bg->width*3, *bg->read<uint8_t>(), &error);
+		cl::Image2D bgrBg(cl::Context::getDefault(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RGB, CL_UNSIGNED_INT8), bg->width, bg->height, 0, nullptr, &error);
+		if(error != CL_SUCCESS) {
+			std::cerr << "bgbgr Image creation error: " << error << std::endl;
+			exit(1);
+		}
+		std::cout << "main " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
+		error = cl::enqueueCopyBufferToImage(bg->buffer, bgrBg, 0, (cl::array<cl::size_type, 2>){0, 0}, (cl::array<cl::size_type, 2>){(cl::size_type)bg->width, (cl::size_type)bg->height});
+		if(error != CL_SUCCESS) {
+			std::cerr << "bgbgr copy error: " << error << std::endl;
+			exit(1);
+		}
+		std::cout << "main " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
+		yuvBg = cl::Image2D(cl::Context::getDefault(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RGB, CL_UNSIGNED_INT8), bg->width, bg->height, 0, nullptr, &error);
+		if(error != CL_SUCCESS) {
+			std::cerr << "bgyuv Image creation error: " << error << std::endl;
+			exit(1);
+		}
+		std::cout << "main " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
+		OpenCL::wait(r.openCl->run(r.yuvkernel, cl::EnqueueArgs(cl::NDRange(bg->width, bg->height)), bgrBg, yuvBg));
+	}*/
+
+	//cv::Ptr<cv::BackgroundSubtractor> bgsub = cv::bgsegm::createBackgroundSubtractorCNT(15, true, 15*30, false); //https://sagi-z.github.io/BackgroundSubtractorCNT/doxygen/html/index.html
+
 	uint32_t frameId = 0;
 	while(true) {
 		std::shared_ptr<Image> img = r.camera->readImage();
+		if(img == nullptr)
+			break;
 
 		r.perspective->geometryCheck();
 		//TODO Extent (min/max x/y axisparallel for 3D based search)
@@ -372,6 +468,47 @@ int main(int argc, char* argv[]) {
 
 		double startTime = getTime();
 		double timestamp = img->timestamp == 0 ? startTime : img->timestamp;
+
+		//std::shared_ptr<Image> mask = std::make_shared<Image>(&PixelFormat::U8, img->width, img->height);
+		//OpenCL::wait(r.openCl->run(r.bgkernel, cl::EnqueueArgs(cl::NDRange(img->width, img->height)), img->buffer, bg->buffer, mask->buffer, img->format->stride, img->format->rowStride, (uint8_t)16)); //TODO adaptive threshold
+		//bgsub->apply(*img->cvRead(), *mask->cvWrite());
+
+		//TODO Idee 2 Bilder: Gleichheit (uniformität) in Blobgröße (Bälle?); Durchschnittswert
+		//SSD von Durchschnitt in Kreis/Quadratmaske
+		//Oder über MAX-Gefilterte Kantendiff
+		/*int error;
+		cl::Image2D bgr(cl::Context::getDefault(), CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, cl::ImageFormat(CL_RGB, CL_UNSIGNED_INT8), img->width, img->height, img->width*3, *img->read<uint8_t>(), &error);
+		if(error != CL_SUCCESS) {
+			std::cerr << "bgr Image creation error: " << error << std::endl;
+			exit(1);
+		}
+		cl::Image2D yuv(cl::Context::getDefault(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RGB, CL_UNSIGNED_INT8), img->width, img->height, 0, nullptr, &error);
+		if(error != CL_SUCCESS) {
+			std::cerr << "yuv Image creation error: " << error << std::endl;
+			exit(1);
+		}
+		OpenCL::wait(r.openCl->run(r.yuvkernel, cl::EnqueueArgs(cl::NDRange(img->width, img->height)), bgr, yuv));*/
+
+		/*Image yuv = img->toBGR();
+		{
+			CVMap map = yuv.cvReadWrite();
+			cv::cvtColor(*map, *map, cv::COLOR_BGR2YUV);
+		}
+		std::shared_ptr<Image> mask = std::make_shared<Image>(&PixelFormat::U8, yuv.width, yuv.height);*/
+
+		//Fringe issues with edges make it really bad
+		//OpenCL::wait(r.openCl->run(r.bgkernel, cl::EnqueueArgs(cl::NDRange(yuv.width, yuv.height)), yuv.buffer, bg.buffer, mask->buffer, (uint8_t)16));
+
+		//TODO idea: background subtraction on edge images with background minimization
+		//TODO idea: delta images for new targets finding, else just tracking
+		//TODO measure tracking capability of current trackers
+		//Circle-Convolution -1 +1 with equal amount +1 -1 as prefiltering
+
+		//std::shared_ptr<Image> mask = std::make_shared<Image>(img->format, img->width, img->height);
+		//int blobsize = 11;
+		//OpenCL::wait(r.openCl->run(r.diffkernel, cl::EnqueueArgs(cl::NDRange((img->width - 2*blobsize)*img->format->stride, (img->height - 2*blobsize)*img->format->rowStride)), img->buffer, mask->buffer, img->format->stride*blobsize, img->format->rowStride*blobsize));
+		//cv::imwrite(img->name + ".diff.png", *mask->toBGR().cvRead());
+		//break;
 
 		if(r.perspective->getGeometryVersion()) {
 			SSL_WrapperPacket wrapper;
@@ -382,35 +519,37 @@ int main(int argc, char* argv[]) {
 				detection->set_t_capture_camera(img->timestamp);
 			detection->set_camera_id(r.camId);
 
-			std::cout << "preComp " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 			Image raw = img->toRGGB();
-			std::cout << "toRGGB " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
-			Image diff(raw.format, raw.width, raw.height, raw.timestamp);
+			Image diff(raw.format, raw.width, raw.height, img->name);
 			r.openCl->run(r.diffkernel, cl::EnqueueArgs(cl::NDRange((diff.width-1)*raw.format->stride, (diff.height-1)*raw.format->rowStride)), raw.buffer, diff.buffer, raw.format->stride, raw.format->rowStride).wait();
-			std::cout << "diff " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
-			cv::imwrite("diff.png", *diff.toBGR().cvRead());
+			//cv::imwrite(img->name + ".diff.png", *diff.toBGR().cvRead());
 
-			uint8_t diffMax;
+			double ssrTime = getTime();
+			scan(r, diff, 0, r.mask->getRuns().size());
+			std::cout << "scanTime " << (getTime() - ssrTime) * 1000.0 << " ms" << std::endl;
+
+			//TODO background removal mask -> RLE encoding for further analysis
+
+			//TODO thresholding (detection/search)
+
+			//TODO hard threshold possible/advisable?
+			/*uint8_t diffMax;
 			{
 				CLMap<uint8_t> map = diff.read<uint8_t>();
 				diffMax = *std::max_element(*map, *map + diff.width*diff.height*diff.format->pixelSize());
 			}
+			diffMax = (diffMax*0.75);
+			const uint8_t diffHalf = diffMax/2;
+			const uint8_t diffQuarter = diffMax/4;
+			printSSR(r, diff, 0, (RGB) {diffMax, diffMax, diffQuarter});
+			printSSR(r, diff, 1, (RGB) {0, diffMax, diffMax});
+			printSSR(r, diff, -1, (RGB) {diffMax, diffQuarter, 0});*/
 
-			//TODO track object capability in other colorspaces
 			/*std::vector<int> filtered;
 			trackObjects(r, timestamp, raw.buffer, r.socket->getTrackedObjects()[r.camId], detection, filtered);
 			for(auto& tracked : r.socket->getTrackedObjects()) {
 				trackObjects(r, startTime, raw.buffer, tracked.second, detection, filtered);
 			}*/
-
-			//TODO thresholding (detection/search)
-
-			//TODO hard threshold possible/advisable?
-			const uint8_t diffHalf = diffMax/2;
-			const uint8_t diffQuarter = diffMax/4;
-			printSSR(r, diff, 0, (RGB) {diffMax, diffMax, diffQuarter});
-			printSSR(r, diff, 1, (RGB) {diffQuarter, diffHalf, diffMax});
-			printSSR(r, diff, -1, (RGB) {diffMax, diffHalf, diffQuarter});
 
 			detection->set_t_sent(getTime());
 			r.socket->send(wrapper);

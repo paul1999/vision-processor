@@ -101,7 +101,7 @@ void VisionSocket::parse(char *data, int length) {
 
 	if(wrapper.has_geometry()) {
 		if(!google::protobuf::util::MessageDifferencer::Equals(geometry, wrapper.geometry())) {
-			std::cout << "[VisionSocket] New geometry received" << std::endl;
+			//std::cout << "[VisionSocket] New geometry received" << std::endl;
 			geometry.CopyFrom(wrapper.geometry());
 			geometryVersion++;
 		}
@@ -191,7 +191,7 @@ void VisionSocket::detectionTracking(const SSL_DetectionFrame &detection) {
 	trackBots(timestamp, defaultBotHeight, detection.robots_yellow(), previous, objects, 0);
 	trackBots(timestamp, defaultBotHeight, detection.robots_blue(), previous, objects, 16);
 
-	trackedObjects[detection.camera_id()] = objects;
+	trackedObjects[detection.camera_id()] = objects; //TODO synchronization/mutex
 }
 
 

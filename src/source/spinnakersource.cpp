@@ -45,9 +45,12 @@ SpinnakerSource::SpinnakerSource(int id) {
 	pCam->AutoExposureMeteringMode.SetValue(Spinnaker::AutoExposureMeteringMode_Average);
 	//TODO auto black level
 	//pCam->AutoExposureControlPriority.SetValue(Spinnaker::AutoExposureControlPriority_ExposureTime);
-	pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Once);
-	pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Once);
-	pCam->GainAuto.SetValue(Spinnaker::GainAuto_Once);
+	//pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Once);
+	//pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Once);
+	//pCam->GainAuto.SetValue(Spinnaker::GainAuto_Once);
+	pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Continuous);
+	pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Continuous);
+	pCam->GainAuto.SetValue(Spinnaker::GainAuto_Continuous);
 	pCam->GammaEnable.SetValue(false);
 	pCam->TLStream.StreamBufferHandlingMode.SetValue(Spinnaker::StreamBufferHandlingMode_NewestOnly);
 	pCam->TLStream.StreamBufferCountManual.SetValue(pCam->TLStream.StreamBufferCountManual.GetMin());
@@ -85,7 +88,7 @@ SpinnakerSource::~SpinnakerSource() {
 std::shared_ptr<Image> SpinnakerSource::borrow(const Spinnaker::ImagePtr& pImage) {
 	void* data = pImage->GetData();
 	for (auto& item : buffers) {
-		if(**item.second == data) {
+		if(item.second != nullptr && **item.second == data) {
 			item.second = nullptr;
 			return item.first;
 		}

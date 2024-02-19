@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility>
 #include <vector>
 #include "AlignedArray.h"
 
@@ -10,6 +11,9 @@ struct Run {
 
 class RLEVector {
 public:
+	RLEVector() = default;
+	explicit RLEVector(const std::vector<Run>& runs): runs(runs) {}
+
 	void add(const Run& run);
 	void remove(const Run& run);
 	void add(int x, int y);
@@ -19,7 +23,7 @@ public:
 
 	void add(const RLEVector& vector);
 	void remove(const RLEVector& vector);
-	std::vector<Run> getPart(int start, int end);
+	RLEVector getPart(int start, int end);
 
 	const std::vector<Run>& getRuns() { return runs; }
 

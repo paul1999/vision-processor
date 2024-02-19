@@ -49,8 +49,14 @@ Resources::Resources(YAML::Node config) {
 	mask = std::make_shared<Mask>(perspective, gcSocket->maxBotHeight, ballRadius);
 	rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + network["stream_ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(network["stream_ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(network["stream_port"].as<int>(10100)));
 
+	yuvkernel = openCl->compile((
+#include "yuv.cl"
+	));
+	bgkernel = openCl->compile((
+#include "backsub.cl"
+	));
 	diffkernel = openCl->compile((
-#include "diff.cl"
+#include "blobridge.cl"
 	));
 	ringkernel = openCl->compile((
 #include "image2field.cl"

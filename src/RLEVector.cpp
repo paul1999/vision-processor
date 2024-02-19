@@ -33,17 +33,18 @@ int RLEVector::size() {
 	return size;
 }
 
-std::vector<Run> RLEVector::getPart(int start, int end) {
+RLEVector RLEVector::getPart(int start, int end) {
 	std::vector<Run> result;
 
 	int pos = 0;
 	auto it = runs.cbegin();
-	while(pos+it->length < start) {
+	while(pos < start && pos+it->length < start) {
 		pos += it->length;
 		it++;
 	}
 
-	while(pos+it->length < end) {
+	while(pos < end && pos+it->length < end) {
+		pos += it->length;
 		result.push_back(*it++);
 	}
 
@@ -51,7 +52,7 @@ std::vector<Run> RLEVector::getPart(int start, int end) {
 		result.push_back({it->x, it->y, end - pos});
 	}
 
-	return result;
+	return std::move(RLEVector(result));
 }
 
 static inline bool lowerOrEqual(const Run& value, const Run& element) {
