@@ -46,14 +46,14 @@ kernel void ssd(global const uchar* img, global const int* pos, global float* ou
 #ifdef RGGB
 					if(y%2 == 0) {
 						if(x%2 == 0)
-							reference = rgb.r;
+							reference = bg.r;
 						else
-							reference = rgb.g;
+							reference = bg.g;
 					} else {
 						if(x%2 == 0)
-							reference = rgb.g;
+							reference = bg.g;
 						else
-							reference = rgb.b;
+							reference = bg.b;
 					}
 #endif
 				}

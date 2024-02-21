@@ -78,9 +78,9 @@ public:
 class CVMap {
 public:
 	explicit CVMap(const Image& image, int clRWType);
-	~CVMap();
+	~CVMap() = default;
 
-	CVMap(CVMap&& other) noexcept;
+	CVMap(CVMap&& other) noexcept = default;
 	CVMap ( const CVMap & ) = delete;
 	CVMap& operator= ( const CVMap & ) = delete;
 	cv::Mat& operator*() { return mat; }
@@ -89,8 +89,6 @@ public:
 	const cv::Mat* operator-> () const { return &mat; }
 
 private:
-	const cl::Buffer buffer;
-	void* map;
+	CLMap<uint8_t> map;
 	cv::Mat mat;
-	bool unmoved = true;
 };

@@ -46,8 +46,15 @@ public:
 		}
 	}
 	~CLMap() {
-		if(unmoved)
-			cl::enqueueUnmapMemObject(buffer, map);
+		if(unmoved) {
+			cl::Event event;
+			int error = cl::enqueueUnmapMemObject(buffer, map, nullptr, &event);
+			if(error != CL_SUCCESS) {
+				std::cerr << "[OpenCL] Enqueue unmap buffer error: " << error << std::endl;
+				exit(1);
+			}
+			event.wait(); //TODO utilize EventList to increase asynchronicity?
+		}
 	}
 
 	CLMap (CLMap&& other) noexcept: buffer(std::move(other.buffer)), map(std::move(other.map)) {

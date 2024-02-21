@@ -36,7 +36,7 @@ CVMap Image::cvRead() const {
 }
 
 CVMap Image::cvWrite() {
-	return std::move(CVMap(*this, CL_MAP_WRITE)); //_INVALIDATE_REGION
+	return std::move(CVMap(*this, CL_MAP_WRITE_INVALIDATE_REGION));
 }
 
 CVMap Image::cvReadWrite() {
@@ -103,26 +103,11 @@ Image Image::toRGGB() const {
 	}
 }
 
-CVMap::CVMap(const Image& image, int clRWType): buffer(image.buffer) {
-	int size = image.height*image.width*image.format->pixelSize();
-	int error;
-	map = cl::enqueueMapBuffer(buffer, true, clRWType, 0, size, nullptr, nullptr, &error);
-	if(error != 0)
-		std::cerr << "[CLMap] enqueue map buffer returned " << error << std::endl;
-
+CVMap::CVMap(const Image& image, int clRWType): map(std::move(CLMap<uint8_t>(image.buffer, image.height*image.width*image.format->pixelSize(), clRWType))) {
 	if(image.format->cvType == CV_8UC1)
-		mat = cv::Mat(image.height*image.format->rowStride, image.width*image.format->stride, image.format->cvType, map);
+		mat = cv::Mat(image.height*image.format->rowStride, image.width*image.format->stride, image.format->cvType, *map);
 	else
-		mat = cv::Mat(image.height, image.width, image.format->cvType, map);
-}
-
-CVMap::~CVMap() {
-	if(unmoved)
-		cl::enqueueUnmapMemObject(buffer, map);
-}
-
-CVMap::CVMap(CVMap&& other) noexcept: buffer(other.buffer), map(other.map), mat(std::move(other.mat)) {
-	other.unmoved = false;
+		mat = cv::Mat(image.height, image.width, image.format->cvType, *map);
 }
 
 /*CLImage::CLImage(int width, int height, int planes): width(width), height(height), planes(planes) {
