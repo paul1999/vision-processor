@@ -53,7 +53,11 @@ public:
 				std::cerr << "[OpenCL] Enqueue unmap buffer error: " << error << std::endl;
 				exit(1);
 			}
-			event.wait(); //TODO utilize EventList to increase asynchronicity?
+			error = event.wait();
+			if(error != CL_SUCCESS) {
+				std::cerr << "[OpenCL] Enqueue unmap buffer wait error: " << error << std::endl;
+				exit(1);
+			}
 		}
 	}
 

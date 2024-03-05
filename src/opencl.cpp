@@ -17,9 +17,6 @@ OpenCL::OpenCL() {
 		exit(1);
 	}
 
-	//CL_DEVICE_GLOBAL_MEM_CACHE_TYPE
-	//CL_DEVICE_EXTENSIONS
-
 	context = cl::Context(device);
 	cl::Context::setDefault(context);
 	queue = cl::CommandQueue(context, device);
@@ -33,8 +30,8 @@ bool OpenCL::searchDevice(const std::vector<cl::Platform>& platforms, cl_device_
 
 		for(cl::Device& d : devices) {
 			device = d;
-			//std::cout << "[OpenCL] Using platform: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl
-			//		  << "[OpenCL] Using device: " << device.getInfo<CL_DEVICE_NAME>() << std::endl;
+			std::cout << "[OpenCL] Using platform: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl
+					  << "[OpenCL] Using device: " << device.getInfo<CL_DEVICE_NAME>() << std::endl;
 			return true;
 		}
 	}
@@ -73,7 +70,6 @@ void OpenCL::wait(const cl::Event& event) {
 	}
 }
 
-//data = std::aligned_alloc(PAGE_SIZE, size);
 static inline cl::Buffer clAlloc(cl_mem_flags type, cl::size_type size, void* data) {
 	int error;
 	cl::Buffer buffer(type | CL_MEM_READ_WRITE, size, data, &error);

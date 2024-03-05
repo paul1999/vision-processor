@@ -60,7 +60,7 @@ Resources::Resources(YAML::Node config) {
 	));
 	ringkernel = openCl->compile((
 #include "image2field.cl"
-#include "midpointssd.cl"
+#include "ringssd.cl"
 	), "-D RGGB");
 	botkernel = openCl->compile((
 #include "image2field.cl"

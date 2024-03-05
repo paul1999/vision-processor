@@ -64,7 +64,7 @@ Image Image::toBGR() const {
 	if(format == &PixelFormat::BGR888) {
 		return *this;
 	} else if(format == &PixelFormat::RGGB8) {
-		Image image(&PixelFormat::BGR888, width, height);
+		Image image(&PixelFormat::BGR888, width, height); //TODO use OpenCV function
 		CLMap<uint8_t> read = ::Image::read<uint8_t>();
 		CLMap<uint8_t> write = image.write<uint8_t>();
 		for(int y = 0; y < height; y++) {

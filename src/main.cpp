@@ -9,7 +9,7 @@
 #include <opencv2/video/background_segm.hpp>
 
 
-double getTime() {
+static double getTime() {
 	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
 }
 
@@ -182,15 +182,15 @@ void trackObjects(Resources& r, const double timestamp, const cl::Buffer& clBuff
 	filtered.insert(filtered.end(), tracked.begin(), tracked.end());
 }
 
-float dist(const cv::Vec2f& v1, const cv::Vec2f& v2) {
+static float dist(const cv::Vec2f& v1, const cv::Vec2f& v2) {
 	cv::Vec2f d = v2-v1;
 	return sqrtf(d.dot(d));
 }
 
-float angleDiff(const cv::Vec4f& v1, const cv::Vec4f& v2) {
+static float angleDiff(const cv::Vec4f& v1, const cv::Vec4f& v2) {
 	float v1a = atan2f(v1[3] - v1[1], v1[2] - v1[0]);
 	float v2a = atan2f(v2[3] - v2[1], v2[2] - v2[0]);
-	return abs(atan2f(sinf(v2a-v1a), cosf(v2a-v1a)));
+	return fabsf(atan2f(sinf(v2a-v1a), cosf(v2a-v1a)));
 }
 
 Eigen::Vector2f undistort(const Eigen::Vector2f k, const int width, const Eigen::Vector2f p) {
@@ -231,12 +231,13 @@ struct Match {
 	float score;
 };
 
-std::vector<Match> scanColor(Resources& r, Image& diff, CLArray& pos, CLArray& result, const int areaSize, RGB color, float height, float radius, float& median) {
+static std::vector<Match> scanColor(Resources& r, Image& diff, CLArray& pos, CLArray& result, const int areaSize, RGB color, float height, float radius, float& median) {
 	color.r = (uint8_t)(color.r * r.contrast);
 	color.g = (uint8_t)(color.g * r.contrast);
 	color.b = (uint8_t)(color.b * r.contrast);
 
-	OpenCL::wait(r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), diff.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius, color));
+	//OpenCL::wait(r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), diff.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius, color));
+	OpenCL::wait(r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), diff.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius, 5.0f, color));
 	auto map = result.read<float>();
 	auto posMap = pos.read<int>();
 
@@ -246,20 +247,24 @@ std::vector<Match> scanColor(Resources& r, Image& diff, CLArray& pos, CLArray& r
 
 	std::vector<Match> matches;
 
-	std::cout << "[Scan] matches R" << (int)color.r << "G" << (int)color.g << "B" << (int)color.b << ": ";
-	float threshold = median*0.5f; //TODO configurable/better threshold
+	float threshold = median*0.66f; //TODO configurable/better threshold
 	for(int i = 0; i < areaSize; i++) {
 		if(map[i] < threshold) {
 			matches.push_back({posMap[2*i], posMap[2*i+1], map[i]});
-			std::cout << posMap[2*i] << "," << posMap[2*i+1] << ";" << map[i] << " ";
 		}
 	}
-	std::cout << std::endl;
 
 	return std::move(matches);
 }
 
-void scan(Resources& r, Image& diff, int start, int end) {
+static void print(CVMap& img, const std::vector<Match>& matches, RGB color) {
+	for(const Match& match : matches) {
+		cv::drawMarker(*img, cv::Point(2*match.x, 2*match.y), CV_RGB(color.r, color.g, color.b), cv::MARKER_CROSS, 10);
+		cv::putText(*img, std::to_string(match.score), cv::Point(2*match.x, 2*match.y), cv::FONT_HERSHEY_SIMPLEX, 0.4, CV_RGB(color.r, color.g, color.b));
+	}
+}
+
+static void scan(Resources& r, Image& img, Image& diff, int start, int end) {
 	//TODO slow update/convergence: contrast, median, color
 	RLEVector area = r.mask->getRuns().getPart(start, end);
 
@@ -292,6 +297,12 @@ void scan(Resources& r, Image& diff, int start, int end) {
 	std::vector<Match> blue = scanColor(r, diff, *posArray, *resultArray, areaSize, r.blue, (float)r.gcSocket->blueBotHeight, (float)r.centerBlobRadius, r.blueMedian);
 	std::vector<Match> green = scanColor(r, diff, *posArray, *resultArray, areaSize, r.green, (float)r.gcSocket->defaultBotHeight, (float)r.sideBlobRadius, r.greenMedian);
 	std::vector<Match> pink = scanColor(r, diff, *posArray, *resultArray, areaSize, r.pink, (float)r.gcSocket->defaultBotHeight, (float)r.sideBlobRadius, r.pinkMedian);
+	CVMap map = img.cvReadWrite();
+	print(map, orange, r.orange);
+	print(map, yellow, r.yellow);
+	print(map, blue, r.blue);
+	print(map, green, r.green);
+	print(map, pink, r.pink);
 	//TODO non local maximum match suppression
 }
 
@@ -521,12 +532,14 @@ int main(int argc, char* argv[]) {
 
 			Image raw = img->toRGGB();
 			Image diff(raw.format, raw.width, raw.height, img->name);
-			r.openCl->run(r.diffkernel, cl::EnqueueArgs(cl::NDRange((diff.width-1)*raw.format->stride, (diff.height-1)*raw.format->rowStride)), raw.buffer, diff.buffer, raw.format->stride, raw.format->rowStride).wait();
-			//cv::imwrite(img->name + ".diff.png", *diff.toBGR().cvRead());
+			OpenCL::wait(r.openCl->run(r.diffkernel, cl::EnqueueArgs(cl::NDRange((diff.width-1)*raw.format->stride, (diff.height-1)*raw.format->rowStride)), raw.buffer, diff.buffer, raw.format->stride, raw.format->rowStride));
 
+			Image bgr = img->toBGR();
 			double ssrTime = getTime();
-			scan(r, diff, 0, r.mask->getRuns().size());
+			scan(r, bgr, diff, 0, r.mask->getRuns().size());
 			std::cout << "scanTime " << (getTime() - ssrTime) * 1000.0 << " ms" << std::endl;
+			cv::imwrite(img->name + ".diff.png", *diff.toBGR().cvRead());
+			cv::imwrite(img->name + ".scan.png", *bgr.cvRead());
 
 			//TODO background removal mask -> RLE encoding for further analysis
 
@@ -554,9 +567,9 @@ int main(int argc, char* argv[]) {
 			detection->set_t_sent(getTime());
 			r.socket->send(wrapper);
 			break;
-		} else if(r.socket->getGeometryVersion()) {
-		//} else {
-			int halfLineWidth = halfLineWidthEstimation(r, *img); // 4, 3, 7
+		//} else if(r.socket->getGeometryVersion()) {
+		} else {
+			int halfLineWidth = 4;//halfLineWidthEstimation(r, *img); // 4, 3, 7
 			std::cout << "Line width: " << halfLineWidth << std::endl;
 			Image gray = img->toGrayscale();
 
@@ -591,6 +604,10 @@ int main(int argc, char* argv[]) {
 			for(int i = 0; i < linesMat.rows; i++)
 				lines.push_back(linesMat(0, i));
 
+			for(auto& line : lines)
+				std::cout << dist(cv::Vec2f(line[0], line[1]), cv::Vec2f(line[2], line[3])) << " ";
+			std::cout << std::endl;
+
 			std::cout << "Line segments: " << lines.size() << std::endl;
 
 			std::vector<std::vector<cv::Vec4f>> compoundLines;
@@ -608,13 +625,14 @@ int main(int argc, char* argv[]) {
 
 					auto lit = lines.cbegin();
 					while(lit != lines.cend()) {
-						cv::Vec2f a2((*lit)[0], (*lit)[1]);
-						cv::Vec2f b2((*lit)[2], (*lit)[3]);
+						cv::Vec4f l = *lit;
+						cv::Vec2f a2(l[0], l[1]);
+						cv::Vec2f b2(l[2], l[3]);
 						if(
-								std::min(angleDiff(root, *lit), angleDiff(invRoot, *lit)) <= 0.05 &&
+								std::min(angleDiff(root, l), angleDiff(invRoot, l)) <= 0.05 &&
 								std::min(std::min(dist(a1, a2), dist(b1, b2)), std::min(dist(a1, b2), dist(b1, a2))) <= 40.0
 						) {
-							compound.push_back(*lit);
+							compound.push_back(l);
 							lit = lines.erase(lit);
 						} else {
 							lit++;
@@ -633,14 +651,38 @@ int main(int argc, char* argv[]) {
 					cv::Vec2f c(v[0], v[1]);
 					cv::Vec2f d(v[2], v[3]);
 
-					cv::Vec2f maxA = dist(a, c) > dist(a, d) ? c : d;
-					if(dist(maxA, a) > dist(a, b) && dist(maxA, a) > dist(maxA, b)) {
-						a = maxA;
+					cv::Vec2f max1 = a;
+					cv::Vec2f max2 = b;
+					float maxd = dist(a, b);
+
+					if(dist(a, c) > maxd) {
+						max1 = a;
+						max2 = c;
+						maxd = dist(a, c);
 					}
-					cv::Vec2f maxB = dist(b, c) > dist(b, d) ? c : d;
-					if(dist(maxB, b) > dist(a, b) && dist(maxB, b) > dist(maxB, a)) {
-						b = maxB;
+					if(dist(a, d) > maxd) {
+						max1 = a;
+						max2 = d;
+						maxd = dist(a, d);
 					}
+					if(dist(c, b) > maxd) {
+						max1 = c;
+						max2 = b;
+						maxd = dist(c, b);
+					}
+					if(dist(d, b) > maxd) {
+						max1 = d;
+						max2 = b;
+						maxd = dist(d, b);
+					}
+					if(dist(c, d) > maxd) {
+						max1 = c;
+						max2 = d;
+						maxd = dist(c, d);
+					}
+
+					a = max1;
+					b = max2;
 				}
 				mergedLines.emplace_back(a[0], a[1], b[0], b[1]);
 			}
@@ -691,10 +733,11 @@ int main(int argc, char* argv[]) {
 				Eigen::Vector2f start = undistort(k, img->width, {compound.front()[0], compound.front()[1]});
 				Eigen::Vector2f end = undistort(k, img->width, {compound.back()[2], compound.back()[3]});
 				cv::arrowedLine(*cvBgr, {(int)start(0), (int)start(1)}, {(int)end(0), (int)end(1)}, CV_RGB(0, 255, 255));
+				cv::arrowedLine(*cvBgr, {(int)end(0), (int)end(1)}, {(int)start(0), (int)start(1)}, CV_RGB(0, 255, 255));
 			}
 			cv::imwrite("lines3.png", *cvBgr);
 
-			img = thresholded;
+			break;
 		}
 
 		r.rtpStreamer->sendFrame(img);

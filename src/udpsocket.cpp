@@ -101,7 +101,7 @@ void VisionSocket::parse(char *data, int length) {
 
 	if(wrapper.has_geometry()) {
 		if(!google::protobuf::util::MessageDifferencer::Equals(geometry, wrapper.geometry())) {
-			//std::cout << "[VisionSocket] New geometry received" << std::endl;
+			std::cout << "[VisionSocket] New geometry received" << std::endl;
 			geometry.CopyFrom(wrapper.geometry());
 			geometryVersion++;
 		}
