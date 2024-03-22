@@ -28,7 +28,7 @@ inline V2 image2field(const Perspective p, const float height, const V2 pos) {
 			(pos.y - p.p[1]) * p.f
 	};
 
-	double distortion = 1.0 + (normalized.x*normalized.x + normalized.y*normalized.y) * p.d;
+	float distortion = 1.0f + (normalized.x*normalized.x + normalized.y*normalized.y) * p.d;
 	normalized.x *= distortion;
 	normalized.y *= distortion;
 

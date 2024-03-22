@@ -14,19 +14,30 @@ kernel void ssd(global const uchar* img, global const int* pos, global float* ou
 
 	V2 center = image2field(perspective, height, (V2) {(float)xpos, (float)ypos});
 
-	I2 min, max;
-	area(perspective, height, (I2) {xpos, ypos}, center, (radius+rradius)*(radius+rradius), &min, &max);
+	I2 minp, maxp;
+	//TODO bug (position of rifts) is circle size and/or height dependent (different pattern)
+	//TODO fixed radius does not affect the bug (asymmetry also not)
+	//TODO color only affects effect strength
+	area(perspective, height, (I2) {xpos, ypos}, center, (radius+rradius)*(radius+rradius), &minp, &maxp);
+	//minp.x = max(0, xpos-9);
+	//minp.y = max(0, ypos-9);
+	//maxp.x = min(perspective.shape[0], xpos+9);
+	//maxp.y = min(perspective.shape[1], ypos+9);
+	//maxp.x = min(perspective.shape[0], xpos+10);
+	//maxp.y = min(perspective.shape[1], ypos+10);
 
 	float sum = 0.0f;
-	int n = 0;
-	int xstep = 1;// + (max.x - min.x) / 16;
-	int ystep = 1;// + (max.y - min.y) / 16;
-	for(int y = min.y; y < max.y; y+=ystep) {
-		for(int x = min.x; x < max.x; x+=xstep) {
+	float n = 0.0f;
+	int xstep = 1;// + (maxp.x - minp.x) / 16;
+	int ystep = 1;// + (maxp.y - minp.y) / 16;
+	for(int y = minp.y; y < maxp.y; y+=ystep) {
+		for(int x = minp.x; x < maxp.x; x+=xstep) {
 			V2 mpos = image2field(perspective, height, (V2) {(float)x, (float)y});
 			V2 diff = {mpos.x - center.x, mpos.y - center.y};
 			float dist = native_sqrt(diff.x*diff.x + diff.y*diff.y);
-			if(fabs(dist - radius) <= rradius) {
+			float range = fabs(dist - radius);
+			if(range <= rradius) {
+			//if(dist <= radius) {
 #ifdef RGGB
 				float vdiff;
 				if(y%2 == 0) {
@@ -50,4 +61,7 @@ kernel void ssd(global const uchar* img, global const int* pos, global float* ou
 	}
 
 	out[get_global_id(0)] = sum / n;
+	//out[get_global_id(0)] = sum;
+	//out[get_global_id(0)] = n;
+	//out[get_global_id(0)] = (maxp.x - minp.x)*(maxp.y - minp.y);
 }

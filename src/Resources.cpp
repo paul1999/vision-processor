@@ -57,10 +57,12 @@ Resources::Resources(YAML::Node config) {
 	));
 	diffkernel = openCl->compile((
 #include "blobridge.cl"
+//#include "robust_invariant.cl"
 	));
 	ringkernel = openCl->compile((
 #include "image2field.cl"
-#include "ringssd.cl"
+//#include "ringssd.cl"
+#include "midpointssd.cl"
 	), "-D RGGB");
 	botkernel = openCl->compile((
 #include "image2field.cl"

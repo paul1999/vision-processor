@@ -231,13 +231,15 @@ struct Match {
 	float score;
 };
 
-static std::vector<Match> scanColor(Resources& r, Image& diff, CLArray& pos, CLArray& result, const int areaSize, RGB color, float height, float radius, float& median) {
+static std::vector<Match> scanColor(Resources& r, Image& diff, CLArray& pos, CLArray& result, const int areaSize, RGB color, float height, float radius, float& median, const std::string& name) {
 	color.r = (uint8_t)(color.r * r.contrast);
 	color.g = (uint8_t)(color.g * r.contrast);
 	color.b = (uint8_t)(color.b * r.contrast);
 
+	//TODO circle-border bug only in ringssd, not in midpointssd
+	OpenCL::wait(r.openCl->run(r.sidekernel, cl::EnqueueArgs(cl::NDRange(areaSize)), diff.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius, color));
 	//OpenCL::wait(r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), diff.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius, color));
-	OpenCL::wait(r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), diff.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius, 5.0f, color));
+	//OpenCL::wait(r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), diff.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius, 5.0f, color));
 	auto map = result.read<float>();
 	auto posMap = pos.read<int>();
 
@@ -245,12 +247,22 @@ static std::vector<Match> scanColor(Resources& r, Image& diff, CLArray& pos, CLA
 	std::nth_element(resultCopy.begin(), resultCopy.begin()+areaSize/2, resultCopy.end());
 	median = resultCopy[areaSize/2];
 
+	Image debug(&PixelFormat::U8, diff.width, diff.height);
+	{
+		auto debugMap = debug.write<uint8_t>();
+		for (int i = 0; i < areaSize; i++) {
+			debugMap[posMap[2 * i + 1] * diff.width + posMap[2 * i]] = std::min(map[i] / median * 128, 255.0f);
+		}
+	}
+	cv::imwrite(name, *debug.cvRead());
+
 	std::vector<Match> matches;
 
+	//TODO 0.66 MEDIAN?
 	float threshold = median*0.66f; //TODO configurable/better threshold
 	for(int i = 0; i < areaSize; i++) {
 		if(map[i] < threshold) {
-			matches.push_back({posMap[2*i], posMap[2*i+1], map[i]});
+			matches.push_back({posMap[2*i], posMap[2*i+1], map[i]}); //TODO local peak suppression
 		}
 	}
 
@@ -292,11 +304,11 @@ static void scan(Resources& r, Image& img, Image& diff, int start, int end) {
 	int areaSize = end - start;
 	auto posArray = area.scanArea(*r.arrayPool);
 	auto resultArray = r.arrayPool->acquire<float>(areaSize);
-	std::vector<Match> orange = scanColor(r, diff, *posArray, *resultArray, areaSize, r.orange, (float)r.ballRadius, (float)r.ballRadius, r.orangeMedian);
-	std::vector<Match> yellow = scanColor(r, diff, *posArray, *resultArray, areaSize, r.yellow, (float)r.gcSocket->yellowBotHeight, (float)r.centerBlobRadius, r.yellowMedian);
-	std::vector<Match> blue = scanColor(r, diff, *posArray, *resultArray, areaSize, r.blue, (float)r.gcSocket->blueBotHeight, (float)r.centerBlobRadius, r.blueMedian);
-	std::vector<Match> green = scanColor(r, diff, *posArray, *resultArray, areaSize, r.green, (float)r.gcSocket->defaultBotHeight, (float)r.sideBlobRadius, r.greenMedian);
-	std::vector<Match> pink = scanColor(r, diff, *posArray, *resultArray, areaSize, r.pink, (float)r.gcSocket->defaultBotHeight, (float)r.sideBlobRadius, r.pinkMedian);
+	std::vector<Match> orange = scanColor(r, diff, *posArray, *resultArray, areaSize, r.orange, (float)r.ballRadius, (float)r.ballRadius, r.orangeMedian, img.name + "-orange.png");
+	std::vector<Match> yellow = scanColor(r, diff, *posArray, *resultArray, areaSize, r.yellow, (float)r.gcSocket->yellowBotHeight, (float)r.centerBlobRadius, r.yellowMedian, img.name + "-yellow.png");
+	std::vector<Match> blue = scanColor(r, diff, *posArray, *resultArray, areaSize, r.blue, (float)r.gcSocket->blueBotHeight, (float)r.centerBlobRadius, r.blueMedian, img.name + "-blue.png");
+	std::vector<Match> green = scanColor(r, diff, *posArray, *resultArray, areaSize, r.green, (float)r.gcSocket->defaultBotHeight, (float)r.sideBlobRadius, r.greenMedian, img.name + "-green.png");
+	std::vector<Match> pink = scanColor(r, diff, *posArray, *resultArray, areaSize, r.pink, (float)r.gcSocket->defaultBotHeight, (float)r.sideBlobRadius, r.pinkMedian, img.name + "-pink.png");
 	CVMap map = img.cvReadWrite();
 	print(map, orange, r.orange);
 	print(map, yellow, r.yellow);
@@ -530,6 +542,17 @@ int main(int argc, char* argv[]) {
 				detection->set_t_capture_camera(img->timestamp);
 			detection->set_camera_id(r.camId);
 
+			/*Image bgr = img->toBGR();
+			{
+				CVMap map = bgr.cvReadWrite();
+				cv::Mat copy;
+				map->copyTo(copy);
+				cv::blur(copy, *map, cv::Size(5, 5));
+			}
+			Image diff(&PixelFormat::U8, bgr.width, bgr.height, img->name);
+			OpenCL::wait(r.openCl->run(r.diffkernel, cl::EnqueueArgs(cl::NDRange(diff.width-1, diff.height-1)), bgr.buffer, diff.buffer));
+			cv::imwrite(img->name + ".invariant.png", *diff.cvRead());*/
+
 			Image raw = img->toRGGB();
 			Image diff(raw.format, raw.width, raw.height, img->name);
 			OpenCL::wait(r.openCl->run(r.diffkernel, cl::EnqueueArgs(cl::NDRange((diff.width-1)*raw.format->stride, (diff.height-1)*raw.format->rowStride)), raw.buffer, diff.buffer, raw.format->stride, raw.format->rowStride));
@@ -567,8 +590,8 @@ int main(int argc, char* argv[]) {
 			detection->set_t_sent(getTime());
 			r.socket->send(wrapper);
 			break;
-		//} else if(r.socket->getGeometryVersion()) {
-		} else {
+		} else if(r.socket->getGeometryVersion()) {
+		//} else {
 			int halfLineWidth = 4;//halfLineWidthEstimation(r, *img); // 4, 3, 7
 			std::cout << "Line width: " << halfLineWidth << std::endl;
 			Image gray = img->toGrayscale();

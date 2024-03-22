@@ -47,11 +47,11 @@ Image Image::toGrayscale() const {
 	if (format == &PixelFormat::U8) {
 		return *this;
 	} else if(format == &PixelFormat::BGR888) {
-		Image image(&PixelFormat::U8, width, height);
+		Image image(&PixelFormat::U8, width, height, name);
 		cv::cvtColor(*cvRead(), *image.cvWrite(), cv::COLOR_BGR2GRAY);
 		return image;
 	} else if(format == &PixelFormat::RGGB8) {
-		Image image(&PixelFormat::U8, 2*width, 2*height);
+		Image image(&PixelFormat::U8, 2*width, 2*height, name);
 		cv::cvtColor(*cvRead(), *image.cvWrite(), cv::COLOR_BayerBG2GRAY);
 		return image;
 	} else {
@@ -64,7 +64,7 @@ Image Image::toBGR() const {
 	if(format == &PixelFormat::BGR888) {
 		return *this;
 	} else if(format == &PixelFormat::RGGB8) {
-		Image image(&PixelFormat::BGR888, width, height); //TODO use OpenCV function
+		Image image(&PixelFormat::BGR888, width, height, name); //TODO use OpenCV function
 		CLMap<uint8_t> read = ::Image::read<uint8_t>();
 		CLMap<uint8_t> write = image.write<uint8_t>();
 		for(int y = 0; y < height; y++) {
@@ -85,7 +85,7 @@ Image Image::toRGGB() const {
 	if(format == &PixelFormat::RGGB8) {
 		return *this;
 	} else if(format == &PixelFormat::BGR888) {
-		Image image(&PixelFormat::RGGB8, width/2, height/2);
+		Image image(&PixelFormat::RGGB8, width/2, height/2, name);
 		CLMap<uint8_t> read = ::Image::read<uint8_t>();
 		CLMap<uint8_t> write = image.write<uint8_t>();
 		for(int y = 0; y < height; y++) {

@@ -34,7 +34,7 @@ kernel void ssd(global const uchar* img, global const int* pos, global float* ou
 #endif
 
 	V2 posdiff = {offcenter.x-center.x, offcenter.y-center.y};
-	float rPerPixel = native_sqrt(posdiff.x*posdiff.x + posdiff.y*posdiff.y);
+	float rPerPixel = native_sqrt(posdiff.x*posdiff.x + posdiff.y*posdiff.y) * 0.5f;
 	float err = radius/rPerPixel;
 	int x = round(err);
 	int y = 0;
