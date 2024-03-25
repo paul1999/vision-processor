@@ -1,6 +1,7 @@
 #include "opencl.h"
 
 #include <iostream>
+#include <fstream>
 
 
 OpenCL::OpenCL() {
@@ -68,6 +69,12 @@ void OpenCL::wait(const cl::Event& event) {
 		std::cerr << "[OpenCL] Error during kernel execution: " << error << std::endl;
 		exit(1);
 	}
+}
+
+cl::Kernel OpenCL::compileFile(const std::string& path, const std::string& options) {
+	std::ifstream sourceFile(path);
+	std::string sourceCode( std::istreambuf_iterator<char>(sourceFile), (std::istreambuf_iterator<char>()));
+	return compile(sourceCode, options);
 }
 
 static inline cl::Buffer clAlloc(cl_mem_flags type, cl::size_type size, void* data) {

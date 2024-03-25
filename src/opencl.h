@@ -10,6 +10,7 @@ class OpenCL {
 public:
 	OpenCL();
 
+	cl::Kernel compileFile(const std::string& path, const std::string& options = "");
 	cl::Kernel compile(const std::string& code, const std::string& options = "");
 
 	template<typename... Ts>

@@ -55,15 +55,18 @@ Resources::Resources(YAML::Node config) {
 	bgkernel = openCl->compile((
 #include "backsub.cl"
 	));
-	diffkernel = openCl->compile((
-#include "blobridge.cl"
+	diffkernel = openCl->compileFile("kernel/delta.cl");
+	/*diffkernel = openCl->compile((
+#include "delta.cl"
+//#include "blobridge.cl"
 //#include "robust_invariant.cl"
-	));
-	ringkernel = openCl->compile((
+	));*/
+	ringkernel = openCl->compileFile("kernel/midpointssd.cl", "-D RGGB");
+	/*ringkernel = openCl->compile((
 #include "image2field.cl"
 //#include "ringssd.cl"
 #include "midpointssd.cl"
-	), "-D RGGB");
+	), "-D RGGB");*/
 	botkernel = openCl->compile((
 #include "image2field.cl"
 #include "botssd.cl"
