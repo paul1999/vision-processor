@@ -65,5 +65,5 @@ kernel void ssd(global const uchar* img, global const int* pos, global float* ou
 		}
 	}
 
-	out[get_global_id(0)] = sum / n;
+	out[get_global_id(0)] = convert_uchar_sat(sum / n);
 }

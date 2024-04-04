@@ -8,7 +8,7 @@
 #endif
 
 
-#define ADD_SQ_COSSIM(pos) vdiff = dx*(float)gx[pos] + dy*(float)gy[pos]; *cossum += fabs(vdiff) / ((float)abs[pos]*((float)dx*dx+dy*dy) + 0.00001); //native_sqrt
+#define ADD_SQ_COSSIM(pos) vdiff = dx*(float)gx[pos] + dy*(float)gy[pos]; *cossum += fabs(vdiff) / ((float)abs[pos]*native_sqrt((float)dx*dx+dy*dy) + 0.00001);
 inline void px(global const uchar* abs, global const char* gx, global const char* gy, const Perspective perspective, const RGB rgb, const int xpos, const int ypos, const int dx, const int dy, float* sum, float* cossum, int* n) {
 	const int x = xpos+dx;
 	const int y = ypos+dy;
@@ -41,13 +41,18 @@ kernel void ssd(global const uchar* abs, global const char* gx, global const cha
 	int ypos = pos[2*get_global_id(0)+1];
 #ifdef RGGB
 	V2 center = image2field(perspective, height, (V2) {(float)2*xpos, (float)2*ypos});
-	V2 offcenter = image2field(perspective, height, (V2) {(float)2*xpos+2, (float)2*ypos+2});
+	//V2 offcenter = image2field(perspective, height, (V2) {(float)2*xpos+2, (float)2*ypos+2});
+	V2 offcenter = image2field(perspective, height, (V2) {(float)2*xpos+2, (float)2*ypos});
 #endif
 
 	V2 posdiff = {offcenter.x-center.x, offcenter.y-center.y};
-	float rPerPixel = native_sqrt(posdiff.x*posdiff.x + posdiff.y*posdiff.y);// * 1.25f;
-	float err = radius/rPerPixel;
-	int x = round(err);
+	//Field coordinates! 1 px -> mm
+	//Half size should not be correct size
+	float rPerPixel = native_sqrt(posdiff.x*posdiff.x + posdiff.y*posdiff.y);// * 0.5f;// * 1.25f;
+	//float err = radius/rPerPixel;
+	int err = round(radius/rPerPixel);
+	//int x = round(err);
+	int x = err;
 	int y = 0;
 	err = err - x;
 
@@ -56,13 +61,16 @@ kernel void ssd(global const uchar* abs, global const char* gx, global const cha
 	int n = 0;
 	while(x >= y) {
 		px(abs, gx, gy, perspective, rgb, xpos, ypos, +x, +y, &sum, &cossum, &n);
-		px(abs, gx, gy, perspective, rgb, xpos, ypos, +y, +x, &sum, &cossum, &n);
 		px(abs, gx, gy, perspective, rgb, xpos, ypos, -y, +x, &sum, &cossum, &n);
-		px(abs, gx, gy, perspective, rgb, xpos, ypos, -x, +y, &sum, &cossum, &n);
 		px(abs, gx, gy, perspective, rgb, xpos, ypos, -x, -y, &sum, &cossum, &n);
-		px(abs, gx, gy, perspective, rgb, xpos, ypos, -y, -x, &sum, &cossum, &n);
 		px(abs, gx, gy, perspective, rgb, xpos, ypos, +y, -x, &sum, &cossum, &n);
-		px(abs, gx, gy, perspective, rgb, xpos, ypos, +x, -y, &sum, &cossum, &n);
+		//TODO no change in style with that change
+		if(x > y && y > 0) {
+			px(abs, gx, gy, perspective, rgb, xpos, ypos, +y, +x, &sum, &cossum, &n);
+			px(abs, gx, gy, perspective, rgb, xpos, ypos, -x, +y, &sum, &cossum, &n);
+			px(abs, gx, gy, perspective, rgb, xpos, ypos, -y, -x, &sum, &cossum, &n);
+			px(abs, gx, gy, perspective, rgb, xpos, ypos, +x, -y, &sum, &cossum, &n);
+		}
 
 		if(err <= 0) {
 			y += 1;
@@ -77,6 +85,8 @@ kernel void ssd(global const uchar* abs, global const char* gx, global const cha
 	//out[get_global_id(0)] = sum / (n*cossum);
 	out[get_global_id(0)] = sum / cossum;
 	//out[get_global_id(0)] = cossum; //TODO cossum contains hard edges (partially depending on n, partially on other)
+	//out[get_global_id(0)] = 1/cossum;
+	//out[get_global_id(0)] = n/cossum;
 	//out[get_global_id(0)] = rPerPixel;
 	//out[get_global_id(0)] = n;
 	//out[get_global_id(0)] = sum / n;

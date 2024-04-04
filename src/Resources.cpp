@@ -74,6 +74,7 @@ Resources::Resources(YAML::Node config) {
 	sidekernel = openCl->compile((
 #include "image2field.cl"
 #include "ssd.cl"
+//#include "conv.cl"
 	), "-D RGGB");
 	ballkernel = openCl->compile((
 #include "image2field.cl"

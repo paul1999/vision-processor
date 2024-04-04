@@ -15,10 +15,12 @@
 #include "opencl.h"
 
 
-typedef struct __attribute__ ((packed)) {
+typedef struct __attribute__ ((packed)) RGB {
 	cl_uchar r;
 	cl_uchar g;
 	cl_uchar b;
+
+	auto operator<=>(const RGB&) const = default;
 } RGB;
 
 
@@ -42,15 +44,15 @@ public:
 
 	double contrast = 1.0;
 	RGB orange = {255, 64, 0};
-	float orangeMedian = 0.0f;
+	float orangeMedian = 1000.0f;
 	RGB yellow = {255, 255, 64};
-	float yellowMedian = 0.0f;
+	float yellowMedian = 1000.0f;
 	RGB blue = {0, 255, 255};
-	float blueMedian = 0.0f;
+	float blueMedian = 1000.0f;
 	RGB green = {64, 255, 64};
-	float greenMedian = 0.0f;
+	float greenMedian = 1000.0f;
 	RGB pink = {255, 0, 255};
-	float pinkMedian = 0.0f;
+	float pinkMedian = 1000.0f;
 
 	std::shared_ptr<GCSocket> gcSocket;
 	std::shared_ptr<VisionSocket> socket;

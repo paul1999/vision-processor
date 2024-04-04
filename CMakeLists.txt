@@ -3,7 +3,7 @@ project(vision_processor)
 
 option(WITH_SPINNAKER "Build with Spinnaker support (if library available" ON)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -Wall -ftree-vectorize -ffast-math")
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
