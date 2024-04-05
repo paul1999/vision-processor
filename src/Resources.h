@@ -32,6 +32,7 @@ public:
 
 	int camId;
 	int cameraAmount;
+	double botRadius;
 	double maxBotAcceleration;
 	double sideBlobDistance;
 	double centerBlobRadius;

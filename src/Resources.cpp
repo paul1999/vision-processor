@@ -33,6 +33,7 @@ Resources::Resources(YAML::Node config) {
 
 	camId = config["cam_id"].as<int>(0);
 	cameraAmount = config["camera_amount"].as<int>(1);
+	botRadius = config["bot_radius"].as<double>(90.0);
 	maxBotAcceleration = 1000*config["max_bot_acceleration"].as<double>(6.5);
 	sideBlobDistance = config["side_blob_distance"].as<double>(65.0);
 	centerBlobRadius = config["center_blob_radius"].as<double>(25.0);

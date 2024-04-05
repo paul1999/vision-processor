@@ -4,12 +4,11 @@
 
 #include "messages_robocup_ssl_wrapper.pb.h"
 #include "Resources.h"
-#include "distortion.h"
 #include "GroundTruth.h"
 #include <opencv2/video/background_segm.hpp>
 
-#define DRAW_DEBUG_IMAGES true
-#define DEBUG_PRINT true
+#define DRAW_DEBUG_IMAGES false
+#define DEBUG_PRINT false
 
 static double getTime() {
 	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
@@ -43,35 +42,6 @@ const double patternAngles[4] = {
 		-1.0021839078803572 //5.281001399299229
 };
 
-static float dist(const cv::Vec2f& v1, const cv::Vec2f& v2) {
-	cv::Vec2f d = v2-v1;
-	return sqrtf(d.dot(d));
-}
-
-static float angleDiff(const float a1, const float a2) {
-	return fabsf(atan2f(sinf(a2-a1), cosf(a2-a1)));
-}
-
-static float angleDiff(const cv::Vec4f& v1, const cv::Vec4f& v2) {
-	float v1a = atan2f(v1[3] - v1[1], v1[2] - v1[0]);
-	float v2a = atan2f(v2[3] - v2[1], v2[2] - v2[0]);
-	return angleDiff(v1a, v2a);
-}
-
-Eigen::Vector2f undistort(const Eigen::Vector2f k, const int width, const Eigen::Vector2f p) {
-	Eigen::Vector2f n = p/width;
-	n(0) -= 0.5f;
-	n(1) -= 0.5f;
-
-	float r2 = n(0)*n(0) + n(1)*n(1);
-	float factor = 1 + k(0)*r2 + k(1)*r2*r2;
-
-	n *= factor;
-	n(0) += 0.5f;
-	n(1) += 0.5f;
-	return n*width;
-}
-
 struct Match {
 	int x, y;
 	float score;
@@ -82,29 +52,18 @@ struct Match {
 	auto operator<=>(const Match&) const = default;
 };
 
-static void filterMatches(const Resources& r, std::list<Match>& matches) {
-	auto it = matches.cbegin();
-	while(it != matches.cend()) {
-		const Match& match = *it;
+static void filterMatches(const Resources& r, std::list<Match>& matches, std::list<Match>& matches2, const float radius) {
+	std::erase_if(matches, [&](const Match& match) {
 		V2 pos = r.perspective->image2field({(double)match.x, (double)match.y}, match.height);
-		bool remove = false;
-		for(const Match& match2 : matches) {
+
+		return std::ranges::any_of(matches2, [&](const Match& match2) {
 			if(match2.score >= match.score)
-				continue;
+				return false;
 
 			V2 pos2 = r.perspective->image2field({(double)match2.x, (double)match2.y}, match2.height);
-			if(dist({(float)pos.x, (float)pos.y}, {(float)pos2.x, (float)pos2.y}) >= 2*match.radius)
-				continue;
-
-			remove = true;
-			break;
-		}
-
-		if(remove)
-			it = matches.erase(it);
-		else
-			it++;
-	}
+			return dist({(float)pos.x, (float)pos.y}, {(float)pos2.x, (float)pos2.y}) < 2*radius;
+		});
+	});
 }
 
 static std::list<Match> getMatchesFromResult(const Resources& r, Image& img, RGB color, const float height, const float radius, const float threshold, CLArray& pos, CLArray& result, const int areaSize) {
@@ -119,7 +78,7 @@ static std::list<Match> getMatchesFromResult(const Resources& r, Image& img, RGB
 	}
 
 	// filter matches
-	filterMatches(r, matches);
+	filterMatches(r, matches, matches, radius);
 
 	if(DRAW_DEBUG_IMAGES) {
 		CVMap map = img.cvReadWrite();
@@ -188,25 +147,19 @@ static std::list<Match> getMatchesUpdateThreshold(Resources& r, Image& img, Imag
 	return getMatchesFromResult(r, img, color, height, radius, threshold, *pos, *result, areaSize);
 }
 
-static void findBots(Resources& r, Image& img, Image& gxy, Image& gx, Image& gy, RLEVector& area, SSL_DetectionFrame* detection, bool yellow) {
-	const int fieldSize = r.mask->getRuns().size();
-	std::list<Match> centerBlobs = getMatchesUpdateThreshold(
-			r, img, gxy, gx, gy, fieldSize, area,
-			yellow ? r.yellow : r.blue,
-			yellow ? r.gcSocket->yellowBotHeight : r.gcSocket->blueBotHeight,
-			(float)r.centerBlobRadius,
-			yellow ? r.yellowMedian : r.blueMedian,
-			img.name + (yellow ? ".yellow.png" : ".blue.png")
-	);
-	for(Match& match : centerBlobs) {
+static void findBots(Resources& r, Image& img, Image& gxy, Image& gx, Image& gy, std::list<Match>& centerBlobs, SSL_DetectionFrame* detection, bool yellow) {
+	auto it = centerBlobs.cbegin();
+	while(it != centerBlobs.cend()) {
+		const Match& match = *it;
 		V2 imgPos {(double)match.x, (double)match.y};
 		RLEVector sideSearchArea = r.perspective->getRing(imgPos, match.height, std::max(0.0, r.sideBlobDistance - r.minTrackingRadius/2), r.sideBlobDistance + r.minTrackingRadius/2);
 		std::list<Match> green = getMatches(r, img, gxy, gx, gy, sideSearchArea, r.green, match.height, r.sideBlobRadius, r.greenMedian);
 		std::list<Match> pink = getMatches(r, img, gxy, gx, gy, sideSearchArea, r.pink, match.height, r.sideBlobRadius, r.pinkMedian);
 
 		green.splice(green.end(), pink);
-		filterMatches(r, green);
+		filterMatches(r, green, green, r.sideBlobRadius);
 		if(green.size() < 4) {
+			it = centerBlobs.erase(it);
 			continue; // False positive
 		}
 
@@ -259,13 +212,13 @@ static void findBots(Resources& r, Image& img, Image& gxy, Image& gx, Image& gy,
 		bot->set_pixel_x(imgPos.x * 2);
 		bot->set_pixel_y(imgPos.y * 2);
 		bot->set_height(match.height);
+
+		it++;
 	}
 }
 
-static void findBalls(Resources& r, Image& img, Image& gxy, Image& gx, Image& gy, RLEVector& area, SSL_DetectionFrame* detection) {
-	const int fieldSize = r.mask->getRuns().size();
-	std::list<Match> orange = getMatchesUpdateThreshold(r, img, gxy, gx, gy, fieldSize, area, r.orange, (float) r.ballRadius, (float) r.ballRadius, r.orangeMedian, img.name + ".orange.png");
-	for(Match& match : orange) {
+static void findBalls(const Resources& r, const std::list<Match>& orange, SSL_DetectionFrame* detection) {
+	for(const Match& match : orange) {
 		V2 pos = r.perspective->image2field({(double)match.x, (double)match.y}, match.height);
 		SSL_DetectionBall* ball = detection->add_balls();
 		ball->set_confidence(1.0f);
@@ -279,22 +232,20 @@ static void findBalls(Resources& r, Image& img, Image& gxy, Image& gx, Image& gy
 	}
 }
 
-static void updateContrast(Resources& r, Image& img, Image& gxy, Image& gx, Image& gy, RLEVector& area) {
+static void updateContrast(Resources& r, Image& gxy, RLEVector& area) {
 	const int fieldSize = r.mask->getRuns().size();
 	const int areaSize = area.size();
 	const double updateFraction = (double)areaSize / fieldSize;
 
-	{
-		const Run& front = area.getRuns().front();
-		const Run& back = area.getRuns().back();
-		const CLMap<uint8_t> map = gxy.read<uint8_t>();
-		//TODO dont use parts outside of field
-		const double maxContrast = *std::max_element(*map + (front.x + front.y * gxy.width) * gxy.format->pixelSize(), *map + (back.x + back.length + back.y * gxy.width) * gxy.format->pixelSize()) / 255.0;
-		if(DEBUG_PRINT)
-			std::cout << "[Scan] contrast: " << maxContrast << std::endl;
-		//TODO hardcoded factor
-		r.contrast = (1.0 - updateFraction)*r.contrast + updateFraction * 0.75*maxContrast;
-	}
+	const Run& front = area.getRuns().front();
+	const Run& back = area.getRuns().back();
+	const CLMap<uint8_t> map = gxy.read<uint8_t>();
+	//TODO dont use parts outside of field
+	const double maxContrast = *std::max_element(*map + (front.x + front.y * gxy.width) * gxy.format->pixelSize(), *map + (back.x + back.length + back.y * gxy.width) * gxy.format->pixelSize()) / 255.0;
+	if(DEBUG_PRINT)
+		std::cout << "[Scan] contrast: " << maxContrast << std::endl;
+	//TODO hardcoded factor
+	r.contrast = (1.0 - updateFraction)*r.contrast + updateFraction * 0.75*maxContrast;
 }
 
 static void getAreas(Resources& r, RLEVector& field, RLEVector& other, std::vector<RLEVector>& blobs, int type) {
@@ -360,45 +311,6 @@ void printSSR(Resources& r, Image& img, Image& gx, Image& gy, int type, RGB rgb)
 		std::cout << "[SSR Med " << type << "] Field:" << (bestField.second / worstBlob) << " Best:" << (bestField.second / bestBlob) << std::endl;
 		std::cout << "[SSR Min " << type << "] Field:" << (bestField.first / worstBlob) << " Other:" << (bestOther.first / worstBlob) << " Best:" << (bestField.first / bestBlob) << std::endl;
 	}
-}
-
-int halfLineWidthEstimation(const Resources& r, const Image& img) {
-	const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
-	int xSize = 1;
-	int ySize = 1;
-	for(int i = r.cameraAmount; i > 1; i /= 2) {
-		if(field.field_length()/xSize >= field.field_width()/ySize)
-			xSize *= 2;
-		else
-			ySize *= 2;
-	}
-
-	int xPos = 0;
-	int yPos = 0;
-	for(int i = r.camId % r.cameraAmount; i > 0; i--) {
-		yPos++;
-		if(yPos == ySize) {
-			yPos = 0;
-			xPos++;
-		}
-	}
-
-	int extentLarge = field.field_length()/xSize + (xPos == 0 ? field.boundary_width() : 0) + (xPos == xSize-1 ? field.boundary_width() : 0);
-	int extentSmall = field.field_width()/ySize + (yPos == 0 ? field.boundary_width() : 0) + (yPos == ySize-1 ? field.boundary_width() : 0);
-	if(extentLarge < extentSmall)
-		std::swap(extentSmall, extentLarge);
-
-	int cameraLarge = img.width;
-	int cameraSmall = img.height;
-	if(cameraLarge < cameraSmall)
-		std::swap(cameraSmall, cameraLarge);
-
-	float largeRatio = cameraLarge/(float)extentLarge;
-	float smallRatio = cameraSmall/(float)extentSmall;
-	if(largeRatio < smallRatio)
-		std::swap(smallRatio, largeRatio);
-
-	return std::ceil(largeRatio*field.line_thickness()/2.f);
 }
 
 int main(int argc, char* argv[]) {
@@ -477,10 +389,9 @@ int main(int argc, char* argv[]) {
 		//Fringe issues with edges make it really bad
 		//OpenCL::wait(r.openCl->run(r.bgkernel, cl::EnqueueArgs(cl::NDRange(yuv.width, yuv.height)), yuv.buffer, bg.buffer, mask->buffer, (uint8_t)16));
 
+		//TODO background removal mask -> RLE encoding for further analysis
 		//TODO idea: background subtraction on edge images with background minimization
 		//TODO idea: delta images for new targets finding, else just tracking
-		//TODO measure tracking capability of current trackers
-		//Circle-Convolution -1 +1 with equal amount +1 -1 as prefiltering
 
 		//std::shared_ptr<Image> mask = std::make_shared<Image>(img->format, img->width, img->height);
 		//int blobsize = 11;
@@ -524,11 +435,9 @@ int main(int argc, char* argv[]) {
 				int fieldStart = (frameId%parts)*fieldStep;
 				scanArea = r.mask->getRuns().getPart(fieldStart, fieldStart + fieldStep);
 			}
-			updateContrast(r, bgr, gxy, gx, gy, scanArea);
+			updateContrast(r, gxy, scanArea);
 			getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, scanArea, r.green, (float) r.gcSocket->defaultBotHeight, (float) r.sideBlobRadius, r.greenMedian, img->name + ".green.png");
 			getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, scanArea, r.pink, (float) r.gcSocket->defaultBotHeight, (float) r.sideBlobRadius, r.pinkMedian, img->name + ".pink.png");
-
-			//TODO background removal mask -> RLE encoding for further analysis
 
 			RLEVector ballArea = scanArea;
 			RLEVector yellowArea = scanArea;
@@ -566,11 +475,17 @@ int main(int argc, char* argv[]) {
 				}
 			}
 
-			//TODO filter yellowblue robots
-			//TODO filter balls on top of robots
-			findBots(r, bgr, gxy, gx, gy, yellowArea, detection, true);
-			findBots(r, bgr, gxy, gx, gy, blueArea, detection, false);
-			findBalls(r, bgr, gxy, gx, gy, ballArea, detection);
+			std::list<Match> yellowBlobs = getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, yellowArea, r.yellow, r.gcSocket->yellowBotHeight, (float)r.centerBlobRadius, r.yellowMedian, img->name + ".yellow.png");
+			std::list<Match> blueBlobs = getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, blueArea, r.blue, r.gcSocket->blueBotHeight, (float)r.centerBlobRadius, r.blueMedian, img->name + ".blue.png");
+			std::list<Match> orangeBlobs = getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, ballArea, r.orange, (float) r.ballRadius, (float) r.ballRadius, r.orangeMedian, img->name + ".orange.png");
+			filterMatches(r, yellowBlobs, blueBlobs, r.centerBlobRadius);
+			filterMatches(r, blueBlobs, yellowBlobs, r.centerBlobRadius);
+			findBots(r, bgr, gxy, gx, gy, yellowBlobs, detection, true);
+			findBots(r, bgr, gxy, gx, gy, blueBlobs, detection, false);
+			//TODO remove all in range independent of score
+			filterMatches(r, yellowBlobs, orangeBlobs, (r.botRadius+r.ballRadius)/2);
+			filterMatches(r, blueBlobs, orangeBlobs, (r.botRadius+r.ballRadius)/2);
+			findBalls(r, orangeBlobs, detection);
 
 			if(DEBUG_PRINT) {
 				printSSR(r, gxy, gx, gy, -1, r.orange);
@@ -602,174 +517,7 @@ int main(int argc, char* argv[]) {
 			if(DRAW_DEBUG_IMAGES)
 				break;
 		} else if(r.socket->getGeometryVersion()) {
-			int halfLineWidth = halfLineWidthEstimation(r, *img); // 4, 3, 7
-			std::cout << "Line width: " << halfLineWidth << std::endl;
-			Image gray = img->toGrayscale();
-
-			std::shared_ptr<Image> thresholded = std::make_shared<Image>(&PixelFormat::U8, gray.width, gray.height);
-			{
-				const CLMap<uint8_t> data = gray.read<uint8_t>();
-				const int width = gray.width;
-				int diff = 5; //TODO config
-				CLMap<uint8_t> tData = thresholded->write<uint8_t>();
-				for (int y = halfLineWidth; y < gray.height - halfLineWidth; y++) {
-					for (int x = halfLineWidth; x < width - halfLineWidth; x++) {
-						int value = data[x + y * width];
-						tData[x + y * width] = (
-													   (value - data[x - halfLineWidth + y * width] >
-														diff &&
-														value - data[x + halfLineWidth + y * width] >
-														diff) ||
-													   (value - data[x + (y - halfLineWidth) * width] >
-														diff &&
-														value - data[x + (y + halfLineWidth) * width] >
-														diff)
-											   ) ? 255 : 0;
-					}
-				}
-			}
-
-			cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
-			cv::Mat4f linesMat;
-			detector->detect(*thresholded->cvRead(), linesMat);
-
-			std::list<cv::Vec4f> lines;
-			for(int i = 0; i < linesMat.rows; i++)
-				lines.push_back(linesMat(0, i));
-
-			for(auto& line : lines)
-				std::cout << dist(cv::Vec2f(line[0], line[1]), cv::Vec2f(line[2], line[3])) << " ";
-			std::cout << std::endl;
-
-			std::cout << "Line segments: " << lines.size() << std::endl;
-
-			std::vector<std::vector<cv::Vec4f>> compoundLines;
-			std::vector<cv::Vec4f> mergedLines;
-			while(!lines.empty()) {
-				std::vector<cv::Vec4f> compound;
-				compound.push_back(lines.front());
-				lines.erase(lines.cbegin());
-
-				for(int i = 0; i < compound.size(); i++) {
-					const auto& root = compound[i];
-					cv::Vec2f a1(root[0], root[1]);
-					cv::Vec2f b1(root[2], root[3]);
-					cv::Vec4f invRoot(root[2], root[3], root[0], root[1]);
-
-					auto lit = lines.cbegin();
-					while(lit != lines.cend()) {
-						cv::Vec4f l = *lit;
-						cv::Vec2f a2(l[0], l[1]);
-						cv::Vec2f b2(l[2], l[3]);
-						if(
-								std::min(angleDiff(root, l), angleDiff(invRoot, l)) <= 0.05 &&
-								std::min(std::min(dist(a1, a2), dist(b1, b2)), std::min(dist(a1, b2), dist(b1, a2))) <= 40.0
-						) {
-							compound.push_back(l);
-							lit = lines.erase(lit);
-						} else {
-							lit++;
-						}
-					}
-				}
-
-				std::sort(compound.begin(), compound.end(), [](const cv::Vec4f& v1, const cv::Vec4f& v2) { return dist(cv::Vec2f(v1[0], v1[1]), cv::Vec2f(v1[2], v1[3])) > dist(cv::Vec2f(v2[0], v2[1]), cv::Vec2f(v2[2], v2[3])); });
-				compoundLines.push_back(compound);
-
-				cv::Vec2f a(compound.front()[0], compound.front()[1]);
-				cv::Vec2f b(compound.front()[2], compound.front()[3]);
-				for(int i = 1; i < compound.size(); i++) {
-					const auto& v = compound[i];
-
-					cv::Vec2f c(v[0], v[1]);
-					cv::Vec2f d(v[2], v[3]);
-
-					cv::Vec2f max1 = a;
-					cv::Vec2f max2 = b;
-					float maxd = dist(a, b);
-
-					if(dist(a, c) > maxd) {
-						max1 = a;
-						max2 = c;
-						maxd = dist(a, c);
-					}
-					if(dist(a, d) > maxd) {
-						max1 = a;
-						max2 = d;
-						maxd = dist(a, d);
-					}
-					if(dist(c, b) > maxd) {
-						max1 = c;
-						max2 = b;
-						maxd = dist(c, b);
-					}
-					if(dist(d, b) > maxd) {
-						max1 = d;
-						max2 = b;
-						maxd = dist(d, b);
-					}
-					if(dist(c, d) > maxd) {
-						max1 = c;
-						max2 = d;
-						maxd = dist(c, d);
-					}
-
-					a = max1;
-					b = max2;
-				}
-				mergedLines.emplace_back(a[0], a[1], b[0], b[1]);
-			}
-
-			std::cout << "Compound lines: " << compoundLines.size() << std::endl;
-
-			cv::imwrite("thresholded.png", *thresholded->cvRead());
-
-			Image bgr = img->toBGR();
-			CVMap cvBgr = bgr.cvReadWrite();
-			detector->drawSegments(*cvBgr, linesMat);
-			cv::imwrite("lineSegments.png", *cvBgr);
-
-			std::vector<std::vector<Eigen::Vector2f>> l;
-			for(const auto& compound : compoundLines) {
-				for(int i = 1; i < compound.size(); i++) {
-					cv::line(*cvBgr, {(int)compound[i-1][2], (int)compound[i-1][3]}, {(int)compound[i][0], (int)compound[i][1]}, CV_RGB(0, 0, 255));
-				}
-
-				std::vector<Eigen::Vector2f> points;
-				for(const auto& segment : compound) {
-					//std::cout << " " << segment[0] << "," << segment[1] << "->" << segment[2] << "," << segment[3];
-					//TODO rescale to later determined focal length
-					//TODO precision issues -> double?
-					//points.emplace_back(segment[0]*2/img->getWidth() - 0.5f, segment[1]*2/img->getHeight() - 0.5f);
-					//points.emplace_back(segment[2]*2/img->getWidth() - 0.5f, segment[3]*2/img->getHeight() - 0.5f);
-					points.emplace_back(segment[0]/img->width - 0.5f, segment[1]/img->width - 0.5f);
-					points.emplace_back(segment[2]/img->width - 0.5f, segment[3]/img->width - 0.5f);
-				}
-				//std::cout << std::endl;
-				l.push_back(points);
-			}
-			std::cout << "Filtered compound lines: " << (l.size()/2) << std::endl;
-
-
-			cv::imwrite("lines.png", *cvBgr);
-			Eigen::Vector2f k = distortion(l);
-
-			for (const auto& item : mergedLines) {
-				cv::line(*cvBgr, {(int)item[0], (int)item[1]}, {(int)item[2], (int)item[3]}, CV_RGB(0, 255, 0));
-			}
-			cv::imwrite("lines2.png", *cvBgr);
-
-			for(const auto& compound : compoundLines) {
-				if(compound.size() == 1)
-					continue;
-
-				Eigen::Vector2f start = undistort(k, img->width, {compound.front()[0], compound.front()[1]});
-				Eigen::Vector2f end = undistort(k, img->width, {compound.back()[2], compound.back()[3]});
-				cv::arrowedLine(*cvBgr, {(int)start(0), (int)start(1)}, {(int)end(0), (int)end(1)}, CV_RGB(0, 255, 255));
-				cv::arrowedLine(*cvBgr, {(int)end(0), (int)end(1)}, {(int)start(0), (int)start(1)}, CV_RGB(0, 255, 255));
-			}
-			cv::imwrite("lines3.png", *cvBgr);
-
+			geometryCalibration(r, *img);
 			break;
 		}
 
