@@ -46,9 +46,10 @@ public:
 	double contrast = 1.0;
 	RGB orange = {255, 64, 0};
 	float orangeMedian = 1000.0f;
-	RGB yellow = {255, 255, 64};
+	//RGB yellow = {255, 192, 128};
+	RGB yellow = {192, 128, 64};
 	float yellowMedian = 1000.0f;
-	RGB blue = {0, 255, 255};
+	RGB blue = {0, 0, 255};
 	float blueMedian = 1000.0f;
 	RGB green = {64, 255, 64};
 	float greenMedian = 1000.0f;
@@ -63,6 +64,8 @@ public:
 	std::shared_ptr<Mask> mask;
 	std::shared_ptr<RTPStreamer> rtpStreamer;
 
+	cl::Kernel blurkernel;
+	cl::Kernel gradientkernel;
 	cl::Kernel yuvkernel;
 	cl::Kernel bgkernel;
 	cl::Kernel diffkernel;

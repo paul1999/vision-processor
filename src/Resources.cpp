@@ -50,35 +50,13 @@ Resources::Resources(YAML::Node config) {
 	mask = std::make_shared<Mask>(perspective, gcSocket->maxBotHeight, ballRadius);
 	rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + network["stream_ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(network["stream_ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(network["stream_port"].as<int>(10100)));
 
-	yuvkernel = openCl->compile((
-#include "yuv.cl"
-	));
-	bgkernel = openCl->compile((
-#include "backsub.cl"
-	));
+	blurkernel = openCl->compileFile("kernel/blur.cl");
+	gradientkernel = openCl->compileFile("kernel/gradient.cl", "-D RGGB");
+	yuvkernel = openCl->compileFile("kernel/yuv.cl");
+	bgkernel = openCl->compileFile("kernel/backsub.cl");
 	diffkernel = openCl->compileFile("kernel/delta.cl");
-	/*diffkernel = openCl->compile((
-#include "delta.cl"
-//#include "blobridge.cl"
-//#include "robust_invariant.cl"
-	));*/
 	ringkernel = openCl->compileFile("kernel/midpointssd.cl", "-D RGGB");
-	/*ringkernel = openCl->compile((
-#include "image2field.cl"
-//#include "ringssd.cl"
-#include "midpointssd.cl"
-	), "-D RGGB");*/
-	botkernel = openCl->compile((
-#include "image2field.cl"
-#include "botssd.cl"
-	), "-D RGGB");
-	sidekernel = openCl->compile((
-#include "image2field.cl"
-#include "ssd.cl"
-//#include "conv.cl"
-	), "-D RGGB");
-	ballkernel = openCl->compile((
-#include "image2field.cl"
-#include "ballssd.cl"
-	), "-D RGGB");
+	botkernel = openCl->compileFile("kernel/botssd.cl", "-D RGGB");
+	sidekernel = openCl->compileFile("kernel/ssd.cl", "-D RGGB");
+	ballkernel = openCl->compileFile("kernel/ballssd.cl", "-D RGGB");
 }

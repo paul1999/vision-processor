@@ -31,6 +31,7 @@ int abs_diff(int, int);
 bool isnan(float);
 
 float native_sqrt(float);
+char convert_char_sat(float);
 uchar convert_uchar_sat(float);
 float fabs(float);
 float round(float);

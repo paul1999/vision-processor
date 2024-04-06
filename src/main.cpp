@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 #include <opencv2/bgsegm.hpp>
 #include <yaml-cpp/yaml.h>
 
@@ -7,8 +8,9 @@
 #include "GroundTruth.h"
 #include <opencv2/video/background_segm.hpp>
 
-#define DRAW_DEBUG_IMAGES false
+#define DRAW_DEBUG_IMAGES true
 #define DEBUG_PRINT false
+#define RUNAWAY_PRINT false
 
 static double getTime() {
 	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
@@ -52,7 +54,7 @@ struct Match {
 	auto operator<=>(const Match&) const = default;
 };
 
-static void filterMatches(const Resources& r, std::list<Match>& matches, std::list<Match>& matches2, const float radius) {
+static void filterMatches(const Resources& r, std::list<Match>& matches, const std::list<Match>& matches2, const float radius) {
 	std::erase_if(matches, [&](const Match& match) {
 		V2 pos = r.perspective->image2field({(double)match.x, (double)match.y}, match.height);
 
@@ -60,7 +62,7 @@ static void filterMatches(const Resources& r, std::list<Match>& matches, std::li
 			if(match2.score >= match.score)
 				return false;
 
-			V2 pos2 = r.perspective->image2field({(double)match2.x, (double)match2.y}, match2.height);
+			V2 pos2 = r.perspective->image2field({(double)match2.x, (double)match2.y}, match.height);
 			return dist({(float)pos.x, (float)pos.y}, {(float)pos2.x, (float)pos2.y}) < 2*radius;
 		});
 	});
@@ -99,6 +101,7 @@ static void getResult(const Resources& r, Image& gxy, Image& gx, Image& gy, RGB 
 	color.b = color.b * r.contrast;
 
 	OpenCL::wait(r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), gxy.buffer, gx.buffer, gy.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius, color));
+	//OpenCL::wait(r.openCl->run(r.gradientkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), gxy.buffer, gx.buffer, gy.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius));
 }
 
 static void getResultUpdateThreshold(Resources& r, Image& gxy, Image& gx, Image& gy, CLArray& pos, CLArray& result, const int fieldSize, const int areaSize, const RGB& color, float height, float radius, float& threshold, const std::string& name) {
@@ -108,6 +111,20 @@ static void getResultUpdateThreshold(Resources& r, Image& gxy, Image& gx, Image&
 	const float updateFraction = (float)areaSize / (float)fieldSize;
 	auto map = result.read<float>();
 
+	//TODO hardcoded factor
+	//TODO copy
+	std::vector<float> copy(*map, *map+areaSize);
+	int percentile = areaSize/10; //Top 10%
+	std::nth_element(copy.begin(), copy.begin()+percentile, copy.end());
+	float newmedian = copy[percentile];
+
+	//TODO hardcoded factor
+	//TODO search for largest break/valley in histogram below 10% percentile instead
+	//TODO determine PSR
+	threshold = (1.0f - updateFraction) * threshold + updateFraction * 0.33f * newmedian;
+	if(RUNAWAY_PRINT)
+		std::cout << newmedian << "->" << threshold << std::endl;
+
 	if(DRAW_DEBUG_IMAGES) {
 		//TODO outdated threshold
 		auto posMap = pos.read<int>();
@@ -115,20 +132,11 @@ static void getResultUpdateThreshold(Resources& r, Image& gxy, Image& gx, Image&
 		{
 			auto debugMap = debug.write<uint8_t>();
 			for (int i = 0; i < areaSize; i++) {
-				debugMap[posMap[2 * i + 1] * gxy.width + posMap[2 * i]] = std::min(map[i] / threshold * 128, 255.0f);
+				debugMap[posMap[2 * i + 1] * gxy.width + posMap[2 * i]] = std::min(map[i] / newmedian * 128, 255.0f);
 			}
 		}
 		cv::imwrite(name, *debug.cvRead());
 	}
-
-	//TODO hardcoded factor
-	int percentile = areaSize/10; //Top 10%
-	std::nth_element(*map, *map+percentile, *map+areaSize);
-	float newmedian = map[percentile];
-	//TODO hardcoded factor
-	//TODO search for largest break/valley in histogram below 10% percentile instead
-	//TODO determine PSR
-	threshold = (1.0f - updateFraction) * threshold + updateFraction * 0.5f * newmedian;
 }
 
 static std::list<Match> getMatches(Resources& r, Image& img, Image& gxy, Image& gx, Image& gy, RLEVector& area, RGB color, const float height, const float radius, const float threshold) {
@@ -191,13 +199,17 @@ static void findBots(Resources& r, Image& img, Image& gxy, Image& gx, Image& gy,
 								sin(orientations[a] - patternAngles[0]) + sin(orientations[b] - patternAngles[1]) + sin(orientations[c] - patternAngles[2]) + sin(orientations[d] - patternAngles[3]),
 								cos(orientations[a] - patternAngles[0]) + cos(orientations[b] - patternAngles[1]) + cos(orientations[c] - patternAngles[2]) + cos(orientations[d] - patternAngles[3])
 						);
+						/*const float o = atan2(
+								sin(patternAngles[0] - orientations[a]) + sin(patternAngles[1] - orientations[b]) + sin(patternAngles[2] - orientations[c]) + sin(patternAngles[3] - orientations[d]),
+								cos(patternAngles[0] - orientations[a]) + cos(patternAngles[1] - orientations[b]) + cos(patternAngles[2] - orientations[c]) + cos(patternAngles[3] - orientations[d])
+						);*/
 						const float s = cos(orientations[a] - o) + cos(orientations[b] - o) + cos(orientations[c] - o) + cos(orientations[d] - o);
 						if(s < score)
 							continue;
 
 						score = s;
 						orientation = o;
-						id = patternLUT[((a.color == r.green) << 4) + ((b.color == r.green) << 3) + ((c.color == r.green) << 2) + (d.color == r.green)];
+						id = patternLUT[((a.color == r.green) << 3) + ((b.color == r.green) << 2) + ((c.color == r.green) << 1) + (d.color == r.green)];
 					}
 				}
 			}
@@ -242,10 +254,11 @@ static void updateContrast(Resources& r, Image& gxy, RLEVector& area) {
 	const CLMap<uint8_t> map = gxy.read<uint8_t>();
 	//TODO dont use parts outside of field
 	const double maxContrast = *std::max_element(*map + (front.x + front.y * gxy.width) * gxy.format->pixelSize(), *map + (back.x + back.length + back.y * gxy.width) * gxy.format->pixelSize()) / 255.0;
-	if(DEBUG_PRINT)
+	if(RUNAWAY_PRINT)
 		std::cout << "[Scan] contrast: " << maxContrast << std::endl;
 	//TODO hardcoded factor
-	r.contrast = (1.0 - updateFraction)*r.contrast + updateFraction * 0.75*maxContrast;
+	//r.contrast = (1.0 - updateFraction)*r.contrast + updateFraction * 0.75*maxContrast;
+	r.contrast = (1.0 - updateFraction)*r.contrast + updateFraction * 0.33*maxContrast;
 }
 
 static void getAreas(Resources& r, RLEVector& field, RLEVector& other, std::vector<RLEVector>& blobs, int type) {
@@ -408,18 +421,25 @@ int main(int argc, char* argv[]) {
 				detection->set_t_capture_camera(img->timestamp);
 			detection->set_camera_id(r.camId);
 
-			Image bgr = img->toBGR();
-			{
+			Image bgr = DRAW_DEBUG_IMAGES ? img->toBGR() : *img;
+			/*{
 				CVMap map = bgr.cvReadWrite();
 				cv::Mat copy;
 				map->copyTo(copy);
-				cv::blur(copy, *map, cv::Size(5, 5));
-			}
+				//cv::blur(copy, *map, cv::Size(5, 5));
+				cv::GaussianBlur(copy, *map, cv::Size(3, 3), 0, 0);
+			}*/
 			/*Image diff(&PixelFormat::U8, bgr.width, bgr.height, img->name);
 			OpenCL::wait(r.openCl->run(r.diffkernel, cl::EnqueueArgs(cl::NDRange(diff.width-1, diff.height-1)), bgr.buffer, diff.buffer));
 			cv::imwrite(img->name + ".invariant.png", *diff.cvRead());*/
 
-			Image raw = bgr.toRGGB();
+			Image xblur(img->format, img->width, img->height, img->name);
+			Image blur(img->format, img->width, img->height, img->name);
+			OpenCL::wait(r.openCl->run(r.blurkernel, cl::EnqueueArgs(cl::NDRange(blur.width * blur.format->stride, blur.height * blur.format->rowStride)), img->buffer, xblur.buffer, blur.format->stride, 0));
+			OpenCL::wait(r.openCl->run(r.blurkernel, cl::EnqueueArgs(cl::NDRange(blur.width * blur.format->stride, blur.height * blur.format->rowStride)), xblur.buffer, blur.buffer, 0, blur.format->rowStride));
+			//cv::imwrite(img->name + ".blur.png", *blur.toBGR().cvRead());
+
+			Image raw = blur.toRGGB();
 			Image gxy(raw.format, raw.width, raw.height, img->name);
 			Image gx(raw.format, raw.width, raw.height, img->name);
 			Image gy(raw.format, raw.width, raw.height, img->name);
@@ -443,6 +463,8 @@ int main(int argc, char* argv[]) {
 			RLEVector yellowArea = scanArea;
 			RLEVector blueArea = scanArea;
 			for(auto& trackedCamera : r.socket->getTrackedObjects()) {
+				if(RUNAWAY_PRINT)
+					std::cout << "Tracking: " << trackedCamera.second.size() << std::endl;
 				for(TrackingState& tracked : trackedCamera.second) {
 					double timeDelta = timestamp - tracked.timestamp;
 					//double timeDelta = 0.033333;
@@ -455,7 +477,10 @@ int main(int argc, char* argv[]) {
 
 					if(imgPos.x < 0 || imgPos.y < 0 || imgPos.x >= r.perspective->getWidth() || imgPos.y >= r.perspective->getHeight()) {
 						//TODO use ring part inside for tracking
-						std::cout << "[Tracking] Lost out of bounds " << tracked.id << " " << timeDelta << std::endl;
+						if(trackedCamera.first == r.camId) {
+							//std::cout << "[Tracking] Lost out of bounds " << tracked.id << " " << timeDelta << std::endl;
+							//std::cout << tracked.x << "," << tracked.vx << " " << tracked.y << "," << tracked.vy << std::endl;
+						}
 						continue;
 					}
 
@@ -466,6 +491,7 @@ int main(int argc, char* argv[]) {
 							0.0,
 							std::max(r.minTrackingRadius, tracked.id != -1 ? r.maxBotAcceleration*timeDelta*timeDelta/2.0 : r.maxBallVelocity*timeDelta)
 					);
+					//TODO add seems to be incorrect (overlapping runs?)
 					if(tracked.id == -1)
 						ballArea.add(searchArea);
 					else if(tracked.id < 16)
@@ -478,13 +504,15 @@ int main(int argc, char* argv[]) {
 			std::list<Match> yellowBlobs = getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, yellowArea, r.yellow, r.gcSocket->yellowBotHeight, (float)r.centerBlobRadius, r.yellowMedian, img->name + ".yellow.png");
 			std::list<Match> blueBlobs = getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, blueArea, r.blue, r.gcSocket->blueBotHeight, (float)r.centerBlobRadius, r.blueMedian, img->name + ".blue.png");
 			std::list<Match> orangeBlobs = getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, ballArea, r.orange, (float) r.ballRadius, (float) r.ballRadius, r.orangeMedian, img->name + ".orange.png");
+			if(true || RUNAWAY_PRINT)
+				std::cout << "Orange: " << orangeBlobs.size() << " Yellow: " << yellowBlobs.size() << " Blue: " << blueBlobs.size() << std::endl;
 			filterMatches(r, yellowBlobs, blueBlobs, r.centerBlobRadius);
 			filterMatches(r, blueBlobs, yellowBlobs, r.centerBlobRadius);
 			findBots(r, bgr, gxy, gx, gy, yellowBlobs, detection, true);
 			findBots(r, bgr, gxy, gx, gy, blueBlobs, detection, false);
 			//TODO remove all in range independent of score
-			filterMatches(r, yellowBlobs, orangeBlobs, (r.botRadius+r.ballRadius)/2);
-			filterMatches(r, blueBlobs, orangeBlobs, (r.botRadius+r.ballRadius)/2);
+			filterMatches(r, orangeBlobs, yellowBlobs, (r.botRadius+r.ballRadius)/*/2*/);
+			filterMatches(r, orangeBlobs, blueBlobs, (r.botRadius+r.ballRadius)/*/2*/);
 			findBalls(r, orangeBlobs, detection);
 
 			if(DEBUG_PRINT) {
@@ -495,7 +523,7 @@ int main(int argc, char* argv[]) {
 
 			if(DRAW_DEBUG_IMAGES) {
 				cv::imwrite(img->name + ".diff.png", *gxy.toBGR().cvRead());
-				cv::imwrite(img->name + ".updateContrast.png", *bgr.cvRead());
+				cv::imwrite(img->name + ".matches.png", *bgr.cvRead());
 				{
 					CVMap map = gx.cvReadWrite();
 					for(uchar* ptr = map->data; ptr < map->dataend; ptr++)

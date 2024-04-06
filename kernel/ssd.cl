@@ -3,6 +3,8 @@
 
 #include "image2field.cl"
 #define RGGB
+#else
+#include "kernel/image2field.cl"
 #endif
 
 

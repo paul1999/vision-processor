@@ -43,15 +43,14 @@ SpinnakerSource::SpinnakerSource(int id) {
 	//pCam->PixelFormat.SetValue(Spinnaker::PixelFormat_BayerRG8);
 	//pCam->BlackLevelAutoBalance.SetValue(Spinnaker::BlackLevelAutoBalance_Continuous);
 	pCam->AutoExposureMeteringMode.SetValue(Spinnaker::AutoExposureMeteringMode_Average);
-	//TODO auto black level
-	//pCam->AutoExposureControlPriority.SetValue(Spinnaker::AutoExposureControlPriority_ExposureTime);
-	//pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Once);
-	//pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Once);
-	//pCam->GainAuto.SetValue(Spinnaker::GainAuto_Once);
-	pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Continuous);
+	pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Off);
+	pCam->ExposureTime.SetValue(8000.0);
 	pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Continuous);
-	pCam->GainAuto.SetValue(Spinnaker::GainAuto_Continuous);
+	pCam->BalanceWhiteAutoProfile.SetValue(Spinnaker::BalanceWhiteAutoProfile_Indoor);
+	pCam->GainAuto.SetValue(Spinnaker::GainAuto_Off);
+	pCam->Gain.SetValue(8.0);
 	pCam->GammaEnable.SetValue(false);
+
 	pCam->TLStream.StreamBufferHandlingMode.SetValue(Spinnaker::StreamBufferHandlingMode_NewestOnly);
 	pCam->TLStream.StreamBufferCountManual.SetValue(pCam->TLStream.StreamBufferCountManual.GetMin());
 	pCam->AcquisitionResultingFrameRate.GetValue(); //TODO
@@ -59,7 +58,7 @@ SpinnakerSource::SpinnakerSource(int id) {
 	int width = pCam->WidthMax.GetValue();
 	int height = pCam->HeightMax.GetValue();
 	for(int i = 0; i < 3; i++) {
-		std::shared_ptr<Image> buffer = std::make_shared<Image>(&PixelFormat::RGGB8, width/2, height/2);
+		std::shared_ptr<Image> buffer = std::make_shared<Image>(&PixelFormat::RGGB8, width/2, height/2, "spinnaker");
 		buffers[buffer] = std::make_unique<CLMap<uint8_t>>(buffer->write<uint8_t>());
 	}
 
