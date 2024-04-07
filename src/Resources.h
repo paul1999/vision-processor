@@ -56,6 +56,14 @@ public:
 	RGB pink = {255, 0, 255};
 	float pinkMedian = 1000.0f;
 
+	uint8_t orangeHue = 21; //30°
+	//uint8_t yellowHue = 43; //60°
+	uint8_t yellowHue = 35;
+	uint8_t blueHue = 149; //210°
+	uint8_t greenHue = 85; //120°
+	//uint8_t pinkHue = 213; //300°
+	uint8_t pinkHue = 230;
+
 	std::shared_ptr<GCSocket> gcSocket;
 	std::shared_ptr<VisionSocket> socket;
 	std::shared_ptr<Perspective> perspective;

@@ -101,7 +101,6 @@ static void getResult(const Resources& r, Image& gxy, Image& gx, Image& gy, RGB 
 	color.b = color.b * r.contrast;
 
 	OpenCL::wait(r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), gxy.buffer, gx.buffer, gy.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius, color));
-	//OpenCL::wait(r.openCl->run(r.gradientkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), gxy.buffer, gx.buffer, gy.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius));
 }
 
 static void getResultUpdateThreshold(Resources& r, Image& gxy, Image& gx, Image& gy, CLArray& pos, CLArray& result, const int fieldSize, const int areaSize, const RGB& color, float height, float radius, float& threshold, const std::string& name) {
@@ -155,26 +154,43 @@ static std::list<Match> getMatchesUpdateThreshold(Resources& r, Image& img, Imag
 	return getMatchesFromResult(r, img, color, height, radius, threshold, *pos, *result, areaSize);
 }
 
-static void findBots(Resources& r, Image& img, Image& gxy, Image& gx, Image& gy, std::list<Match>& centerBlobs, SSL_DetectionFrame* detection, bool yellow) {
-	auto it = centerBlobs.cbegin();
-	while(it != centerBlobs.cend()) {
-		const Match& match = *it;
-		V2 imgPos {(double)match.x, (double)match.y};
-		RLEVector sideSearchArea = r.perspective->getRing(imgPos, match.height, std::max(0.0, r.sideBlobDistance - r.minTrackingRadius/2), r.sideBlobDistance + r.minTrackingRadius/2);
-		std::list<Match> green = getMatches(r, img, gxy, gx, gy, sideSearchArea, r.green, match.height, r.sideBlobRadius, r.greenMedian);
-		std::list<Match> pink = getMatches(r, img, gxy, gx, gy, sideSearchArea, r.pink, match.height, r.sideBlobRadius, r.pinkMedian);
+static void findBots(Resources& r, std::list<Match>& centerBlobs, const std::list<Match>& greenBlobs, const std::list<Match>& pinkBlobs, SSL_DetectionFrame* detection, bool yellow) {
+	double height = yellow ? r.gcSocket->yellowBotHeight : r.gcSocket->blueBotHeight;
+
+	for(const Match& match : centerBlobs) {
+		const V2 imgPos {(double)match.x, (double)match.y};
+		const V2 fieldPos = r.perspective->image2field(imgPos, height);
+
+		std::list<Match> green;
+		for(const Match& blob : greenBlobs) {
+			const V2 blobPos = r.perspective->image2field({(double)blob.x, (double)blob.y}, height);
+			double distance = dist(cv::Vec2f(blobPos.x, blobPos.y), cv::Vec2f(fieldPos.x, fieldPos.y));
+			if(distance >= std::max(0.0, r.sideBlobDistance - r.minTrackingRadius/2) && distance <= r.sideBlobDistance + r.minTrackingRadius/2) {
+			//if(distance < 90.0f) {
+				green.push_back(blob);
+				green.back().color = r.green;
+			}
+		}
+		std::list<Match> pink;
+		for(const Match& blob : pinkBlobs) {
+			const V2 blobPos = r.perspective->image2field({(double)blob.x, (double)blob.y}, height);
+			double distance = dist(cv::Vec2f(blobPos.x, blobPos.y), cv::Vec2f(fieldPos.x, fieldPos.y));
+			if(distance >= std::max(0.0, r.sideBlobDistance - r.minTrackingRadius/2) && distance <= r.sideBlobDistance + r.minTrackingRadius/2) {
+			//if(distance < 90.0f) {
+				pink.push_back(blob);
+				pink.back().color = r.pink;
+			}
+		}
 
 		green.splice(green.end(), pink);
 		filterMatches(r, green, green, r.sideBlobRadius);
 		if(green.size() < 4) {
-			it = centerBlobs.erase(it);
 			continue; // False positive
 		}
 
-		const V2 fieldPos = r.perspective->image2field({(double)match.x, (double)match.y}, match.height);
 		std::map<Match, double> orientations;
 		for(const auto& sideblob : green) {
-			V2 anchorPos = r.perspective->image2field({(double)sideblob.x, (double)sideblob.y}, sideblob.height);
+			V2 anchorPos = r.perspective->image2field({(double) sideblob.x, (double) sideblob.y}, height);
 			orientations[sideblob] = atan2(anchorPos.y - fieldPos.y, anchorPos.x - fieldPos.x);
 		}
 
@@ -199,12 +215,9 @@ static void findBots(Resources& r, Image& img, Image& gxy, Image& gx, Image& gy,
 								sin(orientations[a] - patternAngles[0]) + sin(orientations[b] - patternAngles[1]) + sin(orientations[c] - patternAngles[2]) + sin(orientations[d] - patternAngles[3]),
 								cos(orientations[a] - patternAngles[0]) + cos(orientations[b] - patternAngles[1]) + cos(orientations[c] - patternAngles[2]) + cos(orientations[d] - patternAngles[3])
 						);
-						/*const float o = atan2(
-								sin(patternAngles[0] - orientations[a]) + sin(patternAngles[1] - orientations[b]) + sin(patternAngles[2] - orientations[c]) + sin(patternAngles[3] - orientations[d]),
-								cos(patternAngles[0] - orientations[a]) + cos(patternAngles[1] - orientations[b]) + cos(patternAngles[2] - orientations[c]) + cos(patternAngles[3] - orientations[d])
-						);*/
-						const float s = cos(orientations[a] - o) + cos(orientations[b] - o) + cos(orientations[c] - o) + cos(orientations[d] - o);
-						if(s < score)
+
+						const float s = cos(orientations[a] - patternAngles[0] - o) + cos(orientations[b] - patternAngles[1] - o) + cos(orientations[c] - patternAngles[2] - o) + cos(orientations[d] - patternAngles[3] - o);
+						if(s <= score)
 							continue;
 
 						score = s;
@@ -224,8 +237,7 @@ static void findBots(Resources& r, Image& img, Image& gxy, Image& gx, Image& gy,
 		bot->set_pixel_x(imgPos.x * 2);
 		bot->set_pixel_y(imgPos.y * 2);
 		bot->set_height(match.height);
-
-		it++;
+		std::cout << "Bot " << fieldPos.x << "," << fieldPos.y << " Y" << yellow << " " << id << " " << (orientation*180/M_PI) << "°" << std::endl;
 	}
 }
 
@@ -241,6 +253,7 @@ static void findBalls(const Resources& r, const std::list<Match>& orange, SSL_De
 		//TODO only RGGB
 		ball->set_pixel_x(match.x * 2);
 		ball->set_pixel_y(match.y * 2);
+		std::cout << "Ball " << pos.x << "," << pos.y << std::endl;
 	}
 }
 
@@ -323,6 +336,63 @@ void printSSR(Resources& r, Image& img, Image& gx, Image& gy, int type, RGB rgb)
 		std::cout << "[Min " << type << "] Field:" << bestField.first << " Other:" << bestOther.first << " Best:" << bestBlob << " Worst: " << worstBlob << std::endl;
 		std::cout << "[SSR Med " << type << "] Field:" << (bestField.second / worstBlob) << " Best:" << (bestField.second / bestBlob) << std::endl;
 		std::cout << "[SSR Min " << type << "] Field:" << (bestField.first / worstBlob) << " Other:" << (bestOther.first / worstBlob) << " Best:" << (bestField.first / bestBlob) << std::endl;
+	}
+}
+
+//https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
+RGB RgbToHsv(const RGB& rgb) {
+	RGB hsv;
+	unsigned char rgbMin, rgbMax;
+
+	rgbMin = rgb.r < rgb.g ? (rgb.r < rgb.b ? rgb.r : rgb.b) : (rgb.g < rgb.b ? rgb.g : rgb.b);
+	rgbMax = rgb.r > rgb.g ? (rgb.r > rgb.b ? rgb.r : rgb.b) : (rgb.g > rgb.b ? rgb.g : rgb.b);
+
+	hsv.b = rgbMax;
+	if (hsv.b == 0)
+	{
+		hsv.r = 0;
+		hsv.g = 0;
+		return hsv;
+	}
+
+	hsv.g = 255 * long(rgbMax - rgbMin) / hsv.b;
+	if (hsv.g == 0)
+	{
+		hsv.r = 0;
+		return hsv;
+	}
+
+	if (rgbMax == rgb.r)
+		hsv.r = 0 + 43 * (rgb.g - rgb.b) / (rgbMax - rgbMin);
+	else if (rgbMax == rgb.g)
+		hsv.r = 85 + 43 * (rgb.b - rgb.r) / (rgbMax - rgbMin);
+	else
+		hsv.r = 171 + 43 * (rgb.r - rgb.g) / (rgbMax - rgbMin);
+
+	return hsv;
+}
+
+static void rggbDrawBlobs(Image& rggb, const std::list<Match>& matches, const RGB& color) {
+	auto map = rggb.readWrite<uint8_t>();
+	for(const Match& match : matches) {
+		for(int x = std::max(0, match.x-2); x < std::min(rggb.width-1, match.x+2); x++) {
+			for(int y = std::max(0, match.y-2); y < std::min(rggb.height-1, match.y+2); y++) {
+				map[2*x + 2*y*2*rggb.width] = color.r;
+				map[2*x + 1 + 2*y*2*rggb.width] = color.g;
+				map[2*x + (2*y + 1)*2*rggb.width] = color.g;
+				map[2*x + 1 + (2*y + 1)*2*rggb.width] = color.b;
+			}
+		}
+	}
+}
+
+static void bgrDrawBlobs(Image& bgr, const std::list<Match>& matches, const RGB& color) {
+	auto bgrMap = bgr.cvReadWrite();
+
+	for(const Match& match : matches) {
+		cv::drawMarker(*bgrMap, cv::Point(2*match.x, 2*match.y), CV_RGB(color.r, color.g, color.b), cv::MARKER_CROSS, 10);
+		RGB hsv = RgbToHsv(match.color);
+		cv::putText(*bgrMap, std::to_string((int)match.score) + " h" + std::to_string((int)hsv.r) + "s" + std::to_string((int)hsv.g) + "v" + std::to_string((int)hsv.b), cv::Point(2*match.x, 2*match.y), cv::FONT_HERSHEY_SIMPLEX, 0.4, CV_RGB(color.r, color.g, color.b));
 	}
 }
 
@@ -422,6 +492,7 @@ int main(int argc, char* argv[]) {
 			detection->set_camera_id(r.camId);
 
 			Image bgr = DRAW_DEBUG_IMAGES ? img->toBGR() : *img;
+			Image rggb = img->toRGGB();
 			/*{
 				CVMap map = bgr.cvReadWrite();
 				cv::Mat copy;
@@ -447,21 +518,16 @@ int main(int argc, char* argv[]) {
 
 			const int fieldSize = r.mask->getRuns().size();
 			RLEVector scanArea;
-			if(DRAW_DEBUG_IMAGES) {
+			//TODO geometry mismatch?
+			if(true || DRAW_DEBUG_IMAGES) {
 				scanArea = r.mask->getRuns().getPart(0, fieldSize);
 			} else {
 				int parts = 60;
-				int fieldStep = (fieldSize / 60);
+				int fieldStep = (fieldSize / parts);
 				int fieldStart = (frameId%parts)*fieldStep;
 				scanArea = r.mask->getRuns().getPart(fieldStart, fieldStart + fieldStep);
 			}
-			updateContrast(r, gxy, scanArea);
-			getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, scanArea, r.green, (float) r.gcSocket->defaultBotHeight, (float) r.sideBlobRadius, r.greenMedian, img->name + ".green.png");
-			getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, scanArea, r.pink, (float) r.gcSocket->defaultBotHeight, (float) r.sideBlobRadius, r.pinkMedian, img->name + ".pink.png");
 
-			RLEVector ballArea = scanArea;
-			RLEVector yellowArea = scanArea;
-			RLEVector blueArea = scanArea;
 			for(auto& trackedCamera : r.socket->getTrackedObjects()) {
 				if(RUNAWAY_PRINT)
 					std::cout << "Tracking: " << trackedCamera.second.size() << std::endl;
@@ -485,23 +551,162 @@ int main(int argc, char* argv[]) {
 					}
 
 					//TODO fix correct search radius (accel/decel)
-					RLEVector searchArea = r.perspective->getRing(
+					scanArea.add(r.perspective->getRing(
 							imgPos,
 							height,
 							0.0,
-							std::max(r.minTrackingRadius, tracked.id != -1 ? r.maxBotAcceleration*timeDelta*timeDelta/2.0 : r.maxBallVelocity*timeDelta)
-					);
-					//TODO add seems to be incorrect (overlapping runs?)
-					if(tracked.id == -1)
-						ballArea.add(searchArea);
-					else if(tracked.id < 16)
-						yellowArea.add(searchArea);
-					else
-						blueArea.add(searchArea);
+							std::max(r.minTrackingRadius, tracked.id != -1 ? (r.maxBotAcceleration*timeDelta*timeDelta/2.0)+90.0 : r.maxBallVelocity*timeDelta)
+					));
 				}
 			}
 
-			std::list<Match> yellowBlobs = getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, yellowArea, r.yellow, r.gcSocket->yellowBotHeight, (float)r.centerBlobRadius, r.yellowMedian, img->name + ".yellow.png");
+			int areaSize = scanArea.size();
+			auto pos = scanArea.scanArea(*r.arrayPool);
+			auto result = r.arrayPool->acquire<uint8_t>(areaSize);
+			OpenCL::wait(r.openCl->run(r.gradientkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), gxy.buffer, gx.buffer, gy.buffer, pos->buffer, result->buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius));
+			auto map = result->read<uint8_t>();
+			auto posMap = pos->read<int>();
+			if(DRAW_DEBUG_IMAGES) {
+				Image debug(&PixelFormat::U8, gxy.width, gxy.height);
+				{
+					auto debugMap = debug.write<uint8_t>();
+					for (int i = 0; i < areaSize; i++) {
+						debugMap[posMap[2 * i + 1] * gxy.width + posMap[2 * i]] = map[i]*255;
+					}
+				}
+				cv::imwrite(img->name + ".circular.png", *debug.cvRead());
+			}
+
+			std::list<Match> matches;
+			{
+				//TODO RGGB only
+				auto imgMap = rggb.read<uint8_t>();
+				for(int i = 0; i < areaSize; i++) {
+					if(map[i]) {
+						RLEVector area = r.perspective->getRing(
+								{(double)posMap[2*i], (double)posMap[2*i + 1]},
+								r.ballRadius,
+								0.0,
+								r.ballRadius
+						);
+						int R = 0;
+						int G = 0;
+						int B = 0;
+						for(const Run& run : area.getRuns()) {
+							for(int x = run.x; x < run.x + run.length; x++) {
+								R += imgMap[2 * x + 2 * run.y * 2 * img->width];
+								G += imgMap[2 * x + 1 + 2 * run.y * 2 * img->width];
+								G += imgMap[2 * x + (2 * run.y + 1) * 2 * img->width];
+								B += imgMap[2 * x + 1 + (2 * run.y + 1) * 2 * img->width];
+							}
+						}
+						int size = area.size();
+						R /= size;
+						G /= 2 * size;
+						B /= size;
+
+						long stddev = 0;
+						for(const Run& run : area.getRuns()) {
+							for(int x = run.x; x < run.x + run.length; x++) {
+								int v = imgMap[2 * x + 2 * run.y * 2 * img->width] - R;
+								stddev += v*v;
+								v = imgMap[2 * x + 1 + 2 * run.y * 2 * img->width] - G;
+								stddev += v*v;
+								v = imgMap[2 * x + (2 * run.y + 1) * 2 * img->width] - G;
+								stddev += v*v;
+								v = imgMap[2 * x + 1 + (2 * run.y + 1) * 2 * img->width] - B;
+								stddev += v*v;
+							}
+						}
+						stddev = sqrt(stddev/(4*size));
+
+						matches.push_back({posMap[2*i], posMap[2*i+1], (float)stddev, {(uint8_t)R, (uint8_t)G, (uint8_t)B}, (float)r.ballRadius, (float)r.ballRadius});
+					}
+				}
+			}
+			std::erase_if(matches, [&](const Match& match) {
+				RGB hsv = RgbToHsv(match.color);
+				//TODO hardcoded values
+				//return hsv.g < 32 || hsv.b < 64;
+				return hsv.g < 24 || hsv.b < 32;
+			});
+			filterMatches(r, matches, matches, r.ballRadius/2);
+
+			std::list<Match> orangeBlobs;
+			std::list<Match> yellowBlobs;
+			std::list<Match> blueBlobs;
+			std::list<Match> greenBlobs;
+			std::list<Match> pinkBlobs;
+			for(const Match& match : matches) {
+				RGB hsv = RgbToHsv(match.color);
+				int orangeDiff = abs((int8_t)(hsv.r - r.orangeHue));
+				int yellowDiff = abs((int8_t)(hsv.r - r.yellowHue));
+				int blueDiff = abs((int8_t)(hsv.r - r.blueHue));
+				int greenDiff = abs((int8_t)(hsv.r - r.greenHue));
+				int pinkDiff = abs((int8_t)(hsv.r - r.pinkHue));
+				int minDiff = std::min(std::min(orangeDiff, std::min(yellowDiff, blueDiff)), std::min(greenDiff, pinkDiff));
+				if(orangeDiff == minDiff)
+					orangeBlobs.push_back(match);
+				else if(yellowDiff == minDiff)
+					yellowBlobs.push_back(match);
+				else if(blueDiff == minDiff)
+					blueBlobs.push_back(match);
+				else if(greenDiff == minDiff)
+					greenBlobs.push_back(match);
+				else
+					pinkBlobs.push_back(match);
+			}
+			rggbDrawBlobs(*img, orangeBlobs, r.orange);
+			rggbDrawBlobs(*img, yellowBlobs, r.yellow);
+			rggbDrawBlobs(*img, blueBlobs, r.blue);
+			rggbDrawBlobs(*img, greenBlobs, r.green);
+			rggbDrawBlobs(*img, pinkBlobs, r.pink);
+
+			if(DRAW_DEBUG_IMAGES) {
+				bgrDrawBlobs(bgr, orangeBlobs, r.orange);
+				bgrDrawBlobs(bgr, yellowBlobs, r.yellow);
+				bgrDrawBlobs(bgr, blueBlobs, r.blue);
+				bgrDrawBlobs(bgr, greenBlobs, r.green);
+				bgrDrawBlobs(bgr, pinkBlobs, r.pink);
+				cv::imwrite(img->name + ".matches.png", *bgr.cvRead());
+			}
+
+			/*if(DRAW_DEBUG_IMAGES) {
+				auto bgrMap = bgr.cvReadWrite();
+
+				for(const Match& match : matches) {
+					cv::drawMarker(*bgrMap, cv::Point(2*match.x, 2*match.y), CV_RGB(match.color.r, match.color.g, match.color.b), cv::MARKER_CROSS, 10);
+					RGB hsv = RgbToHsv(match.color);
+					cv::putText(*bgrMap, std::to_string((int)match.score) + " h" + std::to_string((int)hsv.r) + "s" + std::to_string((int)hsv.g) + "v" + std::to_string((int)hsv.b), cv::Point(2*match.x, 2*match.y), cv::FONT_HERSHEY_SIMPLEX, 0.4, CV_RGB(match.color.r, match.color.g, match.color.b));
+				}
+			}*/
+
+			findBalls(r, orangeBlobs, detection);
+			findBots(r, yellowBlobs, greenBlobs, pinkBlobs, detection, true);
+			findBots(r, blueBlobs, greenBlobs, pinkBlobs, detection, false);
+
+			if(DRAW_DEBUG_IMAGES) {
+				{
+					auto bgrMap = bgr.cvReadWrite();
+					for(const auto& ball : detection->balls()) {
+						cv::drawMarker(*bgrMap, cv::Point(ball.pixel_x(), ball.pixel_y()), CV_RGB(r.orange.r, r.orange.g, r.orange.b), cv::MARKER_DIAMOND, 10);
+					}
+
+					for(const auto& bot : detection->robots_yellow()) {
+						cv::drawMarker(*bgrMap, cv::Point(bot.pixel_x(), bot.pixel_y()), CV_RGB(r.yellow.r, r.yellow.g, r.yellow.b), cv::MARKER_DIAMOND, 10);
+						cv::putText(*bgrMap, std::to_string((int)(bot.orientation()*180/M_PI)) + " " + std::to_string(bot.robot_id()), cv::Point(bot.pixel_x(), bot.pixel_y()), cv::FONT_HERSHEY_COMPLEX, 0.6, CV_RGB(255, 255, 255));
+					}
+
+					for(const auto& bot : detection->robots_blue()) {
+						cv::drawMarker(*bgrMap, cv::Point(bot.pixel_x(), bot.pixel_y()), CV_RGB(r.blue.r, r.blue.g, r.blue.b), cv::MARKER_DIAMOND, 10);
+						cv::putText(*bgrMap, std::to_string((int)(bot.orientation()*180.0f/M_PI)) + " " + std::to_string(bot.robot_id()), cv::Point(bot.pixel_x(), bot.pixel_y()), cv::FONT_HERSHEY_COMPLEX, 0.6, CV_RGB(255, 255, 255));
+					}
+				}
+
+				cv::imwrite(img->name + ".detections.png", *bgr.cvRead());
+			}
+
+			/*std::list<Match> yellowBlobs = getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, yellowArea, r.yellow, r.gcSocket->yellowBotHeight, (float)r.centerBlobRadius, r.yellowMedian, img->name + ".yellow.png");
 			std::list<Match> blueBlobs = getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, blueArea, r.blue, r.gcSocket->blueBotHeight, (float)r.centerBlobRadius, r.blueMedian, img->name + ".blue.png");
 			std::list<Match> orangeBlobs = getMatchesUpdateThreshold(r, bgr, gxy, gx, gy, fieldSize, ballArea, r.orange, (float) r.ballRadius, (float) r.ballRadius, r.orangeMedian, img->name + ".orange.png");
 			if(true || RUNAWAY_PRINT)
@@ -511,9 +716,9 @@ int main(int argc, char* argv[]) {
 			findBots(r, bgr, gxy, gx, gy, yellowBlobs, detection, true);
 			findBots(r, bgr, gxy, gx, gy, blueBlobs, detection, false);
 			//TODO remove all in range independent of score
-			filterMatches(r, orangeBlobs, yellowBlobs, (r.botRadius+r.ballRadius)/*/2*/);
-			filterMatches(r, orangeBlobs, blueBlobs, (r.botRadius+r.ballRadius)/*/2*/);
-			findBalls(r, orangeBlobs, detection);
+			filterMatches(r, orangeBlobs, yellowBlobs, (r.botRadius+r.ballRadius)/*//*2*//*);
+			filterMatches(r, orangeBlobs, blueBlobs, (r.botRadius+r.ballRadius)/*//*2*//*);
+			*/
 
 			if(DEBUG_PRINT) {
 				printSSR(r, gxy, gx, gy, -1, r.orange);
@@ -523,21 +728,18 @@ int main(int argc, char* argv[]) {
 
 			if(DRAW_DEBUG_IMAGES) {
 				cv::imwrite(img->name + ".diff.png", *gxy.toBGR().cvRead());
-				cv::imwrite(img->name + ".matches.png", *bgr.cvRead());
-				{
+				/*{
 					CVMap map = gx.cvReadWrite();
 					for(uchar* ptr = map->data; ptr < map->dataend; ptr++)
 						*ptr = *ptr + 128;
 				}
 				cv::imwrite(img->name + ".gx.png", *gx.toBGR().cvRead());
-			}
-			if(DRAW_DEBUG_IMAGES) {
 				{
 					CVMap map = gy.cvReadWrite();
 					for(uchar* ptr = map->data; ptr < map->dataend; ptr++)
 						*ptr = *ptr + 128;
 				}
-				cv::imwrite(img->name + ".gy.png", *gy.toBGR().cvRead());
+				cv::imwrite(img->name + ".gy.png", *gy.toBGR().cvRead());*/
 			}
 
 			detection->set_t_sent(getTime());

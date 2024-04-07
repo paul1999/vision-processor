@@ -28,7 +28,7 @@ inline void px(global const uchar* abs, global const char* gx, global const char
 }
 
 //https://www.thecrazyprogrammer.com/2016/12/bresenhams-midpoint-circle-algorithm-c-c.html
-kernel void ssd(global const uchar* abs, global const char* gx, global const char* gy, global const int* pos, global float* out, const Perspective perspective, const float height, const float radius) {
+kernel void ssd(global const uchar* abs, global const char* gx, global const char* gy, global const int* pos, global uchar* out, const Perspective perspective, const float height, const float radius) {
 	int xpos = pos[2*get_global_id(0)];
 	int ypos = pos[2*get_global_id(0)+1];
 #ifdef RGGB
@@ -67,5 +67,5 @@ kernel void ssd(global const uchar* abs, global const char* gx, global const cha
 		}
 	}
 
-	out[get_global_id(0)] = cossum / n >= 3.25f ? 1.0 : 0.0;
+	out[get_global_id(0)] = cossum / n >= 3.0f ? 1 : 0;
 }

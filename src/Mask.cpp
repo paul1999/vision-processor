@@ -34,7 +34,7 @@ void Mask::geometryCheck() {
 	mask.clear();
 
 	addForHeight(mask, *perspective, ballRadius);
-	addForHeight(mask, *perspective, maxBotHeight);
+	//addForHeight(mask, *perspective, maxBotHeight);
 }
 
 std::shared_ptr<CLArray> Mask::scanArea(AlignedArrayPool& arrayPool) {
