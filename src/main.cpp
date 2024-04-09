@@ -8,7 +8,7 @@
 #include "GroundTruth.h"
 #include <opencv2/video/background_segm.hpp>
 
-#define DRAW_DEBUG_IMAGES true
+#define DRAW_DEBUG_IMAGES false
 #define DEBUG_PRINT false
 #define RUNAWAY_PRINT false
 
@@ -236,7 +236,7 @@ static void findBots(Resources& r, std::list<Match>& centerBlobs, const std::lis
 		bot->set_orientation(orientation);
 		bot->set_pixel_x(imgPos.x * 2);
 		bot->set_pixel_y(imgPos.y * 2);
-		bot->set_height(match.height);
+		bot->set_height(height);
 		std::cout << "Bot " << fieldPos.x << "," << fieldPos.y << " Y" << yellow << " " << id << " " << (orientation*180/M_PI) << "°" << std::endl;
 	}
 }
@@ -528,7 +528,7 @@ int main(int argc, char* argv[]) {
 				scanArea = r.mask->getRuns().getPart(fieldStart, fieldStart + fieldStep);
 			}
 
-			for(auto& trackedCamera : r.socket->getTrackedObjects()) {
+			/*for(auto& trackedCamera : r.socket->getTrackedObjects()) {
 				if(RUNAWAY_PRINT)
 					std::cout << "Tracking: " << trackedCamera.second.size() << std::endl;
 				for(TrackingState& tracked : trackedCamera.second) {
@@ -555,10 +555,14 @@ int main(int argc, char* argv[]) {
 							imgPos,
 							height,
 							0.0,
-							std::max(r.minTrackingRadius, tracked.id != -1 ? (r.maxBotAcceleration*timeDelta*timeDelta/2.0)+90.0 : r.maxBallVelocity*timeDelta)
+							std::max(r.minTrackingRadius,
+									 tracked.id != -1 ?
+									 (r.maxBotAcceleration*timeDelta*timeDelta/2.0)+90.0 :
+									 r.maxBallVelocity*timeDelta
+							)
 					));
 				}
-			}
+			}*/
 
 			int areaSize = scanArea.size();
 			auto pos = scanArea.scanArea(*r.arrayPool);
@@ -630,7 +634,7 @@ int main(int argc, char* argv[]) {
 				//return hsv.g < 32 || hsv.b < 64;
 				return hsv.g < 24 || hsv.b < 32;
 			});
-			filterMatches(r, matches, matches, r.ballRadius/2);
+			filterMatches(r, matches, matches, r.ballRadius);
 
 			std::list<Match> orangeBlobs;
 			std::list<Match> yellowBlobs;
