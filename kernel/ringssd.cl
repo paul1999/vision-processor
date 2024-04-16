@@ -8,8 +8,8 @@
 
 kernel void ssd(global const uchar* img, global const int* pos, global float* out, const Perspective perspective, const float height, const float radius, const float rradius, const RGB rgb) {
 #ifdef RGGB
-	const int xpos = 2*pos[2*get_global_id(0)];
-	const int ypos = 2*pos[2*get_global_id(0)+1];
+	const int xpos = pos[2*get_global_id(0)];
+	const int ypos = pos[2*get_global_id(0)+1];
 #endif
 
 	V2 center = image2field(perspective, height, (V2) {(float)xpos, (float)ypos});

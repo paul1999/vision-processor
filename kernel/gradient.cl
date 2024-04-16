@@ -29,8 +29,8 @@ inline void px(read_only image2d_t gx, read_only image2d_t gy, int2 pos, const i
 kernel void cossum(read_only image2d_t gx, read_only image2d_t gy, global float* out, const Perspective perspective, const float height, const float radius) {
 	int2 pos = (int2)(get_global_id(0), get_global_id(1));
 
-	V2 center = image2field(perspective, height, (V2) {(float)2*pos.x, (float)2*pos.y});
-	V2 offcenter = image2field(perspective, height, (V2) {(float)2*pos.x+2, (float)2*pos.y});
+	V2 center = image2field(perspective, height, (V2) {(float)pos.x, (float)pos.y});
+	V2 offcenter = image2field(perspective, height, (V2) {(float)pos.x+1, (float)pos.y});
 
 	V2 posdiff = {offcenter.x-center.x, offcenter.y-center.y};
 	float rPerPixel = native_sqrt(posdiff.x*posdiff.x + posdiff.y*posdiff.y);

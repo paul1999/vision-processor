@@ -139,9 +139,9 @@ int Perspective::getBoundaryWidth() {
 
 ClPerspective Perspective::getClPerspective() {
 	return {
-			{(int)calib.pixel_image_width(), (int)calib.pixel_image_height()},
-			1/calib.focal_length(),
-			{calib.principal_point_x(), calib.principal_point_y()},
+			{(int)calib.pixel_image_width()/2, (int)calib.pixel_image_height()/2},
+			2/calib.focal_length(),
+			{calib.principal_point_x()/2, calib.principal_point_y()/2},
 			calib.distortion(),
 			{
 				(float)rX.x, (float)rY.x, (float)rZ.x,
