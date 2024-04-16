@@ -65,7 +65,5 @@ kernel void cossum(read_only image2d_t gx, read_only image2d_t gy, global float*
 		}
 	}
 
-	//out[pos.x + pos.y * get_global_size(0)] = convert_uchar_sat(cossum*64 / n);
-	//out[pos.x + pos.y * get_global_size(0)] = cossum / n >= 2.5f ? 255 : 0;
 	out[pos.x + pos.y * get_global_size(0)] = cossum / n;
 }

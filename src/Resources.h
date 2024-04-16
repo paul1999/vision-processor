@@ -49,8 +49,9 @@ public:
 
 	double contrast = 1.0; //deprecated
 	RGB orange = {255, 64, 0};
+	RGB yellow = {255, 255, 64};
 	//RGB yellow = {255, 192, 128};
-	RGB yellow = {192, 128, 64};
+	//RGB yellow = {192, 128, 64};
 	RGB blue = {0, 0, 255};
 	RGB green = {64, 255, 64};
 	RGB pink = {255, 0, 255};

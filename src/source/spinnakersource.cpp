@@ -57,7 +57,7 @@ SpinnakerSource::SpinnakerSource(int id) {
 
 	int width = pCam->WidthMax.GetValue();
 	int height = pCam->HeightMax.GetValue();
-	for(int i = 0; i < 3; i++) {
+	for(int i = 0; i < 5; i++) { // 3 minimum + 2 for longer holded frames (e.g. RTPStream)
 		std::shared_ptr<Image> buffer = std::make_shared<Image>(&PixelFormat::RGGB8, width/2, height/2, "spinnaker");
 		buffers[buffer] = std::make_unique<CLMap<uint8_t>>(buffer->write<uint8_t>());
 	}

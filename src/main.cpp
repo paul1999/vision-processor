@@ -326,6 +326,21 @@ int main(int argc, char* argv[]) {
 	if(!r.groundTruth.empty())
 		r.socket->send(GroundTruth(r.groundTruth, r.camId, getTime()).getMessage());
 
+	//Preallocation: massive performance differences during enqueue kernel
+	int rggbWidth, rggbHeight;
+	std::string name;
+	{
+		std::shared_ptr<Image> img = r.camera->readImage();
+		Image rggb = img->toRGGB();
+		rggbWidth = rggb.width;
+		rggbHeight = rggb.height;
+		name = img->name;
+	}
+	CLImage clImg(rggbWidth, rggbHeight, true);
+	CLImage sobelX(rggbWidth, rggbHeight, false);
+	CLImage sobelY(rggbWidth, rggbHeight, false);
+	Image circularity(&PixelFormat::F32, rggbWidth, rggbHeight, name);
+
 	uint32_t frameId = 0;
 	while(true) {
 		std::shared_ptr<Image> img = r.camera->readImage();
@@ -356,74 +371,20 @@ int main(int argc, char* argv[]) {
 			detection->set_camera_id(r.camId);
 
 			Image rggb = img->toRGGB();
-			CLImage clImg(rggb.width, rggb.height, true);
 			OpenCL::wait(r.openCl->run(buf2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), rggb.buffer, clImg.image));
-			std::cout << "[buf2img] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 			/*CLImage blurred(rggb.width, rggb.height, true);
 			OpenCL::wait(r.openCl->run(blur, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), clImg.image, blurred.image));
 			std::cout << "[blur] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;*/
-			CLImage sobelX(rggb.width, rggb.height, false);
-			CLImage sobelY(rggb.width, rggb.height, false);
 			OpenCL::wait(r.openCl->run(sobel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), clImg.image, sobelX.image, sobelY.image));
-			std::cout << "[gradient] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
-
-			/*const int fieldSize = r.mask->getRuns().size();
-			RLEVector scanArea;
-			//TODO geometry mismatch?
-			if(true || DRAW_DEBUG_IMAGES) {
-				scanArea = r.mask->getRuns().getPart(0, fieldSize);
-			} else {
-				int parts = 60;
-				int fieldStep = (fieldSize / parts);
-				int fieldStart = (frameId%parts)*fieldStep;
-				scanArea = r.mask->getRuns().getPart(fieldStart, fieldStart + fieldStep);
-			}*/
-
-			/*for(auto& trackedCamera : r.socket->getTrackedObjects()) {
-				if(RUNAWAY_PRINT)
-					std::cout << "Tracking: " << trackedCamera.second.size() << std::endl;
-				for(TrackingState& tracked : trackedCamera.second) {
-					double timeDelta = timestamp - tracked.timestamp;
-					//double timeDelta = 0.033333;
-					double height = tracked.z + tracked.vz * timeDelta;
-					V2 imgPos = r.perspective->field2image({
-						tracked.x + tracked.vx * timeDelta,
-						tracked.y + tracked.vy * timeDelta,
-						height
-					});
-
-					if(imgPos.x < 0 || imgPos.y < 0 || imgPos.x >= r.perspective->getWidth() || imgPos.y >= r.perspective->getHeight()) {
-						//TODO use ring part inside for tracking
-						if(trackedCamera.first == r.camId) {
-							//std::cout << "[Tracking] Lost out of bounds " << tracked.id << " " << timeDelta << std::endl;
-							//std::cout << tracked.x << "," << tracked.vx << " " << tracked.y << "," << tracked.vy << std::endl;
-						}
-						continue;
-					}
-
-					//TODO fix correct search radius (accel/decel)
-					scanArea.add(r.perspective->getRing(
-							imgPos,
-							height,
-							0.0,
-							std::max(r.minTrackingRadius,
-									 tracked.id != -1 ?
-									 (r.maxBotAcceleration*timeDelta*timeDelta/2.0)+90.0 :
-									 r.maxBallVelocity*timeDelta
-							)
-					));
-				}
-			}*/
 
 			//TODO vectorprimitive für image2field
-			Image circularity(&PixelFormat::F32, sobelX.width, sobelX.height, img->name);
 			OpenCL::wait(r.openCl->run(r.gradientkernel, cl::EnqueueArgs(cl::NDRange(sobelX.width, sobelX.height)), sobelX.image, sobelY.image, circularity.buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius));
-			std::cout << "[circularity] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
+			//std::cout << "[circularity] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 			CLArray counter(sizeof(int));
 			int maxMatches = 2000; //TODO make configurable
 			CLArray matchArray(sizeof(Match)*maxMatches);
 			OpenCL::wait(r.openCl->run(matchKernel, cl::EnqueueArgs(cl::NDRange(sobelX.width, sobelX.height)), clImg.image, circularity.buffer, matchArray.buffer, counter.buffer, r.perspective->getClPerspective(), (float)r.minCircularity, r.minSaturation, r.minBrightness, (float)r.ballRadius, (float)r.ballRadius, maxMatches));
-			std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
+			//std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 
 			std::list<Match> matches;
 			{
@@ -437,7 +398,6 @@ int main(int argc, char* argv[]) {
 
 				matches = std::list<Match>(*matchMap, *matchMap+matchAmount);
 			}
-			std::cout << "[matches] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 
 			filterMatches(r, matches, matches, r.ballRadius);
 
@@ -465,7 +425,7 @@ int main(int argc, char* argv[]) {
 				else
 					pinkBlobs.push_back(match);
 			}
-			std::cout << "[blob ordering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
+			//std::cout << "[blob ordering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl; //TODO 2.5 out of 10 ms!
 
 			findBalls(r, orangeBlobs, detection);
 			findBots(r, yellowBlobs, greenBlobs, pinkBlobs, detection, true);
