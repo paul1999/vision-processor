@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <vector>
+#include <thread>
 
 #include <opencv2/core/mat.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -23,7 +24,7 @@ public:
 	}
 
 	std::shared_ptr<Image> readImage() override {
-		//images.pop_back();
+		std::this_thread::sleep_for(std::chrono::microseconds(33333));
 		return images[std::rand() % images.size()];
 	}
 

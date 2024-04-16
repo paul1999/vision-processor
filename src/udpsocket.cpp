@@ -1,6 +1,6 @@
 #include "udpsocket.h"
-#include "messages_robocup_ssl_wrapper.pb.h"
-#include "ssl_gc_referee_message.pb.h"
+#include "proto/ssl_vision_wrapper.pb.h"
+#include "proto/ssl_gc_referee_message.pb.h"
 
 #include <cmath>
 #include <iostream>

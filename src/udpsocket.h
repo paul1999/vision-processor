@@ -3,8 +3,8 @@
 
 #include <thread>
 #include <google/protobuf/message.h>
-#include "messages_robocup_ssl_geometry.pb.h"
-#include "messages_robocup_ssl_detection.pb.h"
+#include "proto/ssl_vision_geometry.pb.h"
+#include "proto/ssl_vision_detection.pb.h"
 
 #ifdef _WIN32
 #include <Winsock2.h> // before Windows.h, else Winsock 1 conflict

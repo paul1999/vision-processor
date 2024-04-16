@@ -1,6 +1,6 @@
 #pragma once
 
-#include "messages_robocup_ssl_geometry.pb.h"
+#include "proto/ssl_vision_geometry.pb.h"
 #include "udpsocket.h"
 #include "RLEVector.h"
 

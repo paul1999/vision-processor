@@ -52,6 +52,9 @@ public:
 	[[nodiscard]] Image toGrayscale() const;
 	[[nodiscard]] Image toBGR() const;
 	[[nodiscard]] Image toRGGB() const;
+	[[nodiscard]] Image toUpscaleRGGB() const;
+
+	void save(const std::string& suffix) const;
 
 	const PixelFormat* format;
 	const int width;

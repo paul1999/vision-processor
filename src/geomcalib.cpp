@@ -1,5 +1,6 @@
+#include <eigen3/Eigen/Core>
 #include "geomcalib.h"
-
+#include "distortion.h"
 
 
 float dist(const cv::Vec2f& v1, const cv::Vec2f& v2) {

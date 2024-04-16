@@ -1,5 +1,6 @@
 #include <cmath>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include "image.h"
 
 const PixelFormat PixelFormat::RGGB8 = PixelFormat(2, 2, true, CV_8UC1, "void kernel c(global const uchar* in, global uchar* out) {"
@@ -102,6 +103,34 @@ Image Image::toRGGB() const {
 		std::cerr << "[Image] Unimplemented conversion to RGGB" << std::endl;
 		exit(1);
 	}
+}
+
+Image Image::toUpscaleRGGB() const {
+	if(format == &PixelFormat::RGGB8) {
+		return *this;
+	} else if(format == &PixelFormat::BGR888) {
+		Image image(&PixelFormat::RGGB8, width, height, name);
+		CLMap<uint8_t> read = ::Image::read<uint8_t>();
+		CLMap<uint8_t> write = image.write<uint8_t>();
+		for(int y = 0; y < height; y++) {
+			for(int x = 0; x < width; x++) {
+				int readpos = 3 * (x + width * y);
+				int writepos = 2*x + 2*y * 2*width;
+				write[writepos] = read[readpos+2];
+				write[writepos+1] = read[readpos+1];
+				write[writepos+2*width] = read[readpos+1];
+				write[writepos+2*width+1] = read[readpos];
+			}
+		}
+		return image;
+	} else {
+		std::cerr << "[Image] Unimplemented conversion to upscaled RGGB" << std::endl;
+		exit(1);
+	}
+}
+
+void Image::save(const std::string &suffix) const {
+	cv::imwrite("img/" + name + suffix, *cvRead());
 }
 
 CVMap::CVMap(const Image& image, int clRWType): map(std::move(CLMap<uint8_t>(image.buffer, image.height*image.width*image.format->pixelSize(), clRWType))) {

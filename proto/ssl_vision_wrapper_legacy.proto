@@ -1,6 +1,6 @@
 syntax = "proto2";
-import "messages_robocup_ssl_detection.proto";
-import "messages_robocup_ssl_geometry_legacy.proto";
+import "proto/ssl_vision_detection.proto";
+import "proto/ssl_vision_geometry_legacy.proto";
 
 package RoboCup2014Legacy.Wrapper;
 

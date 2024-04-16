@@ -8,7 +8,7 @@
 
 # Camera source type. Availability depending on libraries installed.
 # SPINNAKER, IMAGES, OPENCV
-source: IMAGES
+source: SPINNAKER
 
 # Spinnaker camera id
 #spinnaker_id: 0
@@ -18,30 +18,9 @@ source: IMAGES
 
 # List of image file system paths for IMAGES source.
 #images: []
-images:
-#- "test-data/labempty/cam0/00000.png"
-- "test-data/rc2022/bots-balls-many-1/00000.png"
-#- "test-data/rc2022/bots-balls-many-1/00001.png"
-#- "test-data/rc2022/bots-balls-many-1/00002.png"
-#- "test-data/rc2022/bots-balls-many-1/00003.png"
-#- "test-data/rc2019/1/cam0/00000.png"
-#- "test-data/rc2019/1/cam0/00001.png"
-#- "test-data/rc2019/1/cam0/00002.png"
-#- "test-data/rc2019/1/cam0/00003.png"
-#- "test-data/rc2022/bots-center-ball-1-0/00000.png"
-#- "test-data/rc2022/bots-center-ball-1-0/00001.png"
-#- "test-data/rc2022/bots-center-ball-1-0/00002.png"
-#- "test-data/rc2022/bots-center-ball-1-0/00003.png"
-#- "test-data/rc2022/bots-center-ball-1-1/00000.png"
-#- "test-data/rc2022/bots-center-ball-1-1/00001.png"
-#- "test-data/rc2022/bots-center-ball-1-1/00002.png"
-#- "test-data/rc2022/bots-center-ball-1-1/00003.png"
 
 # Team bot heights yml file (heights in mm)
 #bot_heights_file: robot-heights.yml
-
-# Max tracked bot acceleration in m/s^2
-#max_bot_acceleration: 6.5
 
 # Side blob distance in mm
 #side_blob_distance: 65.0
@@ -52,14 +31,34 @@ images:
 # Side blob radius in mm
 #side_blob_radius: 20.0
 
-# Max tracked ball velocity in m/s
-#max_ball_velocity: 8.0
-
 # Ball radius in mm
 #ball_radius: 21.5
 
-# Min tracking radius in mm
-#min_tracking_radius: 30.0
+thresholds:
+  # Minimum mean cosine similarity of the blob border gradient (0 - 1)
+  #circularity: 0.625
+  # Minimum saturation of the blob area (0 - 255)
+  #saturation: 24
+  # Minimum brightness of the blob area (0 - 255
+  #brightness: 32
+
+# Hues of the colors used to classify the blobs in ° (0 - 359°)
+hues:
+  #orange: 30.0
+  #yellow: 60.0
+  #blue: 210.0
+  #green: 120.0
+  #pink: 300.0
+
+tracking:
+  # Min tracking radius in mm
+  #min_tracking_radius: 30.0
+
+  # Max tracked ball velocity in m/s
+  #max_ball_velocity: 8.0
+
+  # Max tracked bot acceleration in m/s^2
+  #max_bot_acceleration: 6.5
 
 network:
   # Game controller multicast ip address

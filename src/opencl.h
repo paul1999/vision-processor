@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <iostream>
+#include <opencv2/core/mat.hpp>
 
 
 class OpenCL {
@@ -54,11 +55,7 @@ public:
 				std::cerr << "[OpenCL] Enqueue unmap buffer error: " << error << std::endl;
 				exit(1);
 			}
-			error = event.wait();
-			if(error != CL_SUCCESS) {
-				std::cerr << "[OpenCL] Enqueue unmap buffer wait error: " << error << std::endl;
-				exit(1);
-			}
+			OpenCL::wait(event);
 		}
 	}
 
@@ -91,4 +88,68 @@ public:
 
 	const cl::Buffer buffer;
 	const int size;
+};
+
+template<typename T>
+class CLImageMap {
+public:
+	explicit CLImageMap(const cl::Image2D& image, int width, int height, int clRWType): image(image) {
+		int error;
+		size_t origin[]{0, 0, 0};
+		size_t region[]{(size_t)width, (size_t)height, 0};
+		map = (T*) clEnqueueMapImage(cl::CommandQueue::getDefault()(), image(), true, clRWType, origin, region, &bytePitch, nullptr, 0, nullptr, nullptr, &error);
+		if(error != CL_SUCCESS) {
+			std::cerr << "[OpenCL] Enqueue map image error: " << error << std::endl;
+			exit(1);
+		}
+		rowPitch = bytePitch/sizeof(T);
+		cv = ::cv::Mat(height, width, CV_8SC4, *map);
+		cv.step[0] = bytePitch;
+	}
+	~CLImageMap() {
+		if(unmoved) {
+			cl::Event event;
+			int error = cl::enqueueUnmapMemObject(image, map, nullptr, &event);
+			if(error != CL_SUCCESS) {
+				std::cerr << "[OpenCL] Enqueue unmap image error: " << error << std::endl;
+				exit(1);
+			}
+			OpenCL::wait(event);
+		}
+	}
+
+	CLImageMap (CLImageMap&& other) noexcept: image(std::move(other.image)), map(std::move(other.map)), bytePitch(other.bytePitch), rowPitch(other.rowPitch) {
+		other.unmoved = false;
+	}
+	CLImageMap ( const CLImageMap & ) = delete;
+	CLImageMap& operator= ( const CLImageMap & ) = delete;
+	T*& operator*() { return map; }
+	T* operator-> () { return map; }
+	T& operator [] (int i) { return map[i]; }
+	T& operator()(int x, int y) { return map[x + y * rowPitch]; }
+	const T* const& operator*() const { return map; }
+	const T* operator-> () const { return map; }
+	const T& operator [] (int i) const { return map[i]; }
+
+	size_t bytePitch;
+	size_t rowPitch;
+	cv::Mat cv;
+
+private:
+	const cl::Image2D image;
+	T* map;
+	bool unmoved = true;
+};
+
+class CLImage {
+public:
+	CLImage(int width, int height, bool u);
+
+	template<typename T> CLImageMap<T> read() const { return std::move(CLImageMap<T>(image, width, height, CL_MAP_READ)); }
+	template<typename T> CLImageMap<T> write() { return std::move(CLImageMap<T>(image, width, height, CL_MAP_WRITE_INVALIDATE_REGION)); }
+	template<typename T> CLImageMap<T> readWrite() { return std::move(CLImageMap<T>(image, width, height, CL_MAP_WRITE)); }
+
+	const cl::Image2D image;
+	const int width;
+	const int height;
 };

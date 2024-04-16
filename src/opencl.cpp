@@ -81,7 +81,7 @@ static inline cl::Buffer clAlloc(cl_mem_flags type, cl::size_type size, void* da
 	int error;
 	cl::Buffer buffer(type | CL_MEM_READ_WRITE, size, data, &error);
 	if(error != CL_SUCCESS) {
-		std::cerr << "[OpenCL] Error during buffer allocation: " << error << std::endl;
+		std::cerr << "[OpenCL] Error during image allocation: " << error << std::endl;
 		exit(1);
 	}
 	return std::move(buffer);
@@ -89,3 +89,15 @@ static inline cl::Buffer clAlloc(cl_mem_flags type, cl::size_type size, void* da
 
 CLArray::CLArray(int size): size(size), buffer(clAlloc((cl_mem_flags) CL_MEM_ALLOC_HOST_PTR, (cl::size_type) size, nullptr)) {}
 CLArray::CLArray(void* data, const int size) : size(size), buffer(clAlloc((cl_mem_flags) CL_MEM_COPY_HOST_PTR, (cl::size_type) size, data)) {}
+
+static inline cl::Image2D allocImage(int width, int height, bool u) {
+	int error;
+	cl::Image2D image = cl::Image2D(cl::Context::getDefault(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, cl::ImageFormat(CL_RGBA, CL_UNSIGNED_INT8), width, height, 0, nullptr, &error);
+	if(error != CL_SUCCESS) {
+		std::cerr << "bgr Image creation error: " << error << std::endl;
+		exit(1);
+	}
+	return std::move(image);
+}
+
+CLImage::CLImage(int width, int height, bool u): image(allocImage(width, height, u)), width(width), height(height) {}

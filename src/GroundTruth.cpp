@@ -2,7 +2,7 @@
 
 #include <yaml-cpp/yaml.h>
 
-#include "messages_robocup_ssl_wrapper.pb.h"
+#include "proto/ssl_vision_wrapper.pb.h"
 
 
 namespace YAML {

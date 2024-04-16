@@ -7,34 +7,30 @@
 #include "kernel/image2field.cl"
 #endif
 
+const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE;
 
-//#define ADD_SQ_COSSIM(pos) vdiff = dx*(float)gx[pos] + dy*(float)gy[pos]; *cossum += fabs(vdiff) / ((float)abs[pos]*native_sqrt((float)dx*dx+dy*dy) + 0.00001);
-#define ADD_SQ_COSSIM(pos) vdiff = dx*(float)gx[pos] + dy*(float)gy[pos]; *cossum += vdiff*vdiff / ((float)abs[pos]*(float)abs[pos]*((float)dx*dx+(float)dy*dy) + 0.00001);
-inline void px(global const uchar* abs, global const char* gx, global const char* gy, const Perspective perspective, const int xpos, const int ypos, const int dx, const int dy, float* cossum, int* n) {
-	const int x = xpos+dx;
-	const int y = ypos+dy;
-	if(x < 0 || y < 0 || x >= perspective.shape[0]/2 || y >= perspective.shape[1]/2) //TODO is RGGB only
-		return;
+inline void px(read_only image2d_t gx, read_only image2d_t gy, int2 pos, const int dx, const int dy, float* cossum) {
+	pos.x += dx;
+	pos.y += dy;
 
-	const int pos = 2*x + 2*y*perspective.shape[0];
-	(*n)++;
-	float vdiff;
-#ifdef RGGB
-	ADD_SQ_COSSIM(pos)
-	ADD_SQ_COSSIM(pos+1)
-	ADD_SQ_COSSIM(pos+perspective.shape[0])
-	ADD_SQ_COSSIM(pos+1+perspective.shape[0])
-#endif
+	float4 dgx = convert_float4(read_imagei(gx, sampler, pos));
+	float4 dgy = convert_float4(read_imagei(gy, sampler, pos));
+
+	float abspos = (float)dx*dx + (float)dy*dy;
+	float4 abs2 = dgx*dgx + dgy*dgy;
+
+	float4 vdiff = dx*dgx + dy*dgy;
+	float4 csum = vdiff*vdiff / (abs2*abspos + 0.00001f);
+	float2 acc = csum.xy + csum.zw;
+	*cossum += acc.x + acc.y;
 }
 
 //https://www.thecrazyprogrammer.com/2016/12/bresenhams-midpoint-circle-algorithm-c-c.html
-kernel void ssd(global const uchar* abs, global const char* gx, global const char* gy, global const int* pos, global uchar* out, const Perspective perspective, const float height, const float radius) {
-	int xpos = pos[2*get_global_id(0)];
-	int ypos = pos[2*get_global_id(0)+1];
-#ifdef RGGB
-	V2 center = image2field(perspective, height, (V2) {(float)2*xpos, (float)2*ypos});
-	V2 offcenter = image2field(perspective, height, (V2) {(float)2*xpos+2, (float)2*ypos});
-#endif
+kernel void cossum(read_only image2d_t gx, read_only image2d_t gy, global float* out, const Perspective perspective, const float height, const float radius) {
+	int2 pos = (int2)(get_global_id(0), get_global_id(1));
+
+	V2 center = image2field(perspective, height, (V2) {(float)2*pos.x, (float)2*pos.y});
+	V2 offcenter = image2field(perspective, height, (V2) {(float)2*pos.x+2, (float)2*pos.y});
 
 	V2 posdiff = {offcenter.x-center.x, offcenter.y-center.y};
 	float rPerPixel = native_sqrt(posdiff.x*posdiff.x + posdiff.y*posdiff.y);
@@ -46,15 +42,17 @@ kernel void ssd(global const uchar* abs, global const char* gx, global const cha
 	float cossum = 0.0f;
 	int n = 0;
 	while(x >= y) {
-		px(abs, gx, gy, perspective, xpos, ypos, +x, +y, &cossum, &n);
-		px(abs, gx, gy, perspective, xpos, ypos, -y, +x, &cossum, &n);
-		px(abs, gx, gy, perspective, xpos, ypos, -x, -y, &cossum, &n);
-		px(abs, gx, gy, perspective, xpos, ypos, +y, -x, &cossum, &n);
+		n += 4*4;
+		px(gx, gy, pos, +x, +y, &cossum);
+		px(gx, gy, pos, -y, +x, &cossum);
+		px(gx, gy, pos, -x, -y, &cossum);
+		px(gx, gy, pos, +y, -x, &cossum);
 		if(x > y && y > 0) {
-			px(abs, gx, gy, perspective, xpos, ypos, +y, +x, &cossum, &n);
-			px(abs, gx, gy, perspective, xpos, ypos, -x, +y, &cossum, &n);
-			px(abs, gx, gy, perspective, xpos, ypos, -y, -x, &cossum, &n);
-			px(abs, gx, gy, perspective, xpos, ypos, +x, -y, &cossum, &n);
+			n += 4*4;
+			px(gx, gy, pos, +y, +x, &cossum);
+			px(gx, gy, pos, -x, +y, &cossum);
+			px(gx, gy, pos, -y, -x, &cossum);
+			px(gx, gy, pos, +x, -y, &cossum);
 		}
 
 		if(err <= 0) {
@@ -67,5 +65,7 @@ kernel void ssd(global const uchar* abs, global const char* gx, global const cha
 		}
 	}
 
-	out[get_global_id(0)] = cossum / n >= 3.0f ? 1 : 0;
+	//out[pos.x + pos.y * get_global_size(0)] = convert_uchar_sat(cossum*64 / n);
+	//out[pos.x + pos.y * get_global_size(0)] = cossum / n >= 2.5f ? 255 : 0;
+	out[pos.x + pos.y * get_global_size(0)] = cossum / n;
 }

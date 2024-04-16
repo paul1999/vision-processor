@@ -32,37 +32,34 @@ public:
 
 	int camId;
 	int cameraAmount;
-	double botRadius;
-	double maxBotAcceleration;
 	double sideBlobDistance;
 	double centerBlobRadius;
 	double sideBlobRadius;
-	double maxBallVelocity;
 	double ballRadius;
-	double minTrackingRadius;
 
 	std::string groundTruth;
 
-	double contrast = 1.0;
+	double minTrackingRadius;
+	double maxBallVelocity;
+	double maxBotAcceleration;
+
+	double minCircularity;
+	uint8_t minSaturation;
+	uint8_t minBrightness;
+
+	double contrast = 1.0; //deprecated
 	RGB orange = {255, 64, 0};
-	float orangeMedian = 1000.0f;
 	//RGB yellow = {255, 192, 128};
 	RGB yellow = {192, 128, 64};
-	float yellowMedian = 1000.0f;
 	RGB blue = {0, 0, 255};
-	float blueMedian = 1000.0f;
 	RGB green = {64, 255, 64};
-	float greenMedian = 1000.0f;
 	RGB pink = {255, 0, 255};
-	float pinkMedian = 1000.0f;
 
-	uint8_t orangeHue = 21; //30°
-	//uint8_t yellowHue = 43; //60°
-	uint8_t yellowHue = 35;
-	uint8_t blueHue = 149; //210°
-	uint8_t greenHue = 85; //120°
-	//uint8_t pinkHue = 213; //300°
-	uint8_t pinkHue = 230;
+	uint8_t orangeHue;
+	uint8_t yellowHue;
+	uint8_t blueHue;
+	uint8_t greenHue;
+	uint8_t pinkHue;
 
 	std::shared_ptr<GCSocket> gcSocket;
 	std::shared_ptr<VisionSocket> socket;
@@ -74,11 +71,6 @@ public:
 
 	cl::Kernel blurkernel;
 	cl::Kernel gradientkernel;
-	cl::Kernel yuvkernel;
-	cl::Kernel bgkernel;
 	cl::Kernel diffkernel;
 	cl::Kernel ringkernel;
-	cl::Kernel botkernel;
-	cl::Kernel sidekernel;
-	cl::Kernel ballkernel;
 };
