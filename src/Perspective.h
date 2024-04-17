@@ -23,6 +23,7 @@ typedef struct __attribute__ ((packed)) {
 	float d;       // distortion
 	float r[9]; // rotation matrix
 	float c[3];    // camera position
+	int field[2]; // field size incl. boundary in cm
 } ClPerspective;
 
 

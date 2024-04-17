@@ -2,6 +2,7 @@
 /src/kernel
 /src/proto
 /python/proto
+__pycache__
 
 # Record ground truth output
 gt.yml

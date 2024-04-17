@@ -322,6 +322,7 @@ int main(int argc, char* argv[]) {
 	cl::Kernel sobel = r.openCl->compileFile("kernel/sobel.cl");
 	cl::Kernel blur = r.openCl->compileFile("kernel/blur.cl");
 	cl::Kernel matchKernel = r.openCl->compileFile("kernel/matches.cl");
+	cl::Kernel houghKernel = r.openCl->compileFile("kernel/hough.cl");
 
 	if(!r.groundTruth.empty())
 		r.socket->send(GroundTruth(r.groundTruth, r.camId, getTime()).getMessage());
@@ -339,6 +340,7 @@ int main(int argc, char* argv[]) {
 	CLImage clImg(rggbWidth, rggbHeight, true);
 	CLImage sobelX(rggbWidth, rggbHeight, false);
 	CLImage sobelY(rggbWidth, rggbHeight, false);
+	CLImage blurred(rggbWidth, rggbHeight, true);
 	Image circularity(&PixelFormat::F32, rggbWidth, rggbHeight, name);
 
 	uint32_t frameId = 0;
@@ -372,19 +374,23 @@ int main(int argc, char* argv[]) {
 
 			Image rggb = img->toRGGB();
 			OpenCL::wait(r.openCl->run(buf2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), rggb.buffer, clImg.image));
-			/*CLImage blurred(rggb.width, rggb.height, true);
 			OpenCL::wait(r.openCl->run(blur, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), clImg.image, blurred.image));
-			std::cout << "[blur] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;*/
-			OpenCL::wait(r.openCl->run(sobel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), clImg.image, sobelX.image, sobelY.image));
+			//std::cout << "[blur] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
+			OpenCL::wait(r.openCl->run(sobel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), blurred.image, sobelX.image, sobelY.image));
 
 			//TODO vectorprimitive für image2field
-			OpenCL::wait(r.openCl->run(r.gradientkernel, cl::EnqueueArgs(cl::NDRange(sobelX.width, sobelX.height)), sobelX.image, sobelY.image, circularity.buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius));
+			OpenCL::wait(r.openCl->run(r.gradientkernel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), sobelX.image, sobelY.image, circularity.buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius));
 			//std::cout << "[circularity] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 			CLArray counter(sizeof(int));
 			int maxMatches = 2000; //TODO make configurable
 			CLArray matchArray(sizeof(Match)*maxMatches);
-			OpenCL::wait(r.openCl->run(matchKernel, cl::EnqueueArgs(cl::NDRange(sobelX.width, sobelX.height)), clImg.image, circularity.buffer, matchArray.buffer, counter.buffer, r.perspective->getClPerspective(), (float)r.minCircularity, r.minSaturation, r.minBrightness, (float)r.ballRadius, (float)r.ballRadius, maxMatches));
+			OpenCL::wait(r.openCl->run(matchKernel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), clImg.image, circularity.buffer, matchArray.buffer, counter.buffer, r.perspective->getClPerspective(), (float)r.minCircularity, r.minSaturation, r.minBrightness, (float)r.ballRadius, (float)r.ballRadius, maxMatches));
 			//std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
+
+			/*Image votes(&PixelFormat::F32, r.perspective->getClPerspective().field[0], r.perspective->getClPerspective().field[1]);
+			OpenCL::wait(r.openCl->run(houghKernel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), sobelX.image, sobelY.image, votes.buffer, r.perspective->getClPerspective(), (float)r.ballRadius));
+			votes.save(img->name + ".votes.png");
+			break;*/
 
 			std::list<Match> matches;
 			{

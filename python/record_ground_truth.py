@@ -5,7 +5,7 @@ import struct
 import sys
 
 import yaml
-from .geom_publisher import open_multicast_socket
+from geom_publisher import open_multicast_socket
 from google.protobuf.json_format import MessageToDict
 
 import proto.ssl_vision_wrapper_pb2 as ssl_vision_wrapper
@@ -13,6 +13,7 @@ import proto.ssl_vision_wrapper_pb2 as ssl_vision_wrapper
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='Geometry Publisher')
+    parser.add_argument('--source_ip', help='Optional source IP address filter')
     parser.add_argument('--vision_ip', default='224.5.23.2', help='Multicast IP address of the vision')
     parser.add_argument('--vision_port', type=int, default=10006, help='Multicast port of the vision')
     parser.add_argument('--gt', default='gt.yml', help='Output ground truth')
@@ -23,8 +24,12 @@ if __name__ == '__main__':
     geometry = False
     sock = open_multicast_socket(args.vision_ip, args.vision_port)
     while True:
+        message, address = sock.recvfrom(65536)
+        if args.source_ip and args.source_ip != address[0]:
+            continue
+
         received = ssl_vision_wrapper.SSL_WrapperPacket()
-        received.ParseFromString(sock.recv(65536))
+        received.ParseFromString(message)
         if not detection and received.HasField('detection'):
             detec = MessageToDict(received.detection, preserving_proto_field_name=True)
             if detec["camera_id"] == 0:

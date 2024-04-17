@@ -130,7 +130,21 @@ Image Image::toUpscaleRGGB() const {
 }
 
 void Image::save(const std::string &suffix) const {
-	cv::imwrite("img/" + name + suffix, *cvRead());
+	if(format == &PixelFormat::F32) {
+		Image grayscale(&PixelFormat::U8, width, height, name);
+		{
+			CLMap<int> read = ::Image::read<int>();
+			CLMap<uint8_t> write = grayscale.write<uint8_t>();
+			for(int y = 0; y < height; y++) {
+				for(int x = 0; x < width; x++) {
+					write[x + width * y] = read[x + width * y];
+				}
+			}
+		}
+		cv::imwrite("img/" + name + suffix, *grayscale.cvRead());
+	} else {
+		cv::imwrite("img/" + name + suffix, *cvRead());
+	}
 }
 
 CVMap::CVMap(const Image& image, int clRWType): map(std::move(CLMap<uint8_t>(image.buffer, image.height*image.width*image.format->pixelSize(), clRWType))) {

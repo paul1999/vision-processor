@@ -9,6 +9,7 @@ typedef struct __attribute__ ((packed)) {
 	float d;       // distortion
 	float r[9]; // rotation matrix
 	float c[3];    // camera position
+	int field[2]; // field size incl. boundary in cm
 } Perspective;
 
 typedef struct {
@@ -97,6 +98,7 @@ typedef struct __attribute__ ((packed)) {
 	float d;       // distortion
 	float r[9]; // rotation matrix
 	float3 c;    // camera position
+	int2 field; // field size incl. boundary in cm
 } CLPerspective;
 
 inline float2 clImage2field(const Perspective p, const float height, const int2 pos) {

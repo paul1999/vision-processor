@@ -34,10 +34,9 @@ kernel void cossum(read_only image2d_t gx, read_only image2d_t gy, global float*
 
 	V2 posdiff = {offcenter.x-center.x, offcenter.y-center.y};
 	float rPerPixel = native_sqrt(posdiff.x*posdiff.x + posdiff.y*posdiff.y);
-	int err = round(radius/rPerPixel);
-	int x = err;
+	int x = round(radius/rPerPixel);
 	int y = 0;
-	err = err - x;
+	int err = 0;
 
 	float cossum = 0.0f;
 	int n = 0;

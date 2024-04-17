@@ -46,9 +46,10 @@ SpinnakerSource::SpinnakerSource(int id) {
 	pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Off);
 	pCam->ExposureTime.SetValue(8000.0);
 	pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Continuous);
-	pCam->BalanceWhiteAutoProfile.SetValue(Spinnaker::BalanceWhiteAutoProfile_Indoor);
-	pCam->GainAuto.SetValue(Spinnaker::GainAuto_Off);
-	pCam->Gain.SetValue(8.0);
+	pCam->BalanceWhiteAutoProfile.SetValue(Spinnaker::BalanceWhiteAutoProfile_Outdoor); // Much better for green carpet
+	pCam->GainAuto.SetValue(Spinnaker::GainAuto_Continuous);
+	//pCam->GainAuto.SetValue(Spinnaker::GainAuto_Off);
+	//pCam->Gain.SetValue(16.0);
 	pCam->GammaEnable.SetValue(false);
 
 	pCam->TLStream.StreamBufferHandlingMode.SetValue(Spinnaker::StreamBufferHandlingMode_NewestOnly);

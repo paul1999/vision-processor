@@ -9,6 +9,10 @@ A replacement for the aging (ssl-vision)[https://github.com/RoboCup-SSL/ssl-visi
 
 ### Dependencies
 
+    apt install libyaml-cpp-dev ocl-icd-opencl-dev libeigen3-dev libopencv-dev protobuf-compiler libprotobuf-dev
+
+    apt install intel-opencl-icd intel-media-va-driver-non-free
+
     cmake
     pkgconfig
     protobuf
