@@ -316,6 +316,13 @@ static void bgrDrawBlobs(Image& bgr, const std::list<Match>& matches, const RGB&
 	}
 }
 
+typedef struct __attribute__ ((packed)) RGBA {
+	cl_uchar r;
+	cl_uchar g;
+	cl_uchar b;
+	cl_uchar a;
+} RGBA;
+
 int main(int argc, char* argv[]) {
 	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
 	cl::Kernel buf2img = r.openCl->compileFile("kernel/buf2img.cl", "-D RGGB");
@@ -338,6 +345,7 @@ int main(int argc, char* argv[]) {
 		name = img->name;
 	}
 	CLImage clImg(rggbWidth, rggbHeight, true);
+	CLImage clBg(rggbWidth, rggbHeight, true);
 	CLImage sobelX(rggbWidth, rggbHeight, false);
 	CLImage sobelY(rggbWidth, rggbHeight, false);
 	CLImage blurred(rggbWidth, rggbHeight, true);
@@ -379,18 +387,23 @@ int main(int argc, char* argv[]) {
 			OpenCL::wait(r.openCl->run(sobel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), blurred.image, sobelX.image, sobelY.image));
 
 			//TODO vectorprimitive für image2field
-			OpenCL::wait(r.openCl->run(r.gradientkernel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), sobelX.image, sobelY.image, circularity.buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius));
+			OpenCL::wait(r.openCl->run(r.gradientkernel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), clImg.image, clBg.image, sobelX.image, sobelY.image, circularity.buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius, 32*32));
+			if(DRAW_DEBUG_IMAGES) {
+				circularity.save(".circular.png", 128.0f);
+			}
+
 			//std::cout << "[circularity] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 			CLArray counter(sizeof(int));
-			int maxMatches = 2000; //TODO make configurable
+			int maxMatches = 10000; //TODO make configurable
 			CLArray matchArray(sizeof(Match)*maxMatches);
 			OpenCL::wait(r.openCl->run(matchKernel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), clImg.image, circularity.buffer, matchArray.buffer, counter.buffer, r.perspective->getClPerspective(), (float)r.minCircularity, r.minSaturation, r.minBrightness, (float)r.ballRadius, (float)r.ballRadius, maxMatches));
 			//std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 
 			/*Image votes(&PixelFormat::F32, r.perspective->getClPerspective().field[0], r.perspective->getClPerspective().field[1]);
 			OpenCL::wait(r.openCl->run(houghKernel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), sobelX.image, sobelY.image, votes.buffer, r.perspective->getClPerspective(), (float)r.ballRadius));
-			votes.save(img->name + ".votes.png");
-			break;*/
+			if(DRAW_DEBUG_IMAGES) {
+				votes.save(img->name + ".votes.png");
+			}*/
 
 			std::list<Match> matches;
 			{
@@ -446,8 +459,6 @@ int main(int argc, char* argv[]) {
 			}
 
 			if(DRAW_DEBUG_IMAGES) {
-				circularity.save(".circular.png");
-
 				Image bgr = img->toBGR();
 				bgrDrawBlobs(bgr, orangeBlobs, r.orange);
 				bgrDrawBlobs(bgr, yellowBlobs, r.yellow);
@@ -476,6 +487,49 @@ int main(int argc, char* argv[]) {
 				bgr.save(".detections.png");
 			}
 
+			/*{
+				CLImageMap<RGBA> imgMap = clImg.readWrite<RGBA>();
+				CLImageMap<RGBA> bgMap = clBg.read<RGBA>();
+
+				for(const SSL_DetectionBall& ball : detection->balls()) {
+					RLEVector blob = r.perspective->getRing((V2) {ball.pixel_x()/2, ball.pixel_y()/2}, r.ballRadius, 0.0, r.ballRadius);
+					for(const Run& run : blob.getRuns()) {
+						for(int x = run.x; x < run.x+run.length; x++) {
+							imgMap[x + run.y*imgMap.rowPitch] = {0, 0, 0, 0}; //bgMap[x + run.y*bgMap.rowPitch];
+						}
+					}
+				}
+				for(const SSL_DetectionRobot& bot : detection->robots_yellow()) {
+					RLEVector blob = r.perspective->getRing((V2) {bot.pixel_x()/2, bot.pixel_y()/2}, r.gcSocket->yellowBotHeight, 0.0, r.perspective->field.max_robot_radius());
+					for(const Run& run : blob.getRuns()) {
+						for(int x = run.x; x < run.x+run.length; x++) {
+							imgMap[x + run.y*imgMap.rowPitch] = {0, 0, 0, 0}; //bgMap[x + run.y*imgMap.rowPitch];
+						}
+					}
+				}
+				for(const SSL_DetectionRobot& bot : detection->robots_blue()) {
+					RLEVector blob = r.perspective->getRing((V2) {bot.pixel_x()/2, bot.pixel_y()/2}, r.gcSocket->blueBotHeight, 0.0, r.perspective->field.max_robot_radius());
+					for(const Run& run : blob.getRuns()) {
+						for(int x = run.x; x < run.x+run.length; x++) {
+							imgMap[x + run.y*imgMap.rowPitch] = {0, 0, 0, 0}; //bgMap[x + run.y*imgMap.rowPitch];
+						}
+					}
+				}
+
+				for(int y = 0; y < rggbHeight; y++) {
+					for(int x = 0; x < imgMap.rowPitch; x++) {
+						RGBA& n = imgMap[x + y*imgMap.rowPitch];
+						const RGBA& o = bgMap[x + y*imgMap.rowPitch];
+						n.r = (uint16_t)n.r*1/10 + (uint16_t)o.r*9/10;
+						n.g = (uint16_t)n.g*1/10 + (uint16_t)o.g*9/10;
+						n.b = (uint16_t)n.b*1/10 + (uint16_t)o.b*9/10;
+						n.a = (uint16_t)n.a*1/10 + (uint16_t)o.a*9/10;
+					}
+				}
+			}
+			std::swap(clImg.image, clBg.image);*/
+			//cv::imwrite("img/schubert.bg.png", clBg.read<RGBA>().cv);break;
+
 			if(DEBUG_PRINT) {
 				/*printSSR(r, gxy, gx, gy, -1, r.orange);
 				printSSR(r, gxy, gx, gy, 0, r.yellow);
@@ -484,7 +538,7 @@ int main(int argc, char* argv[]) {
 
 			detection->set_t_sent(getTime());
 			r.socket->send(wrapper);
-			std::cout << "[main] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
+			std::cout << "[main] time " << (getTime() - startTime) * 1000.0 << " ms " << matches.size() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
 			if(DRAW_DEBUG_IMAGES)
 				break;
 		} else if(r.socket->getGeometryVersion()) {

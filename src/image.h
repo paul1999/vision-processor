@@ -54,7 +54,7 @@ public:
 	[[nodiscard]] Image toRGGB() const;
 	[[nodiscard]] Image toUpscaleRGGB() const;
 
-	void save(const std::string& suffix) const;
+	void save(const std::string& suffix, float factor = 1.0f) const;
 
 	const PixelFormat* format;
 	const int width;

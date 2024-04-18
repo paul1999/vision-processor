@@ -129,15 +129,24 @@ Image Image::toUpscaleRGGB() const {
 	}
 }
 
-void Image::save(const std::string &suffix) const {
+void Image::save(const std::string &suffix, float factor) const {
 	if(format == &PixelFormat::F32) {
 		Image grayscale(&PixelFormat::U8, width, height, name);
 		{
-			CLMap<int> read = ::Image::read<int>();
 			CLMap<uint8_t> write = grayscale.write<uint8_t>();
-			for(int y = 0; y < height; y++) {
-				for(int x = 0; x < width; x++) {
-					write[x + width * y] = read[x + width * y];
+			if(factor == 1.0f) {
+				CLMap<int> read = ::Image::read<int>();
+				for(int y = 0; y < height; y++) {
+					for(int x = 0; x < width; x++) {
+						write[x + width * y] = cv::saturate_cast<uint8_t>(read[x + width * y]);
+					}
+				}
+			} else {
+				CLMap<float> read = ::Image::read<float>();
+				for(int y = 0; y < height; y++) {
+					for(int x = 0; x < width; x++) {
+						write[x + width * y] = cv::saturate_cast<uint8_t>(factor * read[x + width * y]);
+					}
 				}
 			}
 		}

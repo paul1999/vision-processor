@@ -45,13 +45,14 @@ public:
 	ClPerspective getClPerspective();
 	RLEVector getRing(V2 pos, double height, double inner, double radius);
 
+	SSL_GeometryFieldSize field;
+	SSL_GeometryCameraCalibration calib;
+
 private:
 	const std::shared_ptr<VisionSocket> socket;
 	const int camId;
 
 	int geometryVersion = 0;
-	SSL_GeometryFieldSize field;
-	SSL_GeometryCameraCalibration calib;
 	V4 orientation;
 	V3 cameraPos;
 	V3 rX, rY, rZ;

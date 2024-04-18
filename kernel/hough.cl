@@ -24,7 +24,7 @@ kernel void hough(read_only image2d_t gx, read_only image2d_t gy, volatile globa
 	float4 gpy = convert_float4(read_imagei(gy, sampler, imgpos));
 	//TODO color gradient
 	float abs2 = gpx.x*gpx.x + gpx.y*gpx.y + gpx.z*gpx.z + gpy.x*gpy.x + gpy.y*gpy.y + gpy.z*gpy.z;
-	if(abs2 < 512.0f*512.0f)
+	if(abs2 < 256.0f*256.0f)
 		return;
 
 	V2 pos = image2field(perspective, height, (V2) {(float)imgpos.x, (float)imgpos.y});
@@ -33,30 +33,32 @@ kernel void hough(read_only image2d_t gx, read_only image2d_t gy, volatile globa
 	int2 fieldpos = {(int)pos.x, (int)pos.y};
 
 	//TODO voting
+	//int x = 3;
+	for(int i = 2; i < 4; i++) {
+		int x = i;
+		int err = 0;
+		int y = 0;
 
-	int err = 0;
-	int x = 3;
-	int y = 0;
+		while(x >= y) {
+			px(votes, perspective, fieldpos, +x, +y);
+			px(votes, perspective, fieldpos, -y, +x);
+			px(votes, perspective, fieldpos, -x, -y);
+			px(votes, perspective, fieldpos, +y, -x);
+			if(x > y && y > 0) {
+				px(votes, perspective, fieldpos, +y, +x);
+				px(votes, perspective, fieldpos, -x, +y);
+				px(votes, perspective, fieldpos, -y, -x);
+				px(votes, perspective, fieldpos, +x, -y);
+			}
 
-	while(x >= y) {
-		px(votes, perspective, fieldpos, +x, +y);
-		px(votes, perspective, fieldpos, -y, +x);
-		px(votes, perspective, fieldpos, -x, -y);
-		px(votes, perspective, fieldpos, +y, -x);
-		if(x > y && y > 0) {
-			px(votes, perspective, fieldpos, +y, +x);
-			px(votes, perspective, fieldpos, -x, +y);
-			px(votes, perspective, fieldpos, -y, -x);
-			px(votes, perspective, fieldpos, +x, -y);
-		}
-
-		if(err <= 0) {
-			y += 1;
-			err += 2*y + 1;
-		}
-		if(err > 0) {
-			x -= 1;
-			err += 2*x + 1;
+			if(err <= 0) {
+				y += 1;
+				err += 2*y + 1;
+			}
+			if(err > 0) {
+				x -= 1;
+				err += 2*x + 1;
+			}
 		}
 	}
 }

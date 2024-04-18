@@ -96,15 +96,14 @@ public:
 	explicit CLImageMap(const cl::Image2D& image, int width, int height, int clRWType): image(image) {
 		int error;
 		size_t origin[]{0, 0, 0};
-		size_t region[]{(size_t)width, (size_t)height, 0};
+		size_t region[]{(size_t)width, (size_t)height, 1};
 		map = (T*) clEnqueueMapImage(cl::CommandQueue::getDefault()(), image(), true, clRWType, origin, region, &bytePitch, nullptr, 0, nullptr, nullptr, &error);
 		if(error != CL_SUCCESS) {
 			std::cerr << "[OpenCL] Enqueue map image error: " << error << std::endl;
 			exit(1);
 		}
 		rowPitch = bytePitch/sizeof(T);
-		cv = ::cv::Mat(height, width, CV_8SC4, *map);
-		cv.step[0] = bytePitch;
+		cv = ::cv::Mat(height, width, CV_8UC4, map, bytePitch);
 	}
 	~CLImageMap() {
 		if(unmoved) {
@@ -118,7 +117,7 @@ public:
 		}
 	}
 
-	CLImageMap (CLImageMap&& other) noexcept: image(std::move(other.image)), map(std::move(other.map)), bytePitch(other.bytePitch), rowPitch(other.rowPitch) {
+	CLImageMap (CLImageMap&& other) noexcept: image(std::move(other.image)), map(std::move(other.map)), bytePitch(other.bytePitch), rowPitch(other.rowPitch), cv(other.cv) {
 		other.unmoved = false;
 	}
 	CLImageMap ( const CLImageMap & ) = delete;
@@ -149,7 +148,7 @@ public:
 	template<typename T> CLImageMap<T> write() { return std::move(CLImageMap<T>(image, width, height, CL_MAP_WRITE_INVALIDATE_REGION)); }
 	template<typename T> CLImageMap<T> readWrite() { return std::move(CLImageMap<T>(image, width, height, CL_MAP_WRITE)); }
 
-	const cl::Image2D image;
+	cl::Image2D image;
 	const int width;
 	const int height;
 };
