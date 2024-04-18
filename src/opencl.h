@@ -93,7 +93,7 @@ public:
 template<typename T>
 class CLImageMap {
 public:
-	explicit CLImageMap(const cl::Image2D& image, int width, int height, int clRWType): image(image) {
+	explicit CLImageMap(const cl::Image2D& image, int width, int height, bool f, int clRWType): image(image) {
 		int error;
 		size_t origin[]{0, 0, 0};
 		size_t region[]{(size_t)width, (size_t)height, 1};
@@ -103,7 +103,7 @@ public:
 			exit(1);
 		}
 		rowPitch = bytePitch/sizeof(T);
-		cv = ::cv::Mat(height, width, CV_8UC4, map, bytePitch);
+		cv = ::cv::Mat(height, width, f ? CV_32FC1 : CV_8UC4, map, bytePitch);
 	}
 	~CLImageMap() {
 		if(unmoved) {
@@ -142,13 +142,14 @@ private:
 
 class CLImage {
 public:
-	CLImage(int width, int height, bool u);
+	CLImage(int width, int height, bool f);
 
-	template<typename T> CLImageMap<T> read() const { return std::move(CLImageMap<T>(image, width, height, CL_MAP_READ)); }
-	template<typename T> CLImageMap<T> write() { return std::move(CLImageMap<T>(image, width, height, CL_MAP_WRITE_INVALIDATE_REGION)); }
-	template<typename T> CLImageMap<T> readWrite() { return std::move(CLImageMap<T>(image, width, height, CL_MAP_WRITE)); }
+	template<typename T> CLImageMap<T> read() const { return std::move(CLImageMap<T>(image, width, height, f, CL_MAP_READ)); }
+	template<typename T> CLImageMap<T> write() { return std::move(CLImageMap<T>(image, width, height, f, CL_MAP_WRITE_INVALIDATE_REGION)); }
+	template<typename T> CLImageMap<T> readWrite() { return std::move(CLImageMap<T>(image, width, height, f, CL_MAP_WRITE)); }
 
 	cl::Image2D image;
 	const int width;
 	const int height;
+	const bool f;
 };

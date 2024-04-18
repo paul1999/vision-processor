@@ -149,7 +149,13 @@ ClPerspective Perspective::getClPerspective() {
 				(float)rX.z, (float)rY.z, (float)rZ.z,
 			},
 			{(float)cameraPos.x, (float)cameraPos.y, (float)cameraPos.z},
-			{(field.field_length() + 2*field.boundary_width())/10, (field.field_width() + 2*field.boundary_width())/10}
+			{(field.field_length() + 2*field.boundary_width())/10, (field.field_width() + 2*field.boundary_width())/10},
+			calib.focal_length()/2,
+			{
+					(float)rXinv.x, (float)rYinv.x, (float)rZinv.x,
+					(float)rXinv.y, (float)rYinv.y, (float)rZinv.y,
+					(float)rXinv.z, (float)rYinv.z, (float)rZinv.z,
+			}
 	};
 }
 

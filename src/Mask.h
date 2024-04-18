@@ -15,9 +15,12 @@ public:
 
 	RLEVector& getRuns() { return mask; }
 
+	double fieldExtentX[2];
+	double fieldExtentY[2];
+	double maxBotHeight;
+
 private:
 	double ballRadius;
-	double maxBotHeight;
 	std::shared_ptr<Perspective> perspective;
 
 	RLEVector mask;

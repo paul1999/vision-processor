@@ -24,6 +24,8 @@ typedef struct __attribute__ ((packed)) {
 	float r[9]; // rotation matrix
 	float c[3];    // camera position
 	int field[2]; // field size incl. boundary in cm
+	float fInv;
+	float rInv[9];
 } ClPerspective;
 
 

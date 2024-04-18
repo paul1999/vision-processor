@@ -331,6 +331,9 @@ int main(int argc, char* argv[]) {
 	cl::Kernel matchKernel = r.openCl->compileFile("kernel/matches.cl");
 	cl::Kernel houghKernel = r.openCl->compileFile("kernel/hough.cl");
 
+	cl::Kernel perspectiveKernel = r.openCl->compileFile("kernel/perspective.cl");
+	cl::Kernel colorKernel = r.openCl->compileFile("kernel/color.cl");
+
 	if(!r.groundTruth.empty())
 		r.socket->send(GroundTruth(r.groundTruth, r.camId, getTime()).getMessage());
 
@@ -344,11 +347,11 @@ int main(int argc, char* argv[]) {
 		rggbHeight = rggb.height;
 		name = img->name;
 	}
-	CLImage clImg(rggbWidth, rggbHeight, true);
-	CLImage clBg(rggbWidth, rggbHeight, true);
+	CLImage clImg(rggbWidth, rggbHeight, false);
+	CLImage clBg(rggbWidth, rggbHeight, false);
 	CLImage sobelX(rggbWidth, rggbHeight, false);
 	CLImage sobelY(rggbWidth, rggbHeight, false);
-	CLImage blurred(rggbWidth, rggbHeight, true);
+	CLImage blurred(rggbWidth, rggbHeight, false);
 	Image circularity(&PixelFormat::F32, rggbWidth, rggbHeight, name);
 
 	uint32_t frameId = 0;
@@ -382,6 +385,33 @@ int main(int argc, char* argv[]) {
 
 			Image rggb = img->toRGGB();
 			OpenCL::wait(r.openCl->run(buf2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), rggb.buffer, clImg.image));
+
+			float fieldScale = 5.0; //TODO autocalc
+			int fieldSizeX = (r.mask->fieldExtentX[1] - r.mask->fieldExtentX[0]) / fieldScale;
+			int fieldSizeY = (r.mask->fieldExtentY[1] - r.mask->fieldExtentY[0]) / fieldScale;
+			CLImage flat(fieldSizeX, fieldSizeY, false);
+			OpenCL::wait(r.openCl->run(perspectiveKernel, cl::EnqueueArgs(cl::NDRange(fieldSizeX, fieldSizeY)), clImg.image, flat.image, r.perspective->getClPerspective(), (float)r.mask->maxBotHeight, fieldScale, (float)r.mask->fieldExtentX[0], (float)r.mask->fieldExtentY[0]));
+			if(DRAW_DEBUG_IMAGES) {
+				cv::imwrite("img/" + img->name + ".perspective.png", flat.read<RGBA>().cv);
+			}
+			//CLImage fieldBlur(fieldSizeX, fieldSizeY, false);
+			//OpenCL::wait(r.openCl->run(blur, cl::EnqueueArgs(cl::NDRange(fieldSizeX, fieldSizeY)), flat.image, fieldBlur.image));
+			CLImage color(fieldSizeX, fieldSizeY, true);
+			OpenCL::wait(r.openCl->run(colorKernel, cl::EnqueueArgs(cl::NDRange(fieldSizeX, fieldSizeY)), flat.image, color.image));
+			Image grayscale(&PixelFormat::U8, fieldSizeX, fieldSizeY, img->name);
+			{
+				CLMap<uint8_t> write = grayscale.write<uint8_t>();
+				CLImageMap<float> read = color.read<float>();
+				for(int y = 0; y < fieldSizeY; y++) {
+					for(int x = 0; x < fieldSizeX; x++) {
+						write[x + fieldSizeX * y] = cv::saturate_cast<uint8_t>(read[x + read.rowPitch * y] / 4096.0f);
+					}
+				}
+				std::cout << std::endl;
+			}
+			grayscale.save(".color.png");
+			break;
+
 			OpenCL::wait(r.openCl->run(blur, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), clImg.image, blurred.image));
 			//std::cout << "[blur] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 			OpenCL::wait(r.openCl->run(sobel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), blurred.image, sobelX.image, sobelY.image));
