@@ -26,8 +26,8 @@ inline float2 field2image(const Perspective p, float3 fieldpos) {
 }
 
 
-const sampler_t sampler = CLK_FILTER_LINEAR | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP;
+const sampler_t sampler = CLK_FILTER_LINEAR | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE;
 
-kernel void buf2img(read_only image2d_t in, write_only image2d_t out, const Perspective perspective, const float maxRobotHeight, const float fieldScale, const float fieldOffsetX, const float fieldOffsetY) {
+kernel void perspective(read_only image2d_t in, write_only image2d_t out, const Perspective perspective, const float maxRobotHeight, const float fieldScale, const float fieldOffsetX, const float fieldOffsetY) {
 	write_imagef(out, (int2)(get_global_id(0), get_global_id(1)), read_imagef(in, sampler, field2image(perspective, (float3)(get_global_id(0)*fieldScale + fieldOffsetX, get_global_id(1)*fieldScale + fieldOffsetY, maxRobotHeight))));
 }

@@ -36,7 +36,7 @@ source: SPINNAKER
 
 thresholds:
   # Minimum mean cosine similarity of the blob border gradient (0 - 1)
-  #circularity: 0.625
+  #circularity: 50.0
   # Minimum saturation of the blob area (0 - 255)
   #saturation: 24
   # Minimum brightness of the blob area (0 - 255

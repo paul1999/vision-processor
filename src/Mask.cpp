@@ -76,6 +76,12 @@ void Mask::geometryCheck() {
 		fieldExtentY[0] = -halfWidth;
 	if(fieldExtentY[1] > halfWidth)
 		fieldExtentY[1] = halfWidth;
+
+	fieldSizeX = (fieldExtentX[1] - fieldExtentX[0]) / fieldScale;
+	fieldSizeY = (fieldExtentY[1] - fieldExtentY[0]) / fieldScale;
+	flat = std::make_shared<CLImage>(fieldSizeX, fieldSizeY, false);
+	color = std::make_shared<CLImage>(fieldSizeX, fieldSizeY, true);
+	circ = std::make_shared<CLImage>(fieldSizeX, fieldSizeY, true);
 }
 
 std::shared_ptr<CLArray> Mask::scanArea(AlignedArrayPool& arrayPool) {

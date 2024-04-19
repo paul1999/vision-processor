@@ -17,10 +17,17 @@ public:
 
 	double fieldExtentX[2];
 	double fieldExtentY[2];
-	double maxBotHeight;
+
+	float fieldScale = 5.0; //TODO autocalc
+	int fieldSizeX = 1;
+	int fieldSizeY = 1;
+	std::shared_ptr<CLImage> flat = nullptr;
+	std::shared_ptr<CLImage> color = nullptr;
+	std::shared_ptr<CLImage> circ = nullptr;
 
 private:
 	double ballRadius;
+	double maxBotHeight;
 	std::shared_ptr<Perspective> perspective;
 
 	RLEVector mask;

@@ -149,7 +149,7 @@ public:
 	template<typename T> CLImageMap<T> readWrite() { return std::move(CLImageMap<T>(image, width, height, f, CL_MAP_WRITE)); }
 
 	cl::Image2D image;
-	const int width;
-	const int height;
-	const bool f;
+	int width;
+	int height;
+	bool f;
 };

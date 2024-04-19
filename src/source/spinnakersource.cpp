@@ -55,7 +55,7 @@ SpinnakerSource::SpinnakerSource(int id) {
 
 	//pCam->GainAuto.SetValue(Spinnaker::GainAuto_Continuous);
 	pCam->GainAuto.SetValue(Spinnaker::GainAuto_Off);
-	pCam->Gain.SetValue(16.0);
+	pCam->Gain.SetValue(12.0);
 	pCam->GammaEnable.SetValue(false);
 
 	pCam->TLStream.StreamBufferHandlingMode.SetValue(Spinnaker::StreamBufferHandlingMode_NewestOnly);

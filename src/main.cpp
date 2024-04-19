@@ -47,7 +47,7 @@ const double patternAngles[4] = {
 };
 
 struct __attribute__ ((packed)) Match {
-	int x, y;
+	float x, y;
 	float score;
 	float height;
 	RGB color;
@@ -57,14 +57,10 @@ struct __attribute__ ((packed)) Match {
 
 static void filterMatches(const Resources& r, std::list<Match>& matches, const std::list<Match>& matches2, const float radius) {
 	std::erase_if(matches, [&](const Match& match) {
-		V2 pos = r.perspective->image2field({(double)match.x, (double)match.y}, match.height);
-
 		return std::ranges::any_of(matches2, [&](const Match& match2) {
 			if(match2.score >= match.score)
 				return false;
-
-			V2 pos2 = r.perspective->image2field({(double)match2.x, (double)match2.y}, match.height);
-			return dist({(float)pos.x, (float)pos.y}, {(float)pos2.x, (float)pos2.y}) < 2*radius;
+			return dist({match.x, match.y}, {match2.x, match2.y}) < 2*radius;
 		});
 	});
 }
@@ -87,15 +83,9 @@ static void findBots(Resources& r, std::list<Match>& centerBlobs, const std::lis
 	double height = yellow ? r.gcSocket->yellowBotHeight : r.gcSocket->blueBotHeight;
 
 	for(const Match& match : centerBlobs) {
-		const V2 imgPos {(double)match.x, (double)match.y};
-		const V2 fieldPos = r.perspective->image2field(imgPos, height);
-		if(outsideField(r, fieldPos))
-			continue;
-
 		std::list<Match> green;
 		for(const Match& blob : greenBlobs) {
-			const V2 blobPos = r.perspective->image2field({(double)blob.x, (double)blob.y}, height);
-			double distance = dist(cv::Vec2f(blobPos.x, blobPos.y), cv::Vec2f(fieldPos.x, fieldPos.y));
+			double distance = dist(cv::Vec2f(blob.x, blob.y), cv::Vec2f(match.x, match.y));
 			if(distance >= std::max(0.0, r.sideBlobDistance - r.minTrackingRadius/2) && distance <= r.sideBlobDistance + r.minTrackingRadius/2) {
 			//if(distance < 90.0f) {
 				green.push_back(blob);
@@ -104,8 +94,7 @@ static void findBots(Resources& r, std::list<Match>& centerBlobs, const std::lis
 		}
 		std::list<Match> pink;
 		for(const Match& blob : pinkBlobs) {
-			const V2 blobPos = r.perspective->image2field({(double)blob.x, (double)blob.y}, height);
-			double distance = dist(cv::Vec2f(blobPos.x, blobPos.y), cv::Vec2f(fieldPos.x, fieldPos.y));
+			double distance = dist(cv::Vec2f(blob.x, blob.y), cv::Vec2f(match.x, match.y));
 			if(distance >= std::max(0.0, r.sideBlobDistance - r.minTrackingRadius/2) && distance <= r.sideBlobDistance + r.minTrackingRadius/2) {
 			//if(distance < 90.0f) {
 				pink.push_back(blob);
@@ -121,8 +110,7 @@ static void findBots(Resources& r, std::list<Match>& centerBlobs, const std::lis
 
 		std::map<Match, double> orientations;
 		for(const auto& sideblob : green) {
-			V2 anchorPos = r.perspective->image2field({(double) sideblob.x, (double) sideblob.y}, height);
-			orientations[sideblob] = atan2(anchorPos.y - fieldPos.y, anchorPos.x - fieldPos.x);
+			orientations[sideblob] = atan2(sideblob.y - match.y, sideblob.x - match.x);
 		}
 
 		int id = 0;
@@ -159,25 +147,27 @@ static void findBots(Resources& r, std::list<Match>& centerBlobs, const std::lis
 			}
 		}
 
+		V2 imgPos = r.perspective->field2image({match.x, match.y, r.gcSocket->maxBotHeight});
+		V2 pos = r.perspective->image2field({imgPos.x, imgPos.y}, yellow ? r.gcSocket->yellowBotHeight : r.gcSocket->blueBotHeight);
+
 		SSL_DetectionRobot* bot = yellow ? detection->add_robots_yellow() : detection->add_robots_blue();
 		bot->set_confidence(score/4.0f);
 		bot->set_robot_id(id);
-		bot->set_x(fieldPos.x);
-		bot->set_y(fieldPos.y);
+		bot->set_x(pos.x);
+		bot->set_y(pos.y);
 		bot->set_orientation(orientation);
 		bot->set_pixel_x(imgPos.x * 2);
 		bot->set_pixel_y(imgPos.y * 2);
 		bot->set_height(height);
 		if(DEBUG_PRINT)
-			std::cout << "Bot " << fieldPos.x << "," << fieldPos.y << " Y" << yellow << " " << id << " " << (orientation*180/M_PI) << "°" << std::endl;
+			std::cout << "Bot " << pos.x << "," << pos.y << " Y" << yellow << " " << id << " " << (orientation*180/M_PI) << "°" << std::endl;
 	}
 }
 
 static void findBalls(const Resources& r, const std::list<Match>& orange, SSL_DetectionFrame* detection) {
 	for(const Match& match : orange) {
-		V2 pos = r.perspective->image2field({(double)match.x, (double)match.y}, match.height);
-		if(outsideField(r, pos))
-			continue;
+		V2 imgPos = r.perspective->field2image({match.x, match.y, r.gcSocket->maxBotHeight});
+		V2 pos = r.perspective->image2field({imgPos.x, imgPos.y}, r.ballRadius);
 
 		SSL_DetectionBall* ball = detection->add_balls();
 		ball->set_confidence(1.0f);
@@ -186,8 +176,8 @@ static void findBalls(const Resources& r, const std::list<Match>& orange, SSL_De
 		ball->set_y(pos.y);
 		//ball->set_z(0.0f);
 		//TODO only RGGB
-		ball->set_pixel_x(match.x * 2);
-		ball->set_pixel_y(match.y * 2);
+		ball->set_pixel_x(imgPos.x * 2);
+		ball->set_pixel_y(imgPos.y * 2);
 		if(DEBUG_PRINT)
 			std::cout << "Ball " << pos.x << "," << pos.y << std::endl;
 	}
@@ -291,11 +281,12 @@ RGB RgbToHsv(const RGB& rgb) {
 	return hsv;
 }
 
-static void rggbDrawBlobs(Image& rggb, const std::list<Match>& matches, const RGB& color) {
+static void rggbDrawBlobs(const Resources& r, Image& rggb, const std::list<Match>& matches, const RGB& color) {
 	auto map = rggb.readWrite<uint8_t>();
 	for(const Match& match : matches) {
-		for(int x = std::max(0, match.x-2); x < std::min(rggb.width-1, match.x+2); x++) {
-			for(int y = std::max(0, match.y-2); y < std::min(rggb.height-1, match.y+2); y++) {
+		V2 pos = r.perspective->field2image({match.x, match.y, r.gcSocket->maxBotHeight});
+		for(int x = std::max(0, (int)pos.x-2); x < std::min(rggb.width-1, (int)pos.x+2); x++) {
+			for(int y = std::max(0, (int)pos.y-2); y < std::min(rggb.height-1, (int)pos.y+2); y++) {
 				map[2*x + 2*y*2*rggb.width] = color.r;
 				map[2*x + 1 + 2*y*2*rggb.width] = color.g;
 				map[2*x + (2*y + 1)*2*rggb.width] = color.g;
@@ -305,14 +296,14 @@ static void rggbDrawBlobs(Image& rggb, const std::list<Match>& matches, const RG
 	}
 }
 
-static void bgrDrawBlobs(Image& bgr, const std::list<Match>& matches, const RGB& color) {
+static void bgrDrawBlobs(const Resources& r, Image& bgr, const std::list<Match>& matches, const RGB& color) {
 	auto bgrMap = bgr.cvReadWrite();
 
 	for(const Match& match : matches) {
-		cv::drawMarker(*bgrMap, cv::Point(2*match.x, 2*match.y), CV_RGB(color.r, color.g, color.b), cv::MARKER_CROSS, 10);
+		V2 pos = r.perspective->field2image({match.x, match.y, r.gcSocket->maxBotHeight});
+		cv::drawMarker(*bgrMap, cv::Point(2*pos.x, 2*pos.y), CV_RGB(color.r, color.g, color.b), cv::MARKER_CROSS, 10);
 		RGB hsv = RgbToHsv(match.color);
-		cv::putText(*bgrMap, std::to_string((int)(match.score*100)) + " h" + std::to_string((int)hsv.r) + "s" + std::to_string((int)hsv.g) + "v" + std::to_string((int)hsv.b), cv::Point(2*match.x, 2*match.y), cv::FONT_HERSHEY_SIMPLEX, 0.4, CV_RGB(color.r, color.g, color.b));
-		//cv::putText(*bgrMap, std::to_string((int)(match.score*100)) + " r" + std::to_string((int)match.color.r) + "g" + std::to_string((int)match.color.g) + "b" + std::to_string((int)match.color.b), cv::Point(2*match.x, 2*match.y), cv::FONT_HERSHEY_SIMPLEX, 0.4, CV_RGB(color.r, color.g, color.b));
+		cv::putText(*bgrMap, std::to_string((int)(match.score*100)) + " h" + std::to_string((int)hsv.r) + "s" + std::to_string((int)hsv.g) + "v" + std::to_string((int)hsv.b), cv::Point(2*pos.x, 2*pos.y), cv::FONT_HERSHEY_SIMPLEX, 0.4, CV_RGB(color.r, color.g, color.b));
 	}
 }
 
@@ -333,6 +324,7 @@ int main(int argc, char* argv[]) {
 
 	cl::Kernel perspectiveKernel = r.openCl->compileFile("kernel/perspective.cl");
 	cl::Kernel colorKernel = r.openCl->compileFile("kernel/color.cl");
+	cl::Kernel circleKernel = r.openCl->compileFile("kernel/circularize.cl");
 
 	if(!r.groundTruth.empty())
 		r.socket->send(GroundTruth(r.groundTruth, r.camId, getTime()).getMessage());
@@ -348,11 +340,6 @@ int main(int argc, char* argv[]) {
 		name = img->name;
 	}
 	CLImage clImg(rggbWidth, rggbHeight, false);
-	CLImage clBg(rggbWidth, rggbHeight, false);
-	CLImage sobelX(rggbWidth, rggbHeight, false);
-	CLImage sobelY(rggbWidth, rggbHeight, false);
-	CLImage blurred(rggbWidth, rggbHeight, false);
-	Image circularity(&PixelFormat::F32, rggbWidth, rggbHeight, name);
 
 	uint32_t frameId = 0;
 	while(true) {
@@ -360,11 +347,12 @@ int main(int argc, char* argv[]) {
 		if(img == nullptr)
 			break;
 
+		double startTime = getTime();
 		r.perspective->geometryCheck();
 		//TODO Extent (min/max x/y axisparallel for 3D based search)
 		r.mask->geometryCheck();
 
-		double startTime = getTime();
+		OpenCL::wait(r.openCl->run(buf2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), img->toRGGB().buffer, clImg.image));
 
 		//std::shared_ptr<Image> mask = std::make_shared<Image>(&PixelFormat::U8, img->width, img->height);
 		//OpenCL::wait(r.openCl->run(r.bgkernel, cl::EnqueueArgs(cl::NDRange(img->width, img->height)), img->buffer, bg->buffer, mask->buffer, img->format->stride, img->format->rowStride, (uint8_t)16)); //TODO adaptive threshold
@@ -383,64 +371,57 @@ int main(int argc, char* argv[]) {
 				detection->set_t_capture_camera(img->timestamp);
 			detection->set_camera_id(r.camId);
 
-			Image rggb = img->toRGGB();
-			OpenCL::wait(r.openCl->run(buf2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), rggb.buffer, clImg.image));
-
-			float fieldScale = 5.0; //TODO autocalc
-			int fieldSizeX = (r.mask->fieldExtentX[1] - r.mask->fieldExtentX[0]) / fieldScale;
-			int fieldSizeY = (r.mask->fieldExtentY[1] - r.mask->fieldExtentY[0]) / fieldScale;
-			CLImage flat(fieldSizeX, fieldSizeY, false);
-			OpenCL::wait(r.openCl->run(perspectiveKernel, cl::EnqueueArgs(cl::NDRange(fieldSizeX, fieldSizeY)), clImg.image, flat.image, r.perspective->getClPerspective(), (float)r.mask->maxBotHeight, fieldScale, (float)r.mask->fieldExtentX[0], (float)r.mask->fieldExtentY[0]));
+			OpenCL::wait(r.openCl->run(perspectiveKernel, cl::EnqueueArgs(cl::NDRange(r.mask->fieldSizeX, r.mask->fieldSizeY)), clImg.image, r.mask->flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.mask->fieldScale, (float)r.mask->fieldExtentX[0], (float)r.mask->fieldExtentY[0]));
 			if(DRAW_DEBUG_IMAGES) {
-				cv::imwrite("img/" + img->name + ".perspective.png", flat.read<RGBA>().cv);
+				cv::imwrite("img/" + img->name + ".perspective.png", r.mask->flat->read<RGBA>().cv);
 			}
-			//CLImage fieldBlur(fieldSizeX, fieldSizeY, false);
-			//OpenCL::wait(r.openCl->run(blur, cl::EnqueueArgs(cl::NDRange(fieldSizeX, fieldSizeY)), flat.image, fieldBlur.image));
-			CLImage color(fieldSizeX, fieldSizeY, true);
-			OpenCL::wait(r.openCl->run(colorKernel, cl::EnqueueArgs(cl::NDRange(fieldSizeX, fieldSizeY)), flat.image, color.image));
-			Image grayscale(&PixelFormat::U8, fieldSizeX, fieldSizeY, img->name);
-			{
-				CLMap<uint8_t> write = grayscale.write<uint8_t>();
-				CLImageMap<float> read = color.read<float>();
-				for(int y = 0; y < fieldSizeY; y++) {
-					for(int x = 0; x < fieldSizeX; x++) {
-						write[x + fieldSizeX * y] = cv::saturate_cast<uint8_t>(read[x + read.rowPitch * y] / 4096.0f);
+			OpenCL::wait(r.openCl->run(colorKernel, cl::EnqueueArgs(cl::NDRange(r.mask->fieldSizeX, r.mask->fieldSizeY)), r.mask->flat->image, r.mask->color->image));
+			if(DRAW_DEBUG_IMAGES) {
+				Image grayscale(&PixelFormat::U8, r.mask->fieldSizeX, r.mask->fieldSizeY, img->name);
+				{
+					CLMap<uint8_t> write = grayscale.write<uint8_t>();
+					CLImageMap<float> read = r.mask->color->read<float>();
+					for(int y = 0; y < r.mask->fieldSizeY; y++) {
+						for(int x = 0; x < r.mask->fieldSizeX; x++) {
+							write[x + r.mask->fieldSizeX * y] = cv::saturate_cast<uint8_t>(read[x + read.rowPitch * y] / 16.0f + 128);
+						}
 					}
 				}
-				std::cout << std::endl;
+				grayscale.save(".color.png");
 			}
-			grayscale.save(".color.png");
-			break;
 
-			OpenCL::wait(r.openCl->run(blur, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), clImg.image, blurred.image));
-			//std::cout << "[blur] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
-			OpenCL::wait(r.openCl->run(sobel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), blurred.image, sobelX.image, sobelY.image));
-
-			//TODO vectorprimitive für image2field
-			OpenCL::wait(r.openCl->run(r.gradientkernel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), clImg.image, clBg.image, sobelX.image, sobelY.image, circularity.buffer, r.perspective->getClPerspective(), (float)r.ballRadius, (float)r.ballRadius, 32*32));
+			OpenCL::wait(r.openCl->run(circleKernel, cl::EnqueueArgs(cl::NDRange(r.mask->fieldSizeX, r.mask->fieldSizeY)), r.mask->color->image, r.mask->circ->image));
 			if(DRAW_DEBUG_IMAGES) {
-				circularity.save(".circular.png", 128.0f);
+				Image grayscale(&PixelFormat::U8, r.mask->fieldSizeX, r.mask->fieldSizeY, img->name);
+				{
+					CLMap<uint8_t> write = grayscale.write<uint8_t>();
+					CLImageMap<float> read = r.mask->circ->read<float>();
+					for(int y = 0; y < r.mask->fieldSizeY; y++) {
+						for(int x = 0; x < r.mask->fieldSizeX; x++) {
+							write[x + r.mask->fieldSizeX * y] = cv::saturate_cast<uint8_t>(read[x + read.rowPitch * y]);
+						}
+					}
+				}
+				grayscale.save(".circle.png");
 			}
+			//TODO 50 threshold
 
-			//std::cout << "[circularity] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 			CLArray counter(sizeof(int));
 			int maxMatches = 10000; //TODO make configurable
 			CLArray matchArray(sizeof(Match)*maxMatches);
-			OpenCL::wait(r.openCl->run(matchKernel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), clImg.image, circularity.buffer, matchArray.buffer, counter.buffer, r.perspective->getClPerspective(), (float)r.minCircularity, r.minSaturation, r.minBrightness, (float)r.ballRadius, (float)r.ballRadius, maxMatches));
+			OpenCL::wait(r.openCl->run(matchKernel, cl::EnqueueArgs(cl::NDRange(r.mask->fieldSizeX, r.mask->fieldSizeY)), r.mask->flat->image, r.mask->circ->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, r.minSaturation, r.minBrightness, (int)round(r.sideBlobRadius/r.mask->fieldScale), maxMatches));
 			//std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
-
-			/*Image votes(&PixelFormat::F32, r.perspective->getClPerspective().field[0], r.perspective->getClPerspective().field[1]);
-			OpenCL::wait(r.openCl->run(houghKernel, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), sobelX.image, sobelY.image, votes.buffer, r.perspective->getClPerspective(), (float)r.ballRadius));
-			if(DRAW_DEBUG_IMAGES) {
-				votes.save(img->name + ".votes.png");
-			}*/
 
 			std::list<Match> matches;
 			{
 				CLMap<Match> matchMap = matchArray.read<Match>();
 				int matchAmount = 0;
-				while(matchAmount < maxMatches && matchMap[matchAmount].x != 0 && matchMap[matchAmount].y != 0)
+				while(matchAmount < maxMatches && matchMap[matchAmount].x != 0 && matchMap[matchAmount].y != 0) {
+					Match& match = matchMap[matchAmount];
+					match.x = match.x*r.mask->fieldScale + r.mask->fieldExtentX[0];
+					match.y = match.y*r.mask->fieldScale + r.mask->fieldExtentY[0];
 					matchAmount++;
+				}
 
 				if(matchAmount == maxMatches)
 					std::cerr << "[blob] max blob amount reached" << std::endl;
@@ -481,20 +462,20 @@ int main(int argc, char* argv[]) {
 			findBots(r, blueBlobs, greenBlobs, pinkBlobs, detection, false);
 
 			if(DRAW_DEBUG_BLOBS) {
-				rggbDrawBlobs(*img, orangeBlobs, r.orange);
-				rggbDrawBlobs(*img, yellowBlobs, r.yellow);
-				rggbDrawBlobs(*img, blueBlobs, r.blue);
-				rggbDrawBlobs(*img, greenBlobs, r.green);
-				rggbDrawBlobs(*img, pinkBlobs, r.pink);
+				rggbDrawBlobs(r, *img, orangeBlobs, r.orange);
+				rggbDrawBlobs(r, *img, yellowBlobs, r.yellow);
+				rggbDrawBlobs(r, *img, blueBlobs, r.blue);
+				rggbDrawBlobs(r, *img, greenBlobs, r.green);
+				rggbDrawBlobs(r, *img, pinkBlobs, r.pink);
 			}
 
 			if(DRAW_DEBUG_IMAGES) {
 				Image bgr = img->toBGR();
-				bgrDrawBlobs(bgr, orangeBlobs, r.orange);
-				bgrDrawBlobs(bgr, yellowBlobs, r.yellow);
-				bgrDrawBlobs(bgr, blueBlobs, r.blue);
-				bgrDrawBlobs(bgr, greenBlobs, r.green);
-				bgrDrawBlobs(bgr, pinkBlobs, r.pink);
+				bgrDrawBlobs(r, bgr, orangeBlobs, r.orange);
+				bgrDrawBlobs(r, bgr, yellowBlobs, r.yellow);
+				bgrDrawBlobs(r, bgr, blueBlobs, r.blue);
+				bgrDrawBlobs(r, bgr, greenBlobs, r.green);
+				bgrDrawBlobs(r, bgr, pinkBlobs, r.pink);
 				bgr.save(".matches.png");
 
 				{

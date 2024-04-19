@@ -16,5 +16,10 @@ kernel void buf2img(global const uchar* img, write_only image2d_t out) {
 			img[imgpos+1+2*get_global_size(0)], //B
 			255
 	));
+
+	/* (gamma compensation?)
+	 * 21*pow(img[imgpos], 0.45f), //R
+			21*pow(img[imgpos+1]/2 + img[imgpos+2*get_global_size(0)]/2, 0.45f), //G
+			21*pow(img[imgpos+1+2*get_global_size(0)], 0.45f), //B*/
 #endif
 }

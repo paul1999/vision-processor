@@ -22,6 +22,25 @@ OpenCL::OpenCL() {
 	cl::Context::setDefault(context);
 	queue = cl::CommandQueue(context, device);
 	cl::CommandQueue::setDefault(queue);
+
+	/*std::map<int, std::string> table;
+	table[CL_R] = "CL_R";
+	table[CL_A] = "CL_A";
+	table[CL_RG] = "CL_RG";
+	table[CL_RGBA] = "CL_RGBA";
+	table[CL_BGRA] = "CL_BGRA";
+	table[CL_INTENSITY] = "CL_INTENSITY";
+	table[CL_LUMINANCE] = "CL_LUMINANCE";
+	table[CL_DEPTH] = "CL_DEPTH";
+
+	table[CL_UNORM_INT8] = "CL_UNORM_INT8";
+	table[CL_FLOAT] = "CL_FLOAT";
+	cl_image_format formats[64];
+	unsigned int numFormats;
+	clGetSupportedImageFormats(cl::Context::getDefault()(), 0, CL_MEM_OBJECT_IMAGE2D, 64, formats, &numFormats);
+	for(int i = 0; i < numFormats; i++) {
+		std::cout << std::hex << table[formats[i].image_channel_order] << " " << table[formats[i].image_channel_data_type] << std::endl;
+	}*/
 }
 
 bool OpenCL::searchDevice(const std::vector<cl::Platform>& platforms, cl_device_type type) {
@@ -92,7 +111,7 @@ CLArray::CLArray(void* data, const int size) : size(size), buffer(clAlloc((cl_me
 
 static inline cl::Image2D allocImage(int width, int height, bool f) {
 	int error;
-	cl::Image2D image = cl::Image2D(cl::Context::getDefault(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, f ? cl::ImageFormat(CL_INTENSITY, CL_FLOAT) : cl::ImageFormat(CL_RGBA, CL_UNSIGNED_INT8), width, height, 0, nullptr, &error);
+	cl::Image2D image = cl::Image2D(cl::Context::getDefault(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, f ? cl::ImageFormat(CL_LUMINANCE, CL_FLOAT) : cl::ImageFormat(CL_RGBA, CL_UNSIGNED_INT8), width, height, 0, nullptr, &error);
 	if(error != CL_SUCCESS) {
 		std::cerr << "bgr Image creation error: " << error << std::endl;
 		exit(1);
