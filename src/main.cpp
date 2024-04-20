@@ -86,8 +86,8 @@ static void findBots(Resources& r, std::list<Match>& centerBlobs, const std::lis
 		std::list<Match> green;
 		for(const Match& blob : greenBlobs) {
 			double distance = dist(cv::Vec2f(blob.x, blob.y), cv::Vec2f(match.x, match.y));
-			if(distance >= std::max(0.0, r.sideBlobDistance - r.minTrackingRadius/2) && distance <= r.sideBlobDistance + r.minTrackingRadius/2) {
-			//if(distance < 90.0f) {
+			//if(distance >= std::max(0.0, r.sideBlobDistance - r.minTrackingRadius/2) && distance <= r.sideBlobDistance + r.minTrackingRadius/2) {
+			if(distance < 90.0f) {
 				green.push_back(blob);
 				green.back().color = r.green;
 			}
@@ -95,8 +95,8 @@ static void findBots(Resources& r, std::list<Match>& centerBlobs, const std::lis
 		std::list<Match> pink;
 		for(const Match& blob : pinkBlobs) {
 			double distance = dist(cv::Vec2f(blob.x, blob.y), cv::Vec2f(match.x, match.y));
-			if(distance >= std::max(0.0, r.sideBlobDistance - r.minTrackingRadius/2) && distance <= r.sideBlobDistance + r.minTrackingRadius/2) {
-			//if(distance < 90.0f) {
+			//if(distance >= std::max(0.0, r.sideBlobDistance - r.minTrackingRadius/2) && distance <= r.sideBlobDistance + r.minTrackingRadius/2) {
+			if(distance < 90.0f) {
 				pink.push_back(blob);
 				pink.back().color = r.pink;
 			}
@@ -416,7 +416,7 @@ int main(int argc, char* argv[]) {
 			{
 				CLMap<Match> matchMap = matchArray.read<Match>();
 				int matchAmount = 0;
-				while(matchAmount < maxMatches && matchMap[matchAmount].x != 0 && matchMap[matchAmount].y != 0) {
+				while(matchAmount < maxMatches && matchMap[matchAmount].x != 0 && matchMap[matchAmount].y != 0 && matchMap[matchAmount].score != 0) {
 					Match& match = matchMap[matchAmount];
 					match.x = match.x*r.mask->fieldScale + r.mask->fieldExtentX[0];
 					match.y = match.y*r.mask->fieldScale + r.mask->fieldExtentY[0];
@@ -429,6 +429,7 @@ int main(int argc, char* argv[]) {
 				matches = std::list<Match>(*matchMap, *matchMap+matchAmount);
 			}
 
+			std::cout << matches.size() << std::endl;
 			filterMatches(r, matches, matches, r.ballRadius);
 
 			std::list<Match> orangeBlobs;

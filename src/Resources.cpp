@@ -44,9 +44,9 @@ Resources::Resources(YAML::Node config) {
 	groundTruth = config["ground_truth"].as<std::string>("");
 
 	YAML::Node thresholds = config["thresholds"].IsDefined() ? config["thresholds"] : YAML::Node();
-	minCircularity = thresholds["circularity"].as<double>(50.0);
-	minSaturation = thresholds["saturation"].as<int>(24);
-	minBrightness = thresholds["brightness"].as<int>(32);
+	minCircularity = thresholds["circularity"].as<double>(10.0);
+	minSaturation = thresholds["saturation"].as<int>(0);
+	minBrightness = thresholds["brightness"].as<int>(0);
 
 	YAML::Node hues = config["hues"].IsDefined() ? config["hues"] : YAML::Node();
 	orangeHue = readHue(hues["orange"], 30.0);

@@ -76,6 +76,16 @@ kernel void circularize(read_only image2d_t color, write_only image2d_t out) { /
 	if(fabs((ppScore/nnScore) - 1) < 0.5f && fabs((pnScore/npScore) - 1) < 0.5f)
 		score = (ppScore + nnScore - pnScore - npScore) / 196.0f;*/
 
+	/*for(int i = 0; i < 2; i++) {
+		px(color, pos, -i, +i, &npScore);
+		px(color, pos, +i, +i, &ppScore);
+		px(color, pos, -i, -i, &nnScore);
+		px(color, pos, +i, -i, &pnScore);
+	}
+	npScore = -npScore;
+	ppScore = -ppScore;
+	nnScore = -nnScore;
+	pnScore = -pnScore;*/
 	//TODO only use best size?
 	for(int i = 2; i < 7; i++) {
 		px(color, pos, -i, +i, &npScore);
@@ -83,7 +93,8 @@ kernel void circularize(read_only image2d_t color, write_only image2d_t out) { /
 		px(color, pos, -i, -i, &nnScore);
 		px(color, pos, +i, -i, &pnScore);
 	}
-	if(fabs((ppScore/nnScore) - 1) < 0.3f && fabs((pnScore/npScore) - 1) < 0.3f)
+	//if(fabs((ppScore/nnScore) - 1) < 0.3f && fabs((pnScore/npScore) - 1) < 0.3f)
+	if(ppScore > 0.0f && nnScore > 0.0f && pnScore < 0.0f && npScore < 0.0f)
 		score = (ppScore + nnScore - pnScore - npScore) / 20.0f;
 
 	write_imagef(out, pos, score / 4.0f);

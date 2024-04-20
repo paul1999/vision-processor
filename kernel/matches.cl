@@ -21,13 +21,13 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 		return;
 
 	//TODO subpixel position
-	if(
+	/*if(
 			read_imagef(circ, sampler, (int2)(pos.x-1, pos.y)).x > circScore ||
 			read_imagef(circ, sampler, (int2)(pos.x+1, pos.y)).x > circScore ||
 			read_imagef(circ, sampler, (int2)(pos.x, pos.y-1)).x > circScore ||
 			read_imagef(circ, sampler, (int2)(pos.x, pos.y+1)).x > circScore
 	)
-		return;
+		return;*/
 
 	int n = 0;
 	uint4 color = (uint4)(0, 0, 0, 0);
@@ -87,8 +87,8 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 		}
 	}
 
-	if(hsv.y < sThreshold || hsv.z < vThreshold)
-		return;
+	//if(hsv.y < sThreshold || hsv.z < vThreshold)
+	//	return;
 
 	int i = atomic_inc(counter);
 	if(i >= maxMatches)
