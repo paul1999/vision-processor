@@ -42,7 +42,6 @@ static std::vector<float> lineError(const std::vector<Eigen::Vector2f>& undistor
 		d0 = d / sqrtf(c*c + 1);
 	}
 
-	//float e = 0;
 	std::vector<float> error;
 	for(const Eigen::Vector2f& u : undistorted) {
 		float pe = pointError(n, u, d0);
@@ -51,51 +50,30 @@ static std::vector<float> lineError(const std::vector<Eigen::Vector2f>& undistor
 			exit(1);
 		}
 		error.push_back(pe);
-		//e += pe*pe;
 	}
-	//return e;
 	return error;
 }
 
-/*float modelError(const std::vector<std::vector<Eigen::Vector2f>>& lines, float k3, float k5) {
-	float e = 0;
-
-	for(const std::vector<Eigen::Vector2f>& distorted : lines) {
-		std::vector<Eigen::Vector2f> undistorted;
-		for(const Eigen::Vector2f& d : distorted) {
-			float r2 = d.x()*d.x() + d.y()*d.y();
-			float factor = 1 + k3*r2 + k5*r2*r2;
-			undistorted.emplace_back(d.x()*factor, d.y()*factor);
-		}
-
-		e += lineError(undistorted);
-	}
-
-	return e;
-}*/
-
 struct Functor : public Eigen::DenseFunctor<float> {
 	const std::vector<std::vector<Eigen::Vector2f>>& lines;
+	CameraModel& model;
 
-	//TODO swap inputs and values?
-	explicit Functor(const std::vector<std::vector<Eigen::Vector2f>>& lines): lines(lines) {} // Eigen::DenseFunctor<float>(2, lines.size()),
+	explicit Functor(const std::vector<std::vector<Eigen::Vector2f>>& lines, CameraModel& model): lines(lines), model(model) {}
 
 	int operator()(const InputType &x, ValueType& fvec) const {
+		model.distortionK2 = x(0);
+		model.principalPoint.x() = x(1);
+		model.principalPoint.y() = x(2);
+
 		int i = 0;
-		//for(int i = 0; i < lines.size(); i++) {
 		for(const std::vector<Eigen::Vector2f>& distorted : lines) {
-			//const std::vector<Eigen::Vector2f>& distorted = lines[i];
 			std::vector<Eigen::Vector2f> undistorted;
-			for(const Eigen::Vector2f& d : distorted) {
-				float r2 = d.x()*d.x() + d.y()*d.y();
-				float factor = 1 + x(0)*r2 + x(1)*r2*r2;
-				undistorted.emplace_back(d.x()*factor, d.y()*factor);
-			}
+			for(const Eigen::Vector2f& d : distorted)
+				undistorted.push_back(model.normalizeUndistort(d));
 
 			std::vector<float> error = lineError(undistorted);
 			for(float e : error)
 				fvec(i++) = e;
-			//fvec(i) = lineError(undistorted);
 		}
 		return 0;
 	}
@@ -107,24 +85,36 @@ struct Functor : public Eigen::DenseFunctor<float> {
 		return size;
 	}
 
-	int inputs() const {
-		return 2;
-	}
+	/*int inputs() const {
+		return 3;
+	}*/
 };
 
-Eigen::Vector2f distortion(const std::vector<std::vector<Eigen::Vector2f>>& lines) {
-	//Eigen::NumericalDiff<std::functor<Eigen::Vector2f>>
-	Functor functor(lines);
+bool calibrateDistortion(const std::vector<std::vector<Eigen::Vector2f>>& linePoints, CameraModel& model) {
+	std::cout << "[Distortion] Lines: " << linePoints.size() << std::endl;
+	Functor functor(linePoints, model);
 	Eigen::NumericalDiff<Functor> numDiff(functor);
 	Eigen::LevenbergMarquardt<Eigen::NumericalDiff<Functor>> lm(numDiff);
-	//lm.setFactor(0.01f);
+	Eigen::VectorXf k(3);
+	k(0) = model.distortionK2;			// distortion
+	k(1) = model.principalPoint.x();	// principal point x
+	k(2) = model.principalPoint.y();	// principal point y
 
-	//TODO for each point/line
-	Eigen::VectorXf k(2);
-	k(0) = 0;
-	k(1) = 0;
-	int ret = lm.minimize(k);
-	std::cout << lm.iterations() << " " << ret << " " << k(0) << " " << k(1) << std::endl;
+	lm.minimize(k);
 
-	return {k(0), k(1)};
+	if(lm.info() != Eigen::ComputationInfo::Success) {
+		std::cout << "[Distortion] Levenberg-Marquandt minimization failed with code, aborting calibration for this frame: " << lm.info() << std::endl;
+		return false;
+	}
+
+	std::cout << "[Distortion] Determined parameters: distortion " << k(0) << " principal point " << k(1) << "|" << k(2) << std::endl;
+	if(k(1) < 0.0f || k(2) < 0.0f || k(1) >= model.size.x() || k(2) >= model.size.y()) {
+		std::cout << "[Distortion] Principal point outside of image, aborting calibration for this frame" << std::endl;
+		return false;
+	}
+
+	model.distortionK2 = k(0);
+	model.principalPoint.x() = k(1);
+	model.principalPoint.y() = k(2);
+	return true;
 }

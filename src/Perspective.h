@@ -3,6 +3,7 @@
 #include "proto/ssl_vision_geometry.pb.h"
 #include "udpsocket.h"
 #include "RLEVector.h"
+#include "CameraModel.h"
 
 struct V2 {
 	double x, y;
@@ -10,10 +11,6 @@ struct V2 {
 
 struct V3{
 	double x, y, z;
-};
-
-struct V4{
-	double q0, q1, q2, q3;
 };
 
 typedef struct __attribute__ ((packed)) {
@@ -32,31 +29,26 @@ typedef struct __attribute__ ((packed)) {
 class Perspective {
 public:
 	Perspective(std::shared_ptr<VisionSocket> socket, int camId): socket(std::move(socket)), camId(camId) {}
-	void geometryCheck();
+	void geometryCheck(int width, int height);
 
-	V2 image2field(V2 pos, double height);
-	V2 field2image(V3 pos);
+	V2 image2field(V2 pos, double height) const;
+	V2 field2image(V3 pos) const;
 
-	int getGeometryVersion();
 	int getWidth();
 	int getHeight();
 	int getFieldLength();
 	int getFieldWidth();
 	int getBoundaryWidth();
 
-	ClPerspective getClPerspective();
+	ClPerspective getClPerspective() const;
 	RLEVector getRing(V2 pos, double height, double inner, double radius);
 
 	SSL_GeometryFieldSize field;
-	SSL_GeometryCameraCalibration calib;
+	CameraModel model;
+
+	int geometryVersion = 0;
 
 private:
 	const std::shared_ptr<VisionSocket> socket;
 	const int camId;
-
-	int geometryVersion = 0;
-	V4 orientation;
-	V3 cameraPos;
-	V3 rX, rY, rZ;
-	V3 rXinv, rYinv, rZinv;
 };

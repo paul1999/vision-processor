@@ -48,7 +48,7 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 
 	color /= n;
 
-	int4 stddev;
+	float4 stddev;
 	{
 		const float sqRadius = radius*radius;
 		for(int y = pos.y - radius; y <= pos.y + radius; y++) {
@@ -57,7 +57,7 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 				int2 mpos = pxpos - pos;
 				mpos *= mpos;
 				if(mpos.x + mpos.y <= sqRadius) {
-					int4 s = convert_int4(read_imageui(img, sampler, pxpos)) - convert_int4(color);
+					float4 s = convert_float4(read_imageui(img, sampler, pxpos)) - convert_float4(color);
 					s *= s;
 					stddev += s;
 					n++;

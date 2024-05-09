@@ -9,8 +9,8 @@
 #include "geomcalib.h"
 #include <opencv2/video/background_segm.hpp>
 
-#define DRAW_DEBUG_BLOBS true
-#define DRAW_DEBUG_IMAGES false
+#define DRAW_DEBUG_BLOBS false
+#define DRAW_DEBUG_IMAGES true
 #define DEBUG_PRINT false
 #define RUNAWAY_PRINT false
 
@@ -135,7 +135,14 @@ static void findBots(Resources& r, std::list<Match>& centerBlobs, const std::lis
 								cos(orientations[a] - patternAngles[0]) + cos(orientations[b] - patternAngles[1]) + cos(orientations[c] - patternAngles[2]) + cos(orientations[d] - patternAngles[3])
 						);
 
-						const float s = cos(orientations[a] - patternAngles[0] - o) + cos(orientations[b] - patternAngles[1] - o) + cos(orientations[c] - patternAngles[2] - o) + cos(orientations[d] - patternAngles[3] - o);
+						float s = cos(orientations[a] - patternAngles[0] - o) + cos(orientations[b] - patternAngles[1] - o) + cos(orientations[c] - patternAngles[2] - o) + cos(orientations[d] - patternAngles[3] - o);
+
+						//TODO "recenter" the center blob according to side blob positions
+						/*s += powf((float)r.sideBlobDistance, -abs(dist(cv::Vec2f(a.x, a.y), cv::Vec2f(match.x, match.y)) - (float)r.sideBlobDistance));
+						s += powf((float)r.sideBlobDistance, -abs(dist(cv::Vec2f(b.x, b.y), cv::Vec2f(match.x, match.y)) - (float)r.sideBlobDistance));
+						s += powf((float)r.sideBlobDistance, -abs(dist(cv::Vec2f(c.x, c.y), cv::Vec2f(match.x, match.y)) - (float)r.sideBlobDistance));
+						s += powf((float)r.sideBlobDistance, -abs(dist(cv::Vec2f(d.x, d.y), cv::Vec2f(match.x, match.y)) - (float)r.sideBlobDistance));*/
+
 						if(s <= score)
 							continue;
 
@@ -348,7 +355,7 @@ int main(int argc, char* argv[]) {
 			break;
 
 		double startTime = getTime();
-		r.perspective->geometryCheck();
+		r.perspective->geometryCheck(img->width, img->height);
 		//TODO Extent (min/max x/y axisparallel for 3D based search)
 		r.mask->geometryCheck();
 
@@ -362,7 +369,7 @@ int main(int argc, char* argv[]) {
 		//TODO idea: background subtraction on edge images with background minimization
 		//TODO idea: delta images for new targets finding, else just tracking
 
-		if(r.perspective->getGeometryVersion()) {
+		if(false && r.perspective->geometryVersion) {
 			SSL_WrapperPacket wrapper;
 			SSL_DetectionFrame* detection = wrapper.mutable_detection();
 			detection->set_frame_number(frameId++);
@@ -404,7 +411,6 @@ int main(int argc, char* argv[]) {
 				}
 				grayscale.save(".circle.png");
 			}
-			//TODO 50 threshold
 
 			CLArray counter(sizeof(int));
 			int maxMatches = 10000; //TODO make configurable
@@ -416,7 +422,7 @@ int main(int argc, char* argv[]) {
 			{
 				CLMap<Match> matchMap = matchArray.read<Match>();
 				int matchAmount = 0;
-				while(matchAmount < maxMatches && matchMap[matchAmount].x != 0 && matchMap[matchAmount].y != 0 && matchMap[matchAmount].score != 0) {
+				while(matchAmount < maxMatches && (matchMap[matchAmount].x != 0 || matchMap[matchAmount].y != 0 || matchMap[matchAmount].score != 0)) {
 					Match& match = matchMap[matchAmount];
 					match.x = match.x*r.mask->fieldScale + r.mask->fieldExtentX[0];
 					match.y = match.y*r.mask->fieldScale + r.mask->fieldExtentY[0];

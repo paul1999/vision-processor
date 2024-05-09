@@ -39,10 +39,10 @@ static void updateExtent(Mask& mask, const V2 point) {
 }
 
 void Mask::geometryCheck() {
-	if(geometryVersion == perspective->getGeometryVersion())
+	if(geometryVersion == perspective->geometryVersion)
 		return;
 
-	geometryVersion = perspective->getGeometryVersion();
+	geometryVersion = perspective->geometryVersion;
 	mask.clear();
 
 	addForHeight(mask, *perspective, ballRadius);

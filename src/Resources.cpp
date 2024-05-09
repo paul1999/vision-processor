@@ -36,11 +36,6 @@ Resources::Resources(YAML::Node config) {
 	}
 
 	camId = config["cam_id"].as<int>(0);
-	cameraAmount = config["camera_amount"].as<int>(1);
-	sideBlobDistance = config["side_blob_distance"].as<double>(65.0);
-	centerBlobRadius = config["center_blob_radius"].as<double>(25.0);
-	sideBlobRadius = config["side_blob_radius"].as<double>(20.0);
-	ballRadius = config["ball_radius"].as<double>(21.5);
 	groundTruth = config["ground_truth"].as<std::string>("");
 
 	YAML::Node thresholds = config["thresholds"].IsDefined() ? config["thresholds"] : YAML::Node();
@@ -55,14 +50,29 @@ Resources::Resources(YAML::Node config) {
 	greenHue = readHue(hues["green"], 120.0);
 	pinkHue = readHue(hues["pink"], 300.0);
 
+	YAML::Node sizes = config["sizes"].IsDefined() ? config["sizes"] : YAML::Node();
+	sideBlobDistance = sizes["side_blob_distance"].as<double>(65.0);
+	centerBlobRadius = sizes["center_blob_radius"].as<double>(25.0);
+	sideBlobRadius = sizes["side_blob_radius"].as<double>(20.0);
+	ballRadius = sizes["ball_radius"].as<double>(21.5);
+
 	YAML::Node tracking = config["tracking"].IsDefined() ? config["tracking"] : YAML::Node();
 	minTrackingRadius = tracking["min_tracking_radius"].as<double>(30.0);
 	maxBallVelocity = 1000*tracking["max_ball_velocity"].as<double>(8.0);
 	maxBotAcceleration = 1000*tracking["max_bot_acceleration"].as<double>(6.5);
 
+	YAML::Node geometry = config["geometry"].IsDefined() ? config["geometry"] : YAML::Node();
+	cameraAmount = geometry["camera_amount"].as<int>(1);
+	cameraHeight = geometry["camera_height"].as<double>(0.0);
+	fieldLineThreshold = geometry["field_line_threshold"].as<int>(5);
+	minLineSegmentLength = geometry["min_line_segment_length"].as<double>(10.0);
+	minMajorLineLength = geometry["min_major_line_length"].as<double>(0.5);
+	maxIntersectionDistance = geometry["max_intersection_distance"].as<double>(0.2);
+	maxLineSegmentOffset = geometry["max_line_segment_offset"].as<double>(10.0);
+	maxLineSegmentAngle = geometry["max_line_segment_angle"].as<double>(3.0) * M_PI/180.0;
 
 	YAML::Node network = config["network"].IsDefined() ? config["network"] : YAML::Node();
-	gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(config["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());
+	gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(sizes["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());
 	socket = std::make_shared<VisionSocket>(network["vision_ip"].as<std::string>("224.5.23.2"), network["vision_port"].as<int>(10006), gcSocket->defaultBotHeight, ballRadius);
 	perspective = std::make_shared<Perspective>(socket, camId);
 	mask = std::make_shared<Mask>(perspective, gcSocket->maxBotHeight, ballRadius);

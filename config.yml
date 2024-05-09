@@ -3,12 +3,9 @@
 # Camera ID handled by this VisionProcessor instance.
 #cam_id: 0
 
-# Total camera amount over the field
-#camera_amount: 1
-
 # Camera source type. Availability depending on libraries installed.
 # SPINNAKER, IMAGES, OPENCV
-source: SPINNAKER
+#source: SPINNAKER
 
 # Spinnaker camera id
 #spinnaker_id: 0
@@ -19,27 +16,30 @@ source: SPINNAKER
 # List of image file system paths for IMAGES source.
 #images: []
 
-# Team bot heights yml file (heights in mm)
-#bot_heights_file: robot-heights.yml
-
-# Side blob distance in mm
-#side_blob_distance: 65.0
-
-# Center blob radius in mm
-#center_blob_radius: 25.0
-
-# Side blob radius in mm
-#side_blob_radius: 20.0
-
-# Ball radius in mm
-#ball_radius: 21.5
+geometry:
+  # Total camera amount over the field
+  #camera_amount: 1
+  # Camera height above field in mm (if 0.0 automated camera height calibration is done, this does not work if the camera looks perpendicular to the field)
+  #camera_height: 0.0
+  # Minimum brightness difference to surrounding pixels for the classification as field line pixel (0 - 255)
+  #field_line_threshold: 5
+  # Minimum length of line segments to ensure angular stability in pixels
+  #min_line_segment_length: 10.0
+  # Maximum perpendicular offset of line segments for merging in pixels
+  #max_line_segment_offset: 10.0
+  # Maximum relative angle of line segments for merging in °
+  #max_line_segment_angle: 3.0
+  # Minimum length for classifying field lines as major (fraction of the image size)
+  #min_major_line_length: 0.5
+  # Maximum field line intersection distance from the visible image plane (fraction of the image size)
+  #max_intersection_distance: 0.2
 
 thresholds:
   # Minimum mean cosine similarity of the blob border gradient (0 - 1)
   #circularity: 50.0
   # Minimum saturation of the blob area (0 - 255)
   #saturation: 24
-  # Minimum brightness of the blob area (0 - 255
+  # Minimum brightness of the blob area (0 - 255)
   #brightness: 32
 
 # Hues of the colors used to classify the blobs in ° (0 - 359°)
@@ -49,6 +49,18 @@ hues:
   #blue: 210.0
   #green: 120.0
   #pink: 300.0
+
+sizes:
+  # Team bot heights yml file (heights in mm)
+  #bot_heights_file: robot-heights.yml
+  # Side blob distance in mm
+  #side_blob_distance: 65.0
+  # Center blob radius in mm
+  #center_blob_radius: 25.0
+  # Side blob radius in mm
+  #side_blob_radius: 20.0
+  # Ball radius in mm
+  #ball_radius: 21.5
 
 tracking:
   # Min tracking radius in mm

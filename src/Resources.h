@@ -31,7 +31,7 @@ public:
 	std::unique_ptr<VideoSource> camera = nullptr;
 
 	int camId;
-	int cameraAmount;
+
 	double sideBlobDistance;
 	double centerBlobRadius;
 	double sideBlobRadius;
@@ -61,6 +61,15 @@ public:
 	uint8_t blueHue;
 	uint8_t greenHue;
 	uint8_t pinkHue;
+
+	int cameraAmount;
+	double cameraHeight; // Just for calibration, do not use elsewhere (0.0 as special value for automatic calibration)
+	uint8_t fieldLineThreshold;
+	double minLineSegmentLength;
+	double minMajorLineLength;
+	double maxIntersectionDistance;
+	double maxLineSegmentOffset;
+	double maxLineSegmentAngle;
 
 	std::shared_ptr<GCSocket> gcSocket;
 	std::shared_ptr<VisionSocket> socket;
