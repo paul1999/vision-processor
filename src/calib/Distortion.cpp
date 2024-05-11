@@ -1,4 +1,4 @@
-#include "distortion.h"
+#include "Distortion.h"
 
 #include <eigen3/unsupported/Eigen/LevenbergMarquardt>
 #include <iostream>

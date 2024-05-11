@@ -6,7 +6,7 @@
 #include "proto/ssl_vision_wrapper.pb.h"
 #include "Resources.h"
 #include "GroundTruth.h"
-#include "geomcalib.h"
+#include "calib/GeomModel.h"
 #include <opencv2/video/background_segm.hpp>
 
 #define DRAW_DEBUG_BLOBS false
@@ -355,6 +355,7 @@ int main(int argc, char* argv[]) {
 			break;
 
 		double startTime = getTime();
+		r.socket->geometryCheck();
 		r.perspective->geometryCheck(img->width, img->height);
 		//TODO Extent (min/max x/y axisparallel for 3D based search)
 		r.mask->geometryCheck();

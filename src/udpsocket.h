@@ -48,6 +48,7 @@ class VisionSocket: public UDPSocket {
 public:
 	VisionSocket(const std::string &ip, uint16_t port, float defaultBotHeight, float ballRadius): UDPSocket(ip, port), defaultBotHeight(defaultBotHeight), ballRadius(ballRadius) {}
 
+	void geometryCheck();
 	int getGeometryVersion() const { return geometryVersion; }
 	SSL_GeometryData& getGeometry() { return geometry; }
 
@@ -62,6 +63,8 @@ private:
 
 	int geometryVersion = 0;
 	SSL_GeometryData geometry;
+	SSL_GeometryData receivedGeometry;
+	std::mutex geometryMutex;
 
 	std::map<int, std::vector<TrackingState>> trackedObjects;
 };

@@ -6,6 +6,7 @@
 #include <iostream>
 #include <cstring>
 #include <google/protobuf/util/message_differencer.h>
+#include <mutex>
 
 UDPSocket::UDPSocket(const std::string& ip, uint16_t port) {
 	//Adapted from https://gist.github.com/hostilefork/f7cae3dc33e7416f2dd25a402857b6c6
@@ -90,6 +91,16 @@ void UDPSocket::run() {
 	}
 }
 
+void VisionSocket::geometryCheck() {
+	geometryMutex.lock();
+	if(!google::protobuf::util::MessageDifferencer::Equals(receivedGeometry, geometry)) {
+		std::cout << "[VisionSocket] New geometry received" << std::endl;
+		geometry.CopyFrom(receivedGeometry);
+		geometryVersion++;
+	}
+	geometryMutex.unlock();
+}
+
 
 void VisionSocket::parse(char *data, int length) {
 	SSL_WrapperPacket wrapper;
@@ -100,10 +111,10 @@ void VisionSocket::parse(char *data, int length) {
 	}
 
 	if(wrapper.has_geometry()) {
-		if(!google::protobuf::util::MessageDifferencer::Equals(geometry, wrapper.geometry())) {
-			std::cout << "[VisionSocket] New geometry received" << std::endl;
-			geometry.CopyFrom(wrapper.geometry());
-			geometryVersion++;
+		if(!google::protobuf::util::MessageDifferencer::Equals(receivedGeometry, wrapper.geometry())) {
+			geometryMutex.lock();
+			receivedGeometry.CopyFrom(wrapper.geometry());
+			geometryMutex.unlock();
 		}
 	}
 }

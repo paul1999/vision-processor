@@ -3,9 +3,9 @@
 
 
 void visibleFieldExtent(const int camId, const int camAmount, const SSL_GeometryFieldSize& field, const bool withBoundary, Eigen::Vector2f &min, Eigen::Vector2f &max) {
-	const Eigen::Vector2f fieldSize(field.field_length(), field.field_width());
+	Eigen::Vector2f fieldSize(field.field_length(), field.field_width());
 
-	Eigen::Vector2f size;
+	Eigen::Vector2i size;
 	size.setOnes();
 	for(int i = camAmount; i > 1; i /= 2) {
 		if(fieldSize[0]/size[0] >= fieldSize[1]/size[1])
@@ -14,7 +14,7 @@ void visibleFieldExtent(const int camId, const int camAmount, const SSL_Geometry
 			size[1] *= 2;
 	}
 
-	Eigen::Vector2f pos;
+	Eigen::Vector2i pos;
 	pos.setZero();
 	for(int i = camId % camAmount; i > 0; i--) {
 		pos[1]++;
@@ -24,20 +24,20 @@ void visibleFieldExtent(const int camId, const int camAmount, const SSL_Geometry
 		}
 	}
 
-	Eigen::Vector2f extentSize = fieldSize.array() / size.array();
+	Eigen::Vector2f extentSize = fieldSize.array() / size.cast<float>().array();
+	min = extentSize.array()*pos.cast<float>().array() - fieldSize.array()/2;
+	max = min + extentSize;
+
 	if(withBoundary) {
 		if(pos[0] == 0)
-			extentSize[0] += (float)field.boundary_width();
+			min[0] -= (float)field.boundary_width();
 		if(pos[1] == 0)
-			extentSize[1] += (float)field.boundary_width();
+			min[1] -= (float)field.boundary_width();
 		if(pos[0] == size[0]-1)
-			extentSize[0] += (float)field.boundary_width();
+			max[0] += (float)field.boundary_width();
 		if(pos[1] == size[1]-1)
-			extentSize[1] += (float)field.boundary_width();
+			max[1] += (float)field.boundary_width();
 	}
-
-	min = extentSize.array()*pos.array() - fieldSize.array()/2;
-	max = min + extentSize;
 }
 
 
@@ -52,7 +52,7 @@ CameraModel::CameraModel(const Eigen::Vector2i &size, int camId, int camAmount, 
 	Eigen::Vector2f min;
 	Eigen::Vector2f max;
 	visibleFieldExtent(camId, camAmount, field, true, min, max);
-	iPos.head<2>() = min/2 + max/2;
+	pos.head<2>() = min/2 + max/2;
 
 	updateDerived();
 }
@@ -62,8 +62,8 @@ CameraModel::CameraModel(const SSL_GeometryCameraCalibration& calib):
 		principalPoint(calib.principal_point_x(), calib.principal_point_y()),
 		distortionK2(calib.distortion()),
 		f2iOrientation(calib.q3(), calib.q0(), calib.q1(), calib.q2()),
-		iPos(calib.tx(), calib.ty(), calib.tz()),
 		size(calib.pixel_image_width(), calib.pixel_image_height()) {
+	pos = f2iOrientation.inverse() * -Eigen::Vector3f(calib.tx(), calib.ty(), calib.tz());
 	updateDerived();
 }
 
@@ -74,10 +74,11 @@ SSL_GeometryCameraCalibration CameraModel::getProto(int camId) const {
 	proto.set_principal_point_x(principalPoint.x());
 	proto.set_principal_point_y(principalPoint.y());
 	proto.set_distortion(distortionK2);
-	proto.set_q0(f2iOrientation.w());
-	proto.set_q1(f2iOrientation.x());
-	proto.set_q2(f2iOrientation.y());
-	proto.set_q3(f2iOrientation.z());
+	proto.set_q0(f2iOrientation.x());
+	proto.set_q1(f2iOrientation.y());
+	proto.set_q2(f2iOrientation.z());
+	proto.set_q3(f2iOrientation.w());
+	Eigen::Vector3f iPos = f2iOrientation * -pos;
 	proto.set_tx(iPos.x());
 	proto.set_ty(iPos.y());
 	proto.set_tz(iPos.z());
@@ -91,9 +92,8 @@ SSL_GeometryCameraCalibration CameraModel::getProto(int camId) const {
 
 void CameraModel::updateDerived() {
 	f2iOrientation.normalize();
-	f2iTransformation = Eigen::Translation3f(iPos) * Eigen::Affine3f(f2iOrientation);
 	i2fOrientation = f2iOrientation.inverse();
-	pos = i2fOrientation * iPos;
+	f2iTransformation = Eigen::Affine3f(f2iOrientation) * Eigen::Translation3f(-pos);
 }
 
 void CameraModel::ensureSize(const Eigen::Vector2i& newSize) {
@@ -146,11 +146,11 @@ Eigen::Vector3f CameraModel::image2field(const Eigen::Vector2f& p, const float h
 	camRay = i2fOrientation * camRay;
 
 	if(camRay.z() >= 0) {
-		std::cerr << "[CameraModel] Transformation over horizon: " << p.transpose() << std::endl;
+		//std::cerr << "[CameraModel] Transformation over horizon: " << p.transpose() << std::endl;
 		return { NAN, NAN, NAN };
 	}
 
-	camRay = camRay*((pos.z() + height) / camRay.z()) - pos;
+	camRay = camRay*((-pos.z() + height) / camRay.z()) + pos;
 	camRay.z() = height;
 	return camRay;
 }

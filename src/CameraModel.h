@@ -30,11 +30,10 @@ public:
 	float focalLength;
 	Eigen::Vector2f principalPoint;
 	float distortionK2 = 0.0f;
-	Eigen::Vector3f iPos = Eigen::Vector3f(0.0f, 0.0f, 5000.0f); // camera position in image coordinate system
+	Eigen::Vector3f pos = Eigen::Vector3f(0.0f, 0.0f, 5000.0f); // camera position in field coordinate system
 	Eigen::Quaternionf f2iOrientation = Eigen::Quaternionf(0.0f, -1.0f, 0.0f, 0.0f); // orientation from field to image plane
 	Eigen::Vector2i size;
 
-	Eigen::Vector3f pos; // camera position in field coordinate system
 	Eigen::Affine3f f2iTransformation;
 	Eigen::Matrix3f i2fOrientation;
 };

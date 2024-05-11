@@ -1,0 +1,204 @@
+#include "LineDetection.h"
+#include "GeomModel.h"
+
+int halfLineWidthEstimation(const Resources& r, const Image& img) {
+	Eigen::Vector2f min;
+	Eigen::Vector2f max;
+	visibleFieldExtent(r, true, min, max);
+
+	Eigen::Vector2f extent = max - min;
+	if(extent[0] < extent[1])
+		std::swap(extent[0], extent[1]);
+
+	Eigen::Vector2f camera(img.width, img.height);
+	if(camera[0] < camera[1])
+		std::swap(camera[0], camera[1]);
+
+	Eigen::Vector2f ratio = camera.array() / extent.array();
+	if(ratio[0] < ratio[1])
+		std::swap(ratio[0], ratio[1]);
+
+	const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
+	return std::ceil(ratio[0] * (float)field.line_thickness()/2.0f);
+}
+
+Image thresholdImage(const Resources& r, const Image& gray, const int halfLineWidth) {
+	Image thresholded(&PixelFormat::U8, gray.width, gray.height, gray.name);
+
+	const CLMap<uint8_t> data = gray.read<uint8_t>();
+	const int width = gray.width;
+	CLMap<uint8_t> tData = thresholded.write<uint8_t>();
+	for (int y = halfLineWidth; y < gray.height - halfLineWidth; y++) {
+		for (int x = halfLineWidth; x < width - halfLineWidth; x++) {
+			int value = data[x + y * width];
+			tData[x + y * width] = (
+										   (value - data[x - halfLineWidth + y * width] > r.fieldLineThreshold &&
+											value - data[x + halfLineWidth + y * width] > r.fieldLineThreshold) ||
+										   (value - data[x + (y - halfLineWidth) * width] > r.fieldLineThreshold &&
+											value - data[x + (y + halfLineWidth) * width] > r.fieldLineThreshold)
+								   ) ? 255 : 0;
+		}
+	}
+
+	return thresholded;
+}
+
+std::vector<CVLines> groupLineSegments(const Resources& r, CVLines& segments) {
+	std::vector<CVLines> compoundLines;
+	while(!segments.empty()) {
+		CVLines compound;
+		compound.push_back(segments.front());
+		segments.erase(segments.cbegin());
+
+		for(int i = 0; i < compound.size(); i++) {
+			const auto& root = compound[i];
+			cv::Vec2f v1 = root.second - root.first;
+
+			auto lit = segments.cbegin();
+			while(lit != segments.cend()) {
+				CVLine l = *lit;
+				cv::Vec2f v2 = l.second - l.first;
+				if(
+						abs(acosf(abs(v2.dot(v1) / (sqrtf(v1.dot(v1)) * sqrtf(v2.dot(v2)))))) <= r.maxLineSegmentAngle &&
+						// https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
+						std::min(abs(v1[0]*(l.first[1] - root.first[1]) - (l.first[0] - root.first[0])*v1[1]) / sqrtf(v1.dot(v1)), abs(v1[0]*(l.second[1] - root.first[1]) - (l.second[0] - root.first[0])*v1[1]) / sqrtf(v1.dot(v1))) <= r.maxLineSegmentOffset
+						) {
+					compound.push_back(l);
+					lit = segments.erase(lit);
+				} else {
+					lit++;
+				}
+			}
+		}
+
+		//Sort according to line length
+		std::sort(compound.begin(), compound.end(), [](const CVLine& v1, const CVLine& v2) { return dist(v1.first, v1.second) > dist(v2.first, v2.second); });
+		compoundLines.push_back(compound);
+	}
+	return compoundLines;
+}
+
+CVLines mergeLineSegments(const std::vector<CVLines>& compoundLines) {
+	CVLines mergedLines;
+	for(const auto& compound : compoundLines) {
+		cv::Vec2f a = compound.front().first;
+		cv::Vec2f b = compound.front().second;
+		for(int i = 1; i < compound.size(); i++) {
+			const auto& v = compound[i];
+
+			const cv::Vec2f& c = v.first;
+			const cv::Vec2f& d = v.second;
+
+			cv::Vec2f max1 = a;
+			cv::Vec2f max2 = b;
+			float maxd = dist(a, b);
+
+			if(dist(a, c) > maxd) {
+				max1 = a;
+				max2 = c;
+				maxd = dist(a, c);
+			}
+			if(dist(a, d) > maxd) {
+				max1 = a;
+				max2 = d;
+				maxd = dist(a, d);
+			}
+			if(dist(c, b) > maxd) {
+				max1 = c;
+				max2 = b;
+				maxd = dist(c, b);
+			}
+			if(dist(d, b) > maxd) {
+				max1 = d;
+				max2 = b;
+				maxd = dist(d, b);
+			}
+			if(dist(c, d) > maxd) {
+				max1 = c;
+				max2 = d;
+				maxd = dist(c, d);
+			}
+
+			a = max1;
+			b = max2;
+		}
+		mergedLines.emplace_back(a, b);
+	}
+	return mergedLines;
+}
+
+// Adapted from https://stackoverflow.com/a/7448287 by Andrey Kamaev CC BY-SA 3.0
+cv::Vec2f lineLineIntersection(const CVLine& a, const CVLine& b) {
+	cv::Vec2f x = b.first - a.first;
+	cv::Vec2f da = a.second - a.first;
+	cv::Vec2f db = b.second - b.first;
+
+	float cross = da[0]*db[1] - da[1]*db[0];
+	if (abs(cross) < 1e-8)
+		return {INFINITY, INFINITY};
+
+	double t1 = (x[0] * db[1] - x[1] * db[0]) / cross;
+	return a.first + da * t1;
+}
+
+std::vector<cv::Vec2f> lineIntersections(const CVLines& lines, const int width, const int height, const double maxIntersectionDistance) {
+	std::vector<cv::Vec2f> intersections;
+
+	float minX = -width*maxIntersectionDistance;
+	float minY = -height*maxIntersectionDistance;
+	float maxX = width + width*maxIntersectionDistance;
+	float maxY = height + height*maxIntersectionDistance;
+	auto ita = lines.cbegin();
+	while(ita != lines.cend()) {
+		auto itb = ita+1;
+		while(itb != lines.cend()) {
+			cv::Vec2f c = lineLineIntersection(*ita, *itb);
+			if(c[0] >= minX && c[1] >= minY && c[0] < maxX && c[1] < maxY)
+				intersections.push_back(c);
+
+			itb++;
+		}
+
+		ita++;
+	}
+
+	return intersections;
+}
+
+static bool inSegment(const cv::Vec2f& a, const cv::Vec2f& b, const cv::Vec2f& point) {
+	return point[0] > std::min(a[0], b[0]) && point[1] > std::min(a[1], b[1]) && point[0] < std::max(a[0], b[0]) && point[1] < std::max(a[1], b[1]);
+}
+
+std::list<Eigen::Vector2f> findOuterEdges(const std::vector<cv::Vec2f>& intersections) {
+	std::list<Eigen::Vector2f> edges;
+	float maxArea = 0.0f;
+	for(const cv::Vec2f& a : intersections) {
+		for(const cv::Vec2f& b : intersections) {
+			for(const cv::Vec2f& c : intersections) {
+				for(const cv::Vec2f& d : intersections) {
+					if(a == b || a == c || a == d || b == c || b == d || c == d)
+						continue;
+
+					cv::Vec2f center = lineLineIntersection({a, c}, {b, d});
+					if(!inSegment(a, c, center) || !inSegment(b, d, center)) // Check if ABCD is convex quadrilateral
+						continue;
+
+					//https://en.wikipedia.org/wiki/Quadrilateral#Vector_formulas
+					cv::Vec2f ac = c - a;
+					cv::Vec2f bd = d - b;
+					float area = 0.5f * abs(ac[0] * bd[1] - bd[0] * ac[1]);
+					if(area < maxArea)
+						continue;
+
+					edges.clear();
+					edges.push_back(cv2eigen(a));
+					edges.push_back(cv2eigen(b));
+					edges.push_back(cv2eigen(c));
+					edges.push_back(cv2eigen(d));
+					maxArea = area;
+				}
+			}
+		}
+	}
+	return edges;
+}
