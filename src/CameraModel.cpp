@@ -131,11 +131,9 @@ Eigen::Vector2f CameraModel::field2image(const Eigen::Vector3f& p) const {
 	Eigen::Vector2f normalized = camRay.head<2>() / camRay.z();
 
 	//Apply distortion
-	if(distortionK2 >= FLT_MIN) { //TODO also for negative distortions
-		Eigen::Vector2f original = normalized;
-		for(int i = 0; i < 10; i++) //TODO optimize
-			normalized = original / (1 + distortionK2 * normalized.dot(normalized));
-	}
+	Eigen::Vector2f original = normalized;
+	for(int i = 0; i < 10; i++) //TODO optimize
+		normalized = original / (1 + distortionK2 * normalized.dot(normalized));
 
 	return focalLength * normalized + principalPoint;
 }

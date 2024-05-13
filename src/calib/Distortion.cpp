@@ -56,11 +56,12 @@ static std::vector<float> lineError(const std::vector<Eigen::Vector2f>& undistor
 
 struct Functor : public Eigen::DenseFunctor<float> {
 	const std::vector<std::vector<Eigen::Vector2f>>& lines;
-	CameraModel& model;
+	CameraModel& reference;
 
-	explicit Functor(const std::vector<std::vector<Eigen::Vector2f>>& lines, CameraModel& model): lines(lines), model(model) {}
+	explicit Functor(const std::vector<std::vector<Eigen::Vector2f>>& lines, CameraModel& model): lines(lines), reference(model) {}
 
 	int operator()(const InputType &x, ValueType& fvec) const {
+		CameraModel model = reference;
 		model.distortionK2 = x(0);
 		model.principalPoint.x() = x(1);
 		model.principalPoint.y() = x(2);
@@ -100,7 +101,7 @@ bool calibrateDistortion(const std::vector<std::vector<Eigen::Vector2f>>& linePo
 	k(1) = model.principalPoint.x();	// principal point x
 	k(2) = model.principalPoint.y();	// principal point y
 
-	lm.minimize(k);
+	std::cout << lm.minimize(k) << " " << lm.iterations() << std::endl;
 
 	if(lm.info() != Eigen::ComputationInfo::Success) {
 		std::cout << "[Distortion] Levenberg-Marquandt minimization failed with code, aborting calibration for this frame: " << lm.info() << std::endl;

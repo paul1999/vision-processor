@@ -370,7 +370,7 @@ int main(int argc, char* argv[]) {
 		//TODO idea: background subtraction on edge images with background minimization
 		//TODO idea: delta images for new targets finding, else just tracking
 
-		if(false && r.perspective->geometryVersion) {
+		if(r.perspective->geometryVersion) {
 			SSL_WrapperPacket wrapper;
 			SSL_DetectionFrame* detection = wrapper.mutable_detection();
 			detection->set_frame_number(frameId++);

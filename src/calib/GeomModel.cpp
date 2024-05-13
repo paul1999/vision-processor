@@ -1,6 +1,7 @@
 #include "GeomModel.h"
 #include "Distortion.h"
 #include "LineDetection.h"
+#include "proto/ssl_vision_wrapper.pb.h"
 
 #include <eigen3/unsupported/Eigen/LevenbergMarquardt>
 
@@ -67,7 +68,6 @@ struct GeometryFit : public Eigen::DenseFunctor<float> {
 		while(iIt != imageEdges.cend()) {
 			const Eigen::Vector2f& f = *fIt++;
 			Eigen::Vector2f error = model.field2image({f.x(), f.y(), 0.0f}) - *iIt++;
-			//Eigen::Vector2f error = model.image2field(*iIt++, 0.0f).head<2>() - *(fIt++);
 			error = error.array()*error.array();
 			fvec[i++] = error.x();
 			fvec[i++] = error.y();
@@ -80,17 +80,52 @@ struct GeometryFit : public Eigen::DenseFunctor<float> {
 	}
 };
 
-static bool pointOnLine(const CameraModel& model, const std::vector<std::pair<Eigen::Vector2f, Eigen::Vector2f>>& lines, const float halfLineWidth, const Eigen::Vector2f& linePixel) {
+typedef struct LineArc {
+	Eigen::Vector2f center;
+	float radius;
+	float a1, a2;
+} LineArc;
+
+static bool pointOnLine(const CameraModel& model, const std::vector<std::pair<Eigen::Vector2f, Eigen::Vector2f>>& lines, const std::vector<LineArc>& arcs, const float halfLineWidth, const Eigen::Vector2f& linePixel) {
 	const Eigen::Vector2f fieldPixel = model.image2field(linePixel, 0.0f).head<2>();
 	for(const auto& line : lines) {
+		//Adapted from Grumdrig https://stackoverflow.com/a/1501725 CC BY-SA 4.0
 		const Eigen::Vector2f v = line.second - line.first;
-		const Eigen::Vector2f line2pixel = fieldPixel - line.first;
-		//TODO in segment?
-		if(abs(v.x()*line2pixel.y() - v.y()*line2pixel.x()) / sqrtf(v.dot(v)) < halfLineWidth)
+		const Eigen::Vector2f w = fieldPixel - line.first;
+		const float t = std::max(0.0f, std::min(1.0f, w.dot(v) / v.dot(v)));
+		const Eigen::Vector2f delta = w - t * v;
+
+		if(sqrtf(delta.dot(delta)) <= halfLineWidth)
+			return true;
+	}
+
+	for(const auto& arc : arcs) {
+		const Eigen::Vector2f pixel2center = fieldPixel - arc.center;
+		float angle = atan2f(pixel2center.y(), pixel2center.x());
+		if(angle < 0)
+			angle += 2*M_PI;
+
+		if(abs(sqrtf(pixel2center.dot(pixel2center)) - arc.radius) <= halfLineWidth && angle >= arc.a1 && angle <= arc.a2)
 			return true;
 	}
 
 	return false;
+}
+
+static void fieldToLines(const Resources& r, std::vector<std::pair<Eigen::Vector2f, Eigen::Vector2f>>& lines, std::vector<LineArc>& arcs) {
+	const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
+
+	for(const SSL_FieldLineSegment& line : field.field_lines())
+		lines.emplace_back(Eigen::Vector2f(line.p1().x(), line.p1().y()), Eigen::Vector2f(line.p2().x(), line.p2().y()));
+
+	for(const SSL_FieldCircularArc& arc : field.field_arcs()) {
+		arcs.push_back({
+			.center = {arc.center().x(), arc.center().y()},
+			.radius = arc.radius(),
+			.a1 = arc.a1(),
+			.a2 = arc.a2()
+		});
+	}
 }
 
 static int modelError(const Resources& r, const CameraModel& model, const std::vector<Eigen::Vector2f>& linePixels) {
@@ -98,15 +133,13 @@ static int modelError(const Resources& r, const CameraModel& model, const std::v
 	const float halfLineWidth = (float)field.line_thickness() / 2.0f;
 
 	std::vector<std::pair<Eigen::Vector2f, Eigen::Vector2f>> lines;
-	for(const SSL_FieldLineSegment& line : field.field_lines())
-		lines.emplace_back(Eigen::Vector2f(line.p1().x(), line.p1().y()), Eigen::Vector2f(line.p2().x(), line.p2().y()));
+	std::vector<LineArc> arcs;
+	fieldToLines(r, lines, arcs);
 
 	int error = 0.0;
 	for(const Eigen::Vector2f& linePixel : linePixels) {
-		if(!pointOnLine(model, lines, halfLineWidth, linePixel))
+		if(!pointOnLine(model, lines, arcs, halfLineWidth, linePixel))
 			error += 1;
-
-		//TODO arcs
 	}
 	return error;
 }
@@ -137,8 +170,13 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	std::cout << "[Geometry calibration] Lines: " << mergedLines.size() << std::endl;
 
 	CameraModel distortionModel({thresholded.width, thresholded.height}, r.camId, r.cameraAmount, r.socket->getGeometry().field());
+	//TODO better focal length
+	//TODO relative error too small with default focal length
+	//TODO check if distortion rescaling math correct
+	distortionModel.focalLength /= 4.0f;
 	if(!estimateDistortion(compoundLines, distortionModel))
 		return;
+	distortionModel.updateFocalLength(distortionModel.focalLength * 4.0f);
 
 	CVLines majorLines;
 	const float minMajorLength = std::min(img.width, img.height) * r.minMajorLineLength;
@@ -217,7 +255,7 @@ void geometryCalibration(const Resources& r, const Image& img) {
 
 		lm.minimize(k);
 
-		if(lm.info() != Eigen::ComputationInfo::Success)
+		if(lm.info() != Eigen::ComputationInfo::Success && lm.info() != Eigen::ComputationInfo::NoConvergence) //xtol might be too aggressive
 			continue;
 
 		//TODO Fixable instead of skipping? (Wrong clockwise direction?)
@@ -263,19 +301,22 @@ void geometryCalibration(const Resources& r, const Image& img) {
 		std::cout << minModel.image2field(edge, 0.0f).head<2>().transpose() << " ";
 	std::cout << std::endl;
 
+	SSL_WrapperPacket wrapper;
+	wrapper.mutable_geometry()->CopyFrom(r.socket->getGeometry());
+	wrapper.mutable_geometry()->add_calib()->CopyFrom(minModel.getProto(r.camId));
+	r.socket->send(wrapper);
+
 	{
 		const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
 		const float halfLineWidth = (float)field.line_thickness() / 2.0f;
 
 		std::vector<std::pair<Eigen::Vector2f, Eigen::Vector2f>> lines;
-		for(const SSL_FieldLineSegment& line : field.field_lines())
-			lines.emplace_back(Eigen::Vector2f(line.p1().x(), line.p1().y()), Eigen::Vector2f(line.p2().x(), line.p2().y()));
+		std::vector<LineArc> arcs;
+		fieldToLines(r, lines, arcs);
 
 		CLMap<uint8_t> data = thresholded.write<uint8_t>();
 		for(const Eigen::Vector2f& linePixel : linePixels) {
-			data[(int)linePixel.x() + (int)linePixel.y()*thresholded.width] = pointOnLine(minModel, lines, halfLineWidth, linePixel) ? 255 : 128;
-
-			//TODO arcs
+			data[(int)linePixel.x() + (int)linePixel.y()*thresholded.width] = pointOnLine(minModel, lines, arcs, halfLineWidth, linePixel) ? 255 : 128;
 		}
 	}
 	thresholded.save(".linepoints.png");
@@ -306,7 +347,6 @@ void geometryCalibration(const Resources& r, const Image& img) {
 		}
 	}
 	bgr.save(".lines.png");
-	//cv::imwrite("lines2.png", *cvBgr);
 
 	{
 		CVMap cvBgr = bgr.cvReadWrite();
@@ -318,5 +358,4 @@ void geometryCalibration(const Resources& r, const Image& img) {
 		}
 	}
 	bgr.save(".linesundistorted.png");
-	//cv::imwrite("lines3.png", *cvBgr);
 }
