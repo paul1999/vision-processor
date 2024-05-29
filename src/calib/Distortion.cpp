@@ -85,21 +85,17 @@ struct Functor : public Eigen::DenseFunctor<float> {
 			size += item.size();
 		return size;
 	}
-
-	/*int inputs() const {
-		return 3;
-	}*/
 };
 
 bool calibrateDistortion(const std::vector<std::vector<Eigen::Vector2f>>& linePoints, CameraModel& model) {
-	std::cout << "[Distortion] Lines: " << linePoints.size() << std::endl;
 	Functor functor(linePoints, model);
+	std::cout << "[Distortion] Lines: " << linePoints.size() << " with line points: " << functor.values() << std::endl;
 	Eigen::NumericalDiff<Functor> numDiff(functor);
 	Eigen::LevenbergMarquardt<Eigen::NumericalDiff<Functor>> lm(numDiff);
 	Eigen::VectorXf k(3);
-	k(0) = model.distortionK2;			// distortion
-	k(1) = model.principalPoint.x();	// principal point x
-	k(2) = model.principalPoint.y();	// principal point y
+	k(0) = model.distortionK2;
+	k(1) = model.principalPoint.x();
+	k(2) = model.principalPoint.y();
 
 	std::cout << lm.minimize(k) << " " << lm.iterations() << std::endl;
 

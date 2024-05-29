@@ -120,3 +120,5 @@ static inline cl::Image2D allocImage(int width, int height, bool f) {
 }
 
 CLImage::CLImage(int width, int height, bool f): image(allocImage(width, height, f)), width(width), height(height), f(f) {}
+
+CLImage::CLImage(): image(), width(0), height(0), f(false) {}

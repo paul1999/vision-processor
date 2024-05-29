@@ -142,6 +142,7 @@ private:
 
 class CLImage {
 public:
+	CLImage();
 	CLImage(int width, int height, bool f);
 
 	template<typename T> CLImageMap<T> read() const { return std::move(CLImageMap<T>(image, width, height, f, CL_MAP_READ)); }

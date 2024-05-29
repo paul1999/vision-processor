@@ -64,13 +64,16 @@ namespace YAML {
 	};
 }
 
+std::vector<SSL_DetectionFrame> parseGroundTruth(const std::string &source) {
+	return YAML::LoadFile(source).as<std::vector<SSL_DetectionFrame>>();
+}
 
-GroundTruth::GroundTruth(const std::string &source, int cameraId, double timestamp) {
-	SSL_WrapperPacket wrapper;
-	SSL_DetectionFrame* detection = wrapper.mutable_detection();
-	detection->CopyFrom(YAML::LoadFile(source).as<SSL_DetectionFrame>());
-	detection->set_camera_id(cameraId);
-	detection->set_t_capture(timestamp);
-	detection->set_t_sent(timestamp);
-	message = std::make_unique<SSL_WrapperPacket>(wrapper);
+const SSL_DetectionFrame& getCorrespondingFrame(const std::vector<SSL_DetectionFrame> &groundTruth, uint32_t frameId) {
+	for(const auto& frame : groundTruth) {
+		if(frame.frame_number() == frameId)
+			return frame;
+	}
+
+	std::cerr << "[GroundTruth] Ground truth for frame not in ground truth data requested. FrameId: " << frameId << std::endl;
+	exit(1);
 }

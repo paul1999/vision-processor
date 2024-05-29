@@ -23,21 +23,8 @@ static cv::Vec2f eigen2cv(const Eigen::Vector2f& v) {
 	return {v[0], v[1]};
 }
 
-static bool estimateDistortion(const std::vector<CVLines>& compoundLines, CameraModel& model) {
-	std::vector<std::vector<Eigen::Vector2f>> l;
-	for(const auto& compound : compoundLines) {
-		if(compound.size() == 1)
-			continue;
-
-		std::vector<Eigen::Vector2f> points;
-		for(const auto& segment : compound) {
-			points.emplace_back(cv2eigen(segment.first));
-			points.emplace_back(cv2eigen(segment.second));
-		}
-		l.push_back(points);
-	}
-
-	return calibrateDistortion(l, model);
+static bool estimateDistortion(const std::vector<std::vector<Eigen::Vector2f>>& mergedPoints, CameraModel& model) {
+	return calibrateDistortion(mergedPoints, model);
 }
 
 static cv::Vec2f undistort(const CameraModel& model, const cv::Vec2f& v) {
@@ -86,16 +73,20 @@ typedef struct LineArc {
 	float a1, a2;
 } LineArc;
 
-static bool pointOnLine(const CameraModel& model, const std::vector<std::pair<Eigen::Vector2f, Eigen::Vector2f>>& lines, const std::vector<LineArc>& arcs, const float halfLineWidth, const Eigen::Vector2f& linePixel) {
+static float sqPointLineSegmentDistance(const std::pair<Eigen::Vector2f, Eigen::Vector2f>& line, const Eigen::Vector2f& point) {
+	//Adapted from Grumdrig https://stackoverflow.com/a/1501725 CC BY-SA 4.0
+	const Eigen::Vector2f v = line.second - line.first;
+	const Eigen::Vector2f w = point - line.first;
+	const float t = std::max(0.0f, std::min(1.0f, w.dot(v) / v.dot(v)));
+	const Eigen::Vector2f delta = w - t * v;
+	return delta.dot(delta);
+}
+
+static bool pointAtLine(const CameraModel& model, const std::vector<std::pair<Eigen::Vector2f, Eigen::Vector2f>>& lines, const std::vector<LineArc>& arcs, const float halfLineWidth, const Eigen::Vector2f& linePixel) {
+	const float sqHalfLineWidth = halfLineWidth*halfLineWidth;
 	const Eigen::Vector2f fieldPixel = model.image2field(linePixel, 0.0f).head<2>();
 	for(const auto& line : lines) {
-		//Adapted from Grumdrig https://stackoverflow.com/a/1501725 CC BY-SA 4.0
-		const Eigen::Vector2f v = line.second - line.first;
-		const Eigen::Vector2f w = fieldPixel - line.first;
-		const float t = std::max(0.0f, std::min(1.0f, w.dot(v) / v.dot(v)));
-		const Eigen::Vector2f delta = w - t * v;
-
-		if(sqrtf(delta.dot(delta)) <= halfLineWidth)
+		if(sqPointLineSegmentDistance(line, fieldPixel) <= sqHalfLineWidth)
 			return true;
 	}
 
@@ -128,7 +119,19 @@ static void fieldToLines(const Resources& r, std::vector<std::pair<Eigen::Vector
 	}
 }
 
-static int modelError(const Resources& r, const CameraModel& model, const std::vector<Eigen::Vector2f>& linePixels) {
+std::vector<Eigen::Vector2f> getLinePixels(const Image& thresholded) {
+	std::vector<Eigen::Vector2f> linePixels;
+	CLMap<uint8_t> data = thresholded.read<uint8_t>();
+	for (int y = 0; y < thresholded.height; y++) {
+		for (int x = 0; x < thresholded.width; x++) {
+			if(data[x + y * thresholded.width])
+				linePixels.emplace_back(x, y);
+		}
+	}
+	return std::move(linePixels);
+}
+
+int modelError(const Resources& r, const CameraModel& model, const std::vector<Eigen::Vector2f>& linePixels) {
 	const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
 	const float halfLineWidth = (float)field.line_thickness() / 2.0f;
 
@@ -138,7 +141,7 @@ static int modelError(const Resources& r, const CameraModel& model, const std::v
 
 	int error = 0.0;
 	for(const Eigen::Vector2f& linePixel : linePixels) {
-		if(!pointOnLine(model, lines, arcs, halfLineWidth, linePixel))
+		if(!pointAtLine(model, lines, arcs, halfLineWidth, linePixel))
 			error += 1;
 	}
 	return error;
@@ -169,12 +172,33 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	const CVLines mergedLines = mergeLineSegments(compoundLines);
 	std::cout << "[Geometry calibration] Lines: " << mergedLines.size() << std::endl;
 
+	const std::vector<Eigen::Vector2f> linePixels = getLinePixels(thresholded);
+	std::vector<std::vector<Eigen::Vector2f>> mergedPixels(mergedLines.size());
+	{
+		const float sqHalfLineWidth = (float)(halfLineWidth*halfLineWidth);
+		CLMap<uint8_t> data = thresholded.read<uint8_t>();
+		for (int y = 0; y < thresholded.height; y++) {
+			for (int x = 0; x < thresholded.width; x++) {
+				if(data[x + y * thresholded.width]) {
+					for(int i = 0; i < compoundLines.size(); i++) {
+						for(const auto& segment : compoundLines[i]) {
+							if(sqPointLineSegmentDistance(std::make_pair(cv2eigen(segment.first), cv2eigen(segment.second)), {x, y}) <= sqHalfLineWidth) {
+								//TODO duplicate pixels at line segment border
+								mergedPixels[i].emplace_back(x, y);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	CameraModel distortionModel({thresholded.width, thresholded.height}, r.camId, r.cameraAmount, r.socket->getGeometry().field());
 	//TODO better focal length
 	//TODO relative error too small with default focal length
 	//TODO check if distortion rescaling math correct
 	distortionModel.focalLength /= 4.0f;
-	if(!estimateDistortion(compoundLines, distortionModel))
+	if(!estimateDistortion(mergedPixels, distortionModel))
 		return;
 	distortionModel.updateFocalLength(distortionModel.focalLength * 4.0f);
 
@@ -216,20 +240,9 @@ void geometryCalibration(const Resources& r, const Image& img) {
 		std::cout << edge.transpose() << " ";
 	std::cout << std::endl;
 
-	std::vector<Eigen::Vector2f> linePixels;
-	{
-		CLMap<uint8_t> data = thresholded.read<uint8_t>();
-		for (int y = 0; y < thresholded.height; y++) {
-			for (int x = 0; x < thresholded.width; x++) {
-				if(data[x + y * thresholded.width])
-					linePixels.emplace_back(x, y);
-			}
-		}
-	}
-
 	const bool calibHeight = r.cameraHeight == 0.0;
 	if(calibHeight) {
-		distortionModel.pos.z() = r.cameraHeight;
+		distortionModel.pos.z() = 5000.0f;
 		distortionModel.updateDerived();
 	}
 
@@ -316,7 +329,7 @@ void geometryCalibration(const Resources& r, const Image& img) {
 
 		CLMap<uint8_t> data = thresholded.write<uint8_t>();
 		for(const Eigen::Vector2f& linePixel : linePixels) {
-			data[(int)linePixel.x() + (int)linePixel.y()*thresholded.width] = pointOnLine(minModel, lines, arcs, halfLineWidth, linePixel) ? 255 : 128;
+			data[(int)linePixel.x() + (int)linePixel.y()*thresholded.width] = pointAtLine(minModel, lines, arcs, halfLineWidth, linePixel) ? 255 : 128;
 		}
 	}
 	thresholded.save(".linepoints.png");

@@ -1,0 +1,105 @@
+import argparse
+import builtins
+import concurrent.futures
+import multiprocessing
+import sys
+from pathlib import Path
+from typing import Iterable
+from xml.etree import ElementTree
+
+import yaml
+
+from geom_publisher import load_geometry, yaml_load
+from proto.ssl_vision_wrapper_pb2 import SSL_WrapperPacket
+
+
+def parser_test_data(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument('--data_folder', default='test-data', help='Data folder', type=Path)
+    return parser
+
+
+class Dataset:
+
+    def __init__(self, folder: Path):
+        self.folder = folder
+
+    @property
+    def cam_id(self) -> int:
+        try:
+            return int(self.folder.name[3:])
+        except:
+            print("[Dataset] Failed to extract cam_id from dataset folder name, defaulting to 0", file=sys.stderr)
+            return 0
+
+    @property
+    def field(self) -> Path:
+        return self.folder / 'field.png'
+
+    @property
+    def reference_geometry(self) -> SSL_WrapperPacket:
+        return load_geometry(self.folder / 'geometry.yml')
+
+    @property
+    def config_dir(self) -> Path:
+        return self.folder / 'ssl-vision-config'
+
+    @property
+    def ssl_config(self) -> Path:
+        return self.config_dir / 'robocup-ssl.xml'
+
+    @property
+    def processor_config(self) -> Path:
+        return self.config_dir / 'config.yml'
+
+    def read_ssl_config(self) -> ElementTree:
+        return ElementTree.parse(str(self.ssl_config))
+
+    def write_ssl_config(self, config: ElementTree):
+        config.write(str(self.ssl_config))
+
+    def update_processor_config(self, **options):
+        config = yaml_load(self.processor_config, default={})
+        config['cam_id'] = self.cam_id
+        config['source'] = 'OPENCV'
+
+        for key, value in options.items():
+            #TODO overrides dicts
+            config[key] = value
+
+        with self.processor_config.open('w') as file:
+            yaml.dump(config, file)
+
+    def images(self) -> Iterable[Path]:
+        for video in self.folder.glob('*.mp4'):
+            yield video
+        for image in self.folder.glob('*.png'):
+            if image != self.field:
+                yield image
+
+    def __str__(self):
+        return str(self.folder)
+
+
+def iterate_field(field: Path) -> Iterable[Dataset]:
+    for dataset in field.iterdir():
+        if dataset.is_dir():
+            yield Dataset(dataset)
+
+
+def iterate_fields(fields: Path) -> Iterable[Dataset]:
+    for field in fields.iterdir():
+        if field.is_dir():
+            for dataset in iterate_field(field):
+                yield dataset
+
+
+def threaded_field_iter(fields: Path, consumer, workers=None):
+    if workers == 1:
+        pool = builtins
+    else:
+        if workers is None:
+            workers = multiprocessing.cpu_count()
+
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+
+    concurrent.futures.wait(pool.map(consumer, iterate_fields(fields)))

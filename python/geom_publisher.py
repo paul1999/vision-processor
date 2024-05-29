@@ -1,65 +1,30 @@
 #!/usr/bin/env python3
 import argparse
-import socket
-import struct
-import threading
 import time
+from pathlib import Path
 
 import yaml
+from google.protobuf.json_format import ParseDict
 
-import proto.ssl_vision_wrapper_pb2 as ssl_vision_wrapper
-import proto.ssl_vision_geometry_pb2 as ssl_vision_geometry
-
-
-def open_multicast_socket(ip, port):
-    # Adapted from https://stackoverflow.com/a/1794373 (CC BY-SA 4.0 by Gordon Wrigley)
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind((ip, port))
-    sock.setsockopt(
-        socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
-        struct.pack("4sl", socket.inet_aton(ip), socket.INADDR_ANY)
-    )
-    return sock
+from proto.ssl_vision_wrapper_pb2 import SSL_WrapperPacket
+from proto.ssl_vision_geometry_pb2 import SSL_FieldShapeType
+from visionsocket import parser_vision_network, VisionSocket
 
 
-def update_cameras(wrapper, sock: socket.socket):
-    calib = wrapper.geometry.calib
-    while True:
-        received = ssl_vision_wrapper.SSL_WrapperPacket()
-        received.ParseFromString(sock.recv(65536))
-        if received.HasField('geometry'):
-            for camera in received.geometry.calib:
-                if calib[camera.camera_id].SerializeToString(deterministic=True) == camera.SerializeToString(deterministic=True):
-                    continue
-
-                calib[camera.camera_id].CopyFrom(camera)
-                print(f"Updated camera {camera.camera_id} calibration.")
-
-
-def dict_to_protobuf(buf, name, value):
-    if type(value) is dict:
-        for key, entry in value.items():
-            dict_to_protobuf(getattr(buf, name) if type(name) is str else buf[name], key, entry)
-    elif type(value) is list:
-        l = getattr(buf, name)
-        for entry in value:
-            i = len(l)
-            l.add()
-            dict_to_protobuf(getattr(buf, name) if type(name) is str else buf[name], i, entry)
+def yaml_load(path: Path, default = None):
+    if path.exists():
+        with path.open('r') as file:
+            return yaml.safe_load(file)
+    elif default:
+        return default()
     else:
-        if type(name) is str:
-            setattr(buf, name, value)
-        else:
-            buf[name] = value
+        raise FileNotFoundError
 
 
-def config_bool(config, key):
-    return key not in config or config[key]
+def _generate_default_lines(wrapper, config):
+    def config_bool(config, key):
+        return key not in config or config[key]
 
-
-def generate_default_lines(wrapper, config):
     lines = wrapper.geometry.field.field_lines
 
     default_lines = config['default_lines'] if 'default_lines' in config else {}
@@ -77,7 +42,7 @@ def generate_default_lines(wrapper, config):
         line.p2.x = x2
         line.p2.y = y2
         line.thickness = thickness
-        line.type = ssl_vision_geometry.SSL_FieldShapeType.Value(type if type else line.name)
+        line.type = SSL_FieldShapeType.Value(type if type else line.name)
 
     add_line(   'TopTouchLine', -half_length,  half_width,  half_length,  half_width)
     add_line('BottomTouchLine', -half_length, -half_width,  half_length, -half_width)
@@ -93,19 +58,20 @@ def generate_default_lines(wrapper, config):
     penalty_length = half_length - field['penalty_area_depth']
     half_penalty = field['penalty_area_width'] / 2
 
-    add_line(           'LeftPenaltyStretch', -penalty_length, -half_penalty, -penalty_length,  half_penalty)
-    add_line(          'RightPenaltyStretch',  penalty_length, -half_penalty,  penalty_length,  half_penalty)
-    add_line(  'LeftFieldLeftPenaltyStretch',    -half_length,  half_penalty, -penalty_length,  half_penalty)
-    add_line( 'LeftFieldRightPenaltyStretch',    -half_length, -half_penalty, -penalty_length, -half_penalty)
-    add_line( 'RightFieldLeftPenaltyStretch',  penalty_length, -half_penalty,     half_length, -half_penalty)
-    add_line('RightFieldRightPenaltyStretch',  penalty_length,  half_penalty,     half_length,  half_penalty)
+    if config_bool(default_lines, 'penalty'):
+        add_line(           'LeftPenaltyStretch', -penalty_length, -half_penalty, -penalty_length,  half_penalty)
+        add_line(          'RightPenaltyStretch',  penalty_length, -half_penalty,  penalty_length,  half_penalty)
+        add_line(  'LeftFieldLeftPenaltyStretch',    -half_length,  half_penalty, -penalty_length,  half_penalty)
+        add_line( 'LeftFieldRightPenaltyStretch',    -half_length, -half_penalty, -penalty_length, -half_penalty)
+        add_line( 'RightFieldLeftPenaltyStretch',  penalty_length, -half_penalty,     half_length, -half_penalty)
+        add_line('RightFieldRightPenaltyStretch',  penalty_length,  half_penalty,     half_length,  half_penalty)
 
     if config_bool(default_lines, 'centercircle'):
         arcs = wrapper.geometry.field.field_arcs
         arcs.add()
         arc = arcs[len(arcs)-1]
         arc.name = 'CenterCircle'
-        arc.type = ssl_vision_geometry.SSL_FieldShapeType.Value(arc.name)
+        arc.type = SSL_FieldShapeType.Value(arc.name)
         arc.center.x = arc.center.y = 0.0
         arc.radius = field['center_circle_radius']
         arc.a1 = 0
@@ -113,25 +79,34 @@ def generate_default_lines(wrapper, config):
         arc.thickness = thickness
 
 
+def load_geometry(path: Path) -> SSL_WrapperPacket:
+    config = yaml_load(path)
+    wrapper = SSL_WrapperPacket()
+    ParseDict(config, wrapper.geometry, ignore_unknown_fields=True)
+    _generate_default_lines(wrapper, config)
+    return wrapper
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(prog='Geometry Publisher')
-    parser.add_argument('--vision_ip', default='224.5.23.2', help='Multicast IP address of the vision')
-    parser.add_argument('--vision_port', type=int, default=10006, help='Multicast port of the vision')
+    parser = parser_vision_network(argparse.ArgumentParser(prog='Geometry publisher'))
     parser.add_argument('--config', default='geometry.yml', help='Geometry configuration file')
     args = parser.parse_args()
 
-    wrapper = ssl_vision_wrapper.SSL_WrapperPacket()
-    with open(args.config, 'r') as file:
-        config = yaml.safe_load(file)
-    dict_to_protobuf(wrapper.geometry, 'field', config['field'])
-    dict_to_protobuf(wrapper.geometry, 'calib', config['calib'])
-    dict_to_protobuf(wrapper.geometry, 'models', config['models'])
-    generate_default_lines(wrapper, config)
+    wrapper = load_geometry(Path(args.config))
+    calib = wrapper.geometry.calib
 
-    sock = open_multicast_socket(args.vision_ip, args.vision_port)
+    receiver = VisionSocket(args=args)
+    def update_cameras(_self, received):
+        if received.HasField('geometry'):
+            for camera in received.geometry.calib:
+                if calib[camera.camera_id].SerializeToString(deterministic=True) == camera.SerializeToString(deterministic=True):
+                    continue
 
-    threading.Thread(target=update_cameras, name="Update cameras", args=(wrapper, sock), daemon=True).start()
+                calib[camera.camera_id].CopyFrom(camera)
+                print(f"Updated camera {camera.camera_id} calibration.")
+    receiver.consume = update_cameras
 
-    while True:
-        sock.sendto(wrapper.SerializeToString(), (args.vision_ip, args.vision_port))
-        time.sleep(1.0)
+    with receiver:
+        while True:
+            receiver.send(wrapper)
+            time.sleep(1.0)

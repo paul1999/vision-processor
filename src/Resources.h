@@ -14,6 +14,8 @@
 #include "Perspective.h"
 #include "opencl.h"
 
+double getTime();
+
 
 typedef struct __attribute__ ((packed)) RGB {
 	cl_uchar r;
@@ -36,8 +38,6 @@ public:
 	double centerBlobRadius;
 	double sideBlobRadius;
 	double ballRadius;
-
-	std::string groundTruth;
 
 	double minTrackingRadius;
 	double maxBallVelocity;
@@ -70,6 +70,9 @@ public:
 	double maxIntersectionDistance;
 	double maxLineSegmentOffset;
 	double maxLineSegmentAngle;
+
+	std::string groundTruth;
+	bool waitForGeometry;
 
 	std::shared_ptr<GCSocket> gcSocket;
 	std::shared_ptr<VisionSocket> socket;

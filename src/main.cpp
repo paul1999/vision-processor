@@ -10,13 +10,9 @@
 #include <opencv2/video/background_segm.hpp>
 
 #define DRAW_DEBUG_BLOBS false
-#define DRAW_DEBUG_IMAGES true
+#define DRAW_DEBUG_IMAGES false
 #define DEBUG_PRINT false
 #define RUNAWAY_PRINT false
-
-static double getTime() {
-	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
-}
 
 //1 indicates green, 0 pink, increasing 2d angle starting from bot orientation most significant bit to least significant bit
 /*const int patterns[16] = {
@@ -333,23 +329,16 @@ int main(int argc, char* argv[]) {
 	cl::Kernel colorKernel = r.openCl->compileFile("kernel/color.cl");
 	cl::Kernel circleKernel = r.openCl->compileFile("kernel/circularize.cl");
 
-	if(!r.groundTruth.empty())
-		r.socket->send(GroundTruth(r.groundTruth, r.camId, getTime()).getMessage());
+	CLImage clImg;
 
-	//Preallocation: massive performance differences during enqueue kernel
-	int rggbWidth, rggbHeight;
-	std::string name;
-	{
-		std::shared_ptr<Image> img = r.camera->readImage();
-		Image rggb = img->toRGGB();
-		rggbWidth = rggb.width;
-		rggbHeight = rggb.height;
-		name = img->name;
+	while(r.waitForGeometry && !r.socket->getGeometryVersion()) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		r.socket->geometryCheck();
 	}
-	CLImage clImg(rggbWidth, rggbHeight, false);
 
 	uint32_t frameId = 0;
 	while(true) {
+		frameId++;
 		std::shared_ptr<Image> img = r.camera->readImage();
 		if(img == nullptr)
 			break;
@@ -360,7 +349,15 @@ int main(int argc, char* argv[]) {
 		//TODO Extent (min/max x/y axisparallel for 3D based search)
 		r.mask->geometryCheck();
 
-		OpenCL::wait(r.openCl->run(buf2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), img->toRGGB().buffer, clImg.image));
+		{
+			Image rggb = img->toRGGB();
+
+			//Preallocation: massive performance differences during enqueue kernel
+			if(clImg.width != rggb.width || clImg.height != rggb.height)
+				clImg = CLImage(rggb.width, rggb.height, false);
+
+			OpenCL::wait(r.openCl->run(buf2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), rggb.buffer, clImg.image));
+		}
 
 		//std::shared_ptr<Image> mask = std::make_shared<Image>(&PixelFormat::U8, img->width, img->height);
 		//OpenCL::wait(r.openCl->run(r.bgkernel, cl::EnqueueArgs(cl::NDRange(img->width, img->height)), img->buffer, bg->buffer, mask->buffer, img->format->stride, img->format->rowStride, (uint8_t)16)); //TODO adaptive threshold
@@ -373,7 +370,7 @@ int main(int argc, char* argv[]) {
 		if(r.perspective->geometryVersion) {
 			SSL_WrapperPacket wrapper;
 			SSL_DetectionFrame* detection = wrapper.mutable_detection();
-			detection->set_frame_number(frameId++);
+			detection->set_frame_number(frameId);
 			detection->set_t_capture(startTime);
 			if(img->timestamp != 0)
 				detection->set_t_capture_camera(img->timestamp);
@@ -562,7 +559,6 @@ int main(int argc, char* argv[]) {
 				break;
 		} else if(r.socket->getGeometryVersion()) {
 			geometryCalibration(r, *img);
-			break;
 		}
 
 		r.rtpStreamer->sendFrame(img);

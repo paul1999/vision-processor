@@ -5,6 +5,10 @@ static uint8_t readHue(YAML::Node node, double fallback) {
 	return node.as<double>(fallback) * 256.0 / 360.0;
 }
 
+double getTime() {
+	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
+}
+
 Resources::Resources(YAML::Node config) {
 	openCl = std::make_shared<OpenCL>();
 	arrayPool = std::make_shared<AlignedArrayPool>();
@@ -36,7 +40,6 @@ Resources::Resources(YAML::Node config) {
 	}
 
 	camId = config["cam_id"].as<int>(0);
-	groundTruth = config["ground_truth"].as<std::string>("");
 
 	YAML::Node thresholds = config["thresholds"].IsDefined() ? config["thresholds"] : YAML::Node();
 	minCircularity = thresholds["circularity"].as<double>(10.0);
@@ -70,6 +73,10 @@ Resources::Resources(YAML::Node config) {
 	maxIntersectionDistance = geometry["max_intersection_distance"].as<double>(0.2);
 	maxLineSegmentOffset = geometry["max_line_segment_offset"].as<double>(10.0);
 	maxLineSegmentAngle = geometry["max_line_segment_angle"].as<double>(3.0) * M_PI/180.0;
+
+	YAML::Node benchmark = config["benchmark"].IsDefined() ? config["benchmark"] : YAML::Node();
+	groundTruth = benchmark["ground_truth"].as<std::string>("gt.yml");
+	waitForGeometry = benchmark["wait_for_geometry"].as<bool>(false);
 
 	YAML::Node network = config["network"].IsDefined() ? config["network"] : YAML::Node();
 	gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(sizes["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());

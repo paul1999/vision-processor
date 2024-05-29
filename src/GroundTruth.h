@@ -3,15 +3,9 @@
 #include <string>
 #include <vector>
 
-#include <google/protobuf/message.h>
+#include "proto/ssl_vision_detection.pb.h"
 
 
-class GroundTruth {
-public:
-	explicit GroundTruth(const std::string& source, int cameraId, double timestamp);
+std::vector<SSL_DetectionFrame> parseGroundTruth(const std::string& source);
+const SSL_DetectionFrame& getCorrespondingFrame(const std::vector<SSL_DetectionFrame>& groundTruth, uint32_t frameId);
 
-	const google::protobuf::Message& getMessage() const { return *message; }
-
-private:
-	std::unique_ptr<google::protobuf::Message> message;
-};

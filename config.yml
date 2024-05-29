@@ -89,3 +89,9 @@ network:
   #stream_ip_base_end: 100
   # Camera stream port
   #stream_port: 10100
+
+benchmark:
+  # Ground truth file
+  #ground_truth: gt.yml
+  # Wait for geometry prior to processing frames
+  #wait_for_geometry: false
