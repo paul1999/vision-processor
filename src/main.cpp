@@ -555,8 +555,6 @@ int main(int argc, char* argv[]) {
 			detection->set_t_sent(getTime());
 			r.socket->send(wrapper);
 			std::cout << "[main] time " << (getTime() - startTime) * 1000.0 << " ms " << matches.size() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
-			if(DRAW_DEBUG_IMAGES)
-				break;
 		} else if(r.socket->getGeometryVersion()) {
 			geometryCalibration(r, *img);
 		}

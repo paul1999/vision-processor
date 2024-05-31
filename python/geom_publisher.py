@@ -96,7 +96,7 @@ if __name__ == '__main__':
     calib = wrapper.geometry.calib
 
     receiver = VisionSocket(args=args)
-    def update_cameras(_self, received):
+    def update_cameras(received):
         if received.HasField('geometry'):
             for camera in received.geometry.calib:
                 if calib[camera.camera_id].SerializeToString(deterministic=True) == camera.SerializeToString(deterministic=True):

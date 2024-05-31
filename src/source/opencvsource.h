@@ -6,7 +6,9 @@
 
 class OpenCVSource : public VideoSource {
 public:
-	explicit OpenCVSource(const std::string& path): capture(path) {}
+	explicit OpenCVSource(const std::string& path): capture(path), name(path) {
+		std::replace(name.begin(), name.end(), '/', '_');
+	}
 
 	std::shared_ptr<Image> readImage() override {
 		cv::Mat mat;
@@ -15,7 +17,7 @@ public:
 			return nullptr;
 
 		uint8_t* read = mat.data;
-		std::shared_ptr<Image> image = std::make_shared<Image>(&PixelFormat::RGGB8, mat.cols/2, mat.rows/2);
+		std::shared_ptr<Image> image = std::make_shared<Image>(&PixelFormat::RGGB8, mat.cols/2, mat.rows/2, name);
 		CLMap<uint8_t> write = image->write<uint8_t>();
 		for(int y = 0; y < mat.rows; y++) {
 			for(int x = 0; x < mat.cols; x++) {
@@ -35,4 +37,5 @@ public:
 
 private:
 	cv::VideoCapture capture;
+	std::string name;
 };

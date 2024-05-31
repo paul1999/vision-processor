@@ -55,4 +55,4 @@ if __name__ == '__main__':
             with video.with_suffix('.' + args.binary.name + '.yml').open('w') as file:
                 yaml.dump(detections, file, Dumper=yaml.CDumper)
 
-    threaded_field_iter(args.data_folder, consumer)
+    threaded_field_iter(args.data_folder, consumer, field_filter=args.field)

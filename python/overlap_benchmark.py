@@ -10,7 +10,7 @@ import yaml
 from binary import parser_binary, run_binary
 from dataset import parser_test_data, iterate_field, Dataset
 from geom_publisher import load_geometry
-from python.proto.ssl_vision_detection_pb2 import SSL_DetectionRobot, SSL_DetectionBall
+from proto.ssl_vision_detection_pb2 import SSL_DetectionRobot, SSL_DetectionBall
 from visionsocket import parser_vision_network, VisionRecorder
 
 
@@ -21,7 +21,7 @@ def double_files(a: Path, b: Path, glob: str) -> set[str]:
 
 def is_video(path: Path) -> bool:
     with path.open('r') as file:
-        return len(yaml.safe_load(file)) > 1
+        return len(yaml.load(file, yaml.CLoader)) > 1
 
 
 def reproject(args: argparse.Namespace, recorder: VisionRecorder, dataset: Dataset, geometryname: str, detectionsname: str) -> tuple[list[SSL_DetectionBall], list[SSL_DetectionRobot], list[SSL_DetectionRobot]]:
@@ -67,6 +67,22 @@ if __name__ == '__main__':
                     a_detection = reproject(args, recorder, a, geometryname, detectionsname)
                     b_detection = reproject(args, recorder, b, geometryname, detectionsname)
 
+                    ball_pair_candidates = []
+                    for a_ball in a_detection[0]:
+                        min_dist = 1000.0
+                        min_ball = None
+                        for b_ball in b_detection[0]:
+                            diff = (a_ball.x - a_ball.x, a_ball.y - a_ball.y)
+                            dist = math.sqrt(diff[0]**2 + diff[1]**2)
+                            if dist < min_dist:
+                                min_dist = dist
+                                min_ball = b_ball
+
+                        if min_ball:
+                            ball_pair_candidates.append((a_ball, min_ball))
+
+                    ball_pairs = []
+                    #for a_ball, b_ball in ball_pair_candidates:
                     #TODO balls
 
                     error = 0.0

@@ -7,19 +7,22 @@ int halfLineWidthEstimation(const Resources& r, const Image& img) {
 	visibleFieldExtent(r, true, min, max);
 
 	Eigen::Vector2f extent = max - min;
+	Eigen::Vector2f camera(img.width, img.height);
+
+	// Assume large field extent side is large camera side
 	if(extent[0] < extent[1])
 		std::swap(extent[0], extent[1]);
-
-	Eigen::Vector2f camera(img.width, img.height);
 	if(camera[0] < camera[1])
 		std::swap(camera[0], camera[1]);
 
 	Eigen::Vector2f ratio = camera.array() / extent.array();
-	if(ratio[0] < ratio[1])
-		std::swap(ratio[0], ratio[1]);
 
-	const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
-	return std::ceil(ratio[0] * (float)field.line_thickness()/2.0f);
+	return std::ceil(std::max(ratio[0], ratio[1]) * (float)r.socket->getGeometry().field().line_thickness()/2.0f);
+}
+
+static inline bool threshold(const Resources& r, int value, int neg, int pos) {
+	//return value - neg > r.fieldLineThreshold && value - pos > r.fieldLineThreshold;
+	return value - neg > r.fieldLineThreshold && value - pos > r.fieldLineThreshold && abs(pos - neg) < r.fieldLineThreshold;
 }
 
 Image thresholdImage(const Resources& r, const Image& gray, const int halfLineWidth) {
@@ -32,11 +35,9 @@ Image thresholdImage(const Resources& r, const Image& gray, const int halfLineWi
 		for (int x = halfLineWidth; x < width - halfLineWidth; x++) {
 			int value = data[x + y * width];
 			tData[x + y * width] = (
-										   (value - data[x - halfLineWidth + y * width] > r.fieldLineThreshold &&
-											value - data[x + halfLineWidth + y * width] > r.fieldLineThreshold) ||
-										   (value - data[x + (y - halfLineWidth) * width] > r.fieldLineThreshold &&
-											value - data[x + (y + halfLineWidth) * width] > r.fieldLineThreshold)
-								   ) ? 255 : 0;
+					threshold(r, value, data[x - halfLineWidth + y * width], data[x + halfLineWidth + y * width]) ||
+					threshold(r, value, data[x + (y - halfLineWidth) * width], data[x + (y + halfLineWidth) * width])
+			) ? 255 : 0;
 		}
 	}
 

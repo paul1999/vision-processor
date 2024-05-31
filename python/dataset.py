@@ -15,6 +15,7 @@ from proto.ssl_vision_wrapper_pb2 import SSL_WrapperPacket
 
 def parser_test_data(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument('--data_folder', default='test-data', help='Data folder', type=Path)
+    parser.add_argument('--field', default='*', help='Field filter')
     return parser
 
 
@@ -86,14 +87,14 @@ def iterate_field(field: Path) -> Iterable[Dataset]:
             yield Dataset(dataset)
 
 
-def iterate_fields(fields: Path) -> Iterable[Dataset]:
-    for field in fields.iterdir():
+def iterate_fields(fields: Path, field_filter='*') -> Iterable[Dataset]:
+    for field in fields.glob(field_filter):
         if field.is_dir():
             for dataset in iterate_field(field):
                 yield dataset
 
 
-def threaded_field_iter(fields: Path, consumer, workers=None):
+def threaded_field_iter(fields: Path, consumer, workers=None, field_filter='*'):
     if workers == 1:
         pool = builtins
     else:
@@ -102,4 +103,4 @@ def threaded_field_iter(fields: Path, consumer, workers=None):
 
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
 
-    concurrent.futures.wait(pool.map(consumer, iterate_fields(fields)))
+    concurrent.futures.wait(pool.map(consumer, iterate_fields(fields, field_filter)))

@@ -243,8 +243,10 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	const bool calibHeight = r.cameraHeight == 0.0;
 	if(calibHeight) {
 		distortionModel.pos.z() = 5000.0f;
-		distortionModel.updateDerived();
+	} else {
+		distortionModel.pos.z() = r.cameraHeight;
 	}
+	distortionModel.updateDerived();
 
 	int minError = INT_MAX;
 	CameraModel minModel;
