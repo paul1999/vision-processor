@@ -9,8 +9,7 @@
 #include "calib/GeomModel.h"
 #include <opencv2/video/background_segm.hpp>
 
-#define DRAW_DEBUG_BLOBS false
-#define DRAW_DEBUG_IMAGES false
+#define DRAW_DEBUG_BLOBS true
 #define DEBUG_PRINT false
 #define RUNAWAY_PRINT false
 
@@ -59,20 +58,6 @@ static void filterMatches(const Resources& r, std::list<Match>& matches, const s
 			return dist({match.x, match.y}, {match2.x, match2.y}) < 2*radius;
 		});
 	});
-}
-
-static void getResult(const Resources& r, Image& gxy, Image& gx, Image& gy, RGB color, const float height, const float radius, CLArray& pos, CLArray& result, const int areaSize) {
-	color.r = color.r * r.contrast;
-	color.g = color.g * r.contrast;
-	color.b = color.b * r.contrast;
-
-	OpenCL::wait(r.openCl->run(r.ringkernel, cl::EnqueueArgs(cl::NDRange(areaSize)), gxy.buffer, gx.buffer, gy.buffer, pos.buffer, result.buffer, r.perspective->getClPerspective(), height, radius, color));
-}
-
-static bool outsideField(const Resources& r, V2 fieldPos) {
-	//TODO additional tolerances
-	return abs(fieldPos.x) > r.perspective->getFieldLength()/2.0f + r.perspective->getBoundaryWidth() ||
-	       abs(fieldPos.y) > r.perspective->getFieldWidth()/2.0f + r.perspective->getBoundaryWidth();
 }
 
 static void findBots(Resources& r, std::list<Match>& centerBlobs, const std::list<Match>& greenBlobs, const std::list<Match>& pinkBlobs, SSL_DetectionFrame* detection, bool yellow) {
@@ -186,71 +171,6 @@ static void findBalls(const Resources& r, const std::list<Match>& orange, SSL_De
 	}
 }
 
-static void getAreas(Resources& r, RLEVector& field, RLEVector& other, std::vector<RLEVector>& blobs, int type) {
-	for(auto& camera : r.socket->getTrackedObjects()) {
-		for (const auto& object: camera.second) {
-			V2 position = r.perspective->field2image({object.x, object.y, object.z});
-
-			RLEVector area = r.perspective->getRing(position, object.z, 0.0, object.id == -1 ? r.ballRadius : 90.0);
-			field.remove(area);
-			other.add(area);
-
-			if(type * 16 <= object.id && (type + 1) * 16 > object.id) { //Targeted
-				RLEVector blob = r.perspective->getRing(position, object.z, 0.0, object.id == -1 ? r.ballRadius : r.centerBlobRadius);
-
-				other.remove(blob);
-				blobs.push_back(blob);
-			}
-		}
-	}
-}
-
-std::pair<float, float> getMinAndMedian(Resources& r, Image& gxy, Image& gx, Image& gy, RLEVector& area, bool bot, RGB& color) {
-	int areaSize = area.size();
-	auto pos = area.scanArea(*r.arrayPool);
-	auto result = r.arrayPool->acquire<float>(areaSize);
-	getResult(
-			r, gxy, gx, gy, color,
-			bot ? r.gcSocket->defaultBotHeight : r.ballRadius,
-			bot ? r.centerBlobRadius : r.ballRadius,
-			*pos, *result, areaSize
-	);
-
-	auto map = result->read<float>();
-	std::nth_element(*map, *map+areaSize/2, *map+areaSize);
-	return {*std::min_element(*map, *map + areaSize), map[areaSize/2]};
-}
-
-void printSSR(Resources& r, Image& img, Image& gx, Image& gy, int type, RGB rgb) {
-	RLEVector field = r.mask->getRuns();
-	RLEVector other;
-	std::vector<RLEVector> blobs;
-	getAreas(r, field, other, blobs, type);
-
-	std::pair<float, float> bestField = getMinAndMedian(r, img, gx, gy, field, type >= 0, rgb);
-	std::pair<float, float> bestOther = getMinAndMedian(r, img, gx, gy, other, type >= 0, rgb);
-
-	float bestBlob = MAXFLOAT;
-	float worstBlob = 0.0;
-	for(auto& blob : blobs) {
-		std::pair<float, float> result = getMinAndMedian(r, img, gx, gy, blob, type >= 0, rgb);
-		if(bestBlob > result.first)
-			bestBlob = result.first;
-		if(worstBlob < result.first)
-			worstBlob = result.first;
-	}
-
-	if(blobs.empty()) {
-		std::cout << "[Med " << type << "] Field:" << bestField.second << " Other:" << bestOther.second << std::endl;
-		std::cout << "[Min " << type << "] Field:" << bestField.first << " Other:" << bestOther.first << std::endl;
-	} else {
-		std::cout << "[Med " << type << "] Field:" << bestField.second << " Other:" << bestOther.second << std::endl;
-		std::cout << "[Min " << type << "] Field:" << bestField.first << " Other:" << bestOther.first << " Best:" << bestBlob << " Worst: " << worstBlob << std::endl;
-		std::cout << "[SSR Med " << type << "] Field:" << (bestField.second / worstBlob) << " Best:" << (bestField.second / bestBlob) << std::endl;
-		std::cout << "[SSR Min " << type << "] Field:" << (bestField.first / worstBlob) << " Other:" << (bestOther.first / worstBlob) << " Best:" << (bestField.first / bestBlob) << std::endl;
-	}
-}
-
 //https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
 RGB RgbToHsv(const RGB& rgb) {
 	RGB hsv;
@@ -310,12 +230,12 @@ static void bgrDrawBlobs(const Resources& r, Image& bgr, const std::list<Match>&
 	}
 }
 
-typedef struct __attribute__ ((packed)) RGBA {
-	cl_uchar r;
-	cl_uchar g;
-	cl_uchar b;
-	cl_uchar a;
-} RGBA;
+static void ensureSize(CLImage& image, int width, int height, std::string name) {
+	if(image.width == width && image.height == height)
+		return;
+
+	image = CLImage(image.format, width, height, name);
+}
 
 int main(int argc, char* argv[]) {
 	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
@@ -329,7 +249,10 @@ int main(int argc, char* argv[]) {
 	cl::Kernel colorKernel = r.openCl->compileFile("kernel/color.cl");
 	cl::Kernel circleKernel = r.openCl->compileFile("kernel/circularize.cl");
 
-	CLImage clImg;
+	CLImage clImg(&PixelFormat::RGBA8);
+	CLImage flat(&PixelFormat::RGBA8);
+	CLImage color(&PixelFormat::F32);
+	CLImage circ(&PixelFormat::F32);
 
 	while(r.waitForGeometry && !r.socket->getGeometryVersion()) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -345,19 +268,7 @@ int main(int argc, char* argv[]) {
 
 		double startTime = getTime();
 		r.socket->geometryCheck();
-		r.perspective->geometryCheck(img->width, img->height);
-		//TODO Extent (min/max x/y axisparallel for 3D based search)
-		r.mask->geometryCheck();
-
-		{
-			Image rggb = img->toRGGB();
-
-			//Preallocation: massive performance differences during enqueue kernel
-			if(clImg.width != rggb.width || clImg.height != rggb.height)
-				clImg = CLImage(rggb.width, rggb.height, false);
-
-			OpenCL::wait(r.openCl->run(buf2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), rggb.buffer, clImg.image));
-		}
+		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
 
 		//std::shared_ptr<Image> mask = std::make_shared<Image>(&PixelFormat::U8, img->width, img->height);
 		//OpenCL::wait(r.openCl->run(r.bgkernel, cl::EnqueueArgs(cl::NDRange(img->width, img->height)), img->buffer, bg->buffer, mask->buffer, img->format->stride, img->format->rowStride, (uint8_t)16)); //TODO adaptive threshold
@@ -368,6 +279,18 @@ int main(int argc, char* argv[]) {
 		//TODO idea: delta images for new targets finding, else just tracking
 
 		if(r.perspective->geometryVersion) {
+			{
+				//TODO fix toRGGB necessity
+				Image rggb = img->toRGGB();
+				ensureSize(clImg, rggb.width, rggb.height, img->name);
+
+				OpenCL::wait(r.openCl->run(buf2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), rggb.buffer, clImg.image));
+			}
+
+			ensureSize(flat, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+			ensureSize(color, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+			ensureSize(circ, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+
 			SSL_WrapperPacket wrapper;
 			SSL_DetectionFrame* detection = wrapper.mutable_detection();
 			detection->set_frame_number(frameId);
@@ -376,44 +299,24 @@ int main(int argc, char* argv[]) {
 				detection->set_t_capture_camera(img->timestamp);
 			detection->set_camera_id(r.camId);
 
-			OpenCL::wait(r.openCl->run(perspectiveKernel, cl::EnqueueArgs(cl::NDRange(r.mask->fieldSizeX, r.mask->fieldSizeY)), clImg.image, r.mask->flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.mask->fieldScale, (float)r.mask->fieldExtentX[0], (float)r.mask->fieldExtentY[0]));
-			if(DRAW_DEBUG_IMAGES) {
-				cv::imwrite("img/" + img->name + ".perspective.png", r.mask->flat->read<RGBA>().cv);
-			}
-			OpenCL::wait(r.openCl->run(colorKernel, cl::EnqueueArgs(cl::NDRange(r.mask->fieldSizeX, r.mask->fieldSizeY)), r.mask->flat->image, r.mask->color->image));
-			if(DRAW_DEBUG_IMAGES) {
-				Image grayscale(&PixelFormat::U8, r.mask->fieldSizeX, r.mask->fieldSizeY, img->name);
-				{
-					CLMap<uint8_t> write = grayscale.write<uint8_t>();
-					CLImageMap<float> read = r.mask->color->read<float>();
-					for(int y = 0; y < r.mask->fieldSizeY; y++) {
-						for(int x = 0; x < r.mask->fieldSizeX; x++) {
-							write[x + r.mask->fieldSizeX * y] = cv::saturate_cast<uint8_t>(read[x + read.rowPitch * y] / 16.0f + 128);
-						}
-					}
-				}
-				grayscale.save(".color.png");
-			}
+			cl::NDRange visibleFieldRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1]);
+			OpenCL::wait(r.openCl->run(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg.image, flat.image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->optimalFieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]));
+			if(r.debugImages)
+				flat.save(".perspective.png");
 
-			OpenCL::wait(r.openCl->run(circleKernel, cl::EnqueueArgs(cl::NDRange(r.mask->fieldSizeX, r.mask->fieldSizeY)), r.mask->color->image, r.mask->circ->image));
-			if(DRAW_DEBUG_IMAGES) {
-				Image grayscale(&PixelFormat::U8, r.mask->fieldSizeX, r.mask->fieldSizeY, img->name);
-				{
-					CLMap<uint8_t> write = grayscale.write<uint8_t>();
-					CLImageMap<float> read = r.mask->circ->read<float>();
-					for(int y = 0; y < r.mask->fieldSizeY; y++) {
-						for(int x = 0; x < r.mask->fieldSizeX; x++) {
-							write[x + r.mask->fieldSizeX * y] = cv::saturate_cast<uint8_t>(read[x + read.rowPitch * y]);
-						}
-					}
-				}
-				grayscale.save(".circle.png");
-			}
+			OpenCL::wait(r.openCl->run(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat.image, color.image));
+			if(r.debugImages)
+				color.save(".color.png", 0.0625f, 128.f);
+
+			OpenCL::wait(r.openCl->run(circleKernel, cl::EnqueueArgs(visibleFieldRange), color.image, circ.image));
+			if(r.debugImages)
+				circ.save(".circle.png");
 
 			CLArray counter(sizeof(int));
 			int maxMatches = 10000; //TODO make configurable
 			CLArray matchArray(sizeof(Match)*maxMatches);
-			OpenCL::wait(r.openCl->run(matchKernel, cl::EnqueueArgs(cl::NDRange(r.mask->fieldSizeX, r.mask->fieldSizeY)), r.mask->flat->image, r.mask->circ->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, r.minSaturation, r.minBrightness, (int)round(r.sideBlobRadius/r.mask->fieldScale), maxMatches));
+			//TODO ROUND
+			OpenCL::wait(r.openCl->run(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat.image, circ.image, matchArray.buffer, counter.buffer, (float)r.minCircularity, r.minSaturation, r.minBrightness, (int)round(r.sideBlobRadius/r.perspective->optimalFieldScale), maxMatches));
 			//std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 
 			std::list<Match> matches;
@@ -422,8 +325,8 @@ int main(int argc, char* argv[]) {
 				int matchAmount = 0;
 				while(matchAmount < maxMatches && (matchMap[matchAmount].x != 0 || matchMap[matchAmount].y != 0 || matchMap[matchAmount].score != 0)) {
 					Match& match = matchMap[matchAmount];
-					match.x = match.x*r.mask->fieldScale + r.mask->fieldExtentX[0];
-					match.y = match.y*r.mask->fieldScale + r.mask->fieldExtentY[0];
+					match.x = match.x*r.perspective->optimalFieldScale + r.perspective->visibleFieldExtent[0];
+					match.y = match.y*r.perspective->optimalFieldScale + r.perspective->visibleFieldExtent[2];
 					matchAmount++;
 				}
 
@@ -474,7 +377,7 @@ int main(int argc, char* argv[]) {
 				rggbDrawBlobs(r, *img, pinkBlobs, r.pink);
 			}
 
-			if(DRAW_DEBUG_IMAGES) {
+			if(r.debugImages) {
 				Image bgr = img->toBGR();
 				bgrDrawBlobs(r, bgr, orangeBlobs, r.orange);
 				bgrDrawBlobs(r, bgr, yellowBlobs, r.yellow);
@@ -545,12 +448,6 @@ int main(int argc, char* argv[]) {
 			}
 			std::swap(clImg.image, clBg.image);*/
 			//cv::imwrite("img/schubert.bg.png", clBg.read<RGBA>().cv);break;
-
-			if(DEBUG_PRINT) {
-				/*printSSR(r, gxy, gx, gy, -1, r.orange);
-				printSSR(r, gxy, gx, gy, 0, r.yellow);
-				printSSR(r, gxy, gx, gy, 1, r.blue);*/
-			}
 
 			detection->set_t_sent(getTime());
 			r.socket->send(wrapper);

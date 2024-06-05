@@ -77,12 +77,12 @@ Resources::Resources(YAML::Node config) {
 	YAML::Node benchmark = config["benchmark"].IsDefined() ? config["benchmark"] : YAML::Node();
 	groundTruth = benchmark["ground_truth"].as<std::string>("gt.yml");
 	waitForGeometry = benchmark["wait_for_geometry"].as<bool>(false);
+	debugImages = benchmark["debug_images"].as<bool>(false);
 
 	YAML::Node network = config["network"].IsDefined() ? config["network"] : YAML::Node();
 	gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(sizes["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());
 	socket = std::make_shared<VisionSocket>(network["vision_ip"].as<std::string>("224.5.23.2"), network["vision_port"].as<int>(10006), gcSocket->defaultBotHeight, ballRadius);
 	perspective = std::make_shared<Perspective>(socket, camId);
-	mask = std::make_shared<Mask>(perspective, gcSocket->maxBotHeight, ballRadius);
 	rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + network["stream_ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(network["stream_ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(network["stream_port"].as<int>(10100)));
 
 	blurkernel = openCl->compileFile("kernel/blur.cl");

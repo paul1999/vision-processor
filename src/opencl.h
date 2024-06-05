@@ -7,6 +7,37 @@
 #include <opencv2/core/mat.hpp>
 
 
+class PixelFormat {
+public:
+	static const PixelFormat RGBA8;
+	static const PixelFormat RGGB8;
+	static const PixelFormat BGR888;
+	static const PixelFormat U8;
+	static const PixelFormat I8;
+	static const PixelFormat F32;
+	static const PixelFormat NV12;
+
+	[[nodiscard]] int pixelSize() const { return stride*rowStride; }
+
+	const int stride;
+	const int rowStride;
+	const bool color;
+	const int cvType;
+
+	const std::string clKernelToNV12;
+private:
+	PixelFormat(int stride, int rowStride, bool color, int cvType, std::string clKernelToNV12): stride(stride), rowStride(rowStride), color(color), cvType(cvType), clKernelToNV12(std::move(clKernelToNV12)) {}
+};
+
+
+typedef struct __attribute__ ((packed)) RGBA {
+	cl_uchar r;
+	cl_uchar g;
+	cl_uchar b;
+	cl_uchar a;
+} RGBA;
+
+
 class OpenCL {
 public:
 	OpenCL();
@@ -90,20 +121,45 @@ public:
 	const int size;
 };
 
+
+template<typename T>
+class CLImageMap;
+
+
+class CLImage {
+public:
+	explicit CLImage(const PixelFormat* format);
+	CLImage(const PixelFormat* format, int width, int height, std::string name);
+
+	template<typename T> CLImageMap<T> read() const { return std::move(CLImageMap<T>(*this, CL_MAP_READ)); }
+	template<typename T> CLImageMap<T> write() { return std::move(CLImageMap<T>(this, CL_MAP_WRITE_INVALIDATE_REGION)); }
+	template<typename T> CLImageMap<T> readWrite() { return std::move(CLImageMap<T>(this, CL_MAP_WRITE)); }
+
+	void save(const std::string& suffix, float factor = 1.0f, float offset = 0.0f) const;
+
+	cl::Image2D image;
+
+	const PixelFormat* format;
+	int width;
+	int height;
+	std::string name;
+};
+
+
 template<typename T>
 class CLImageMap {
 public:
-	explicit CLImageMap(const cl::Image2D& image, int width, int height, bool f, int clRWType): image(image) {
+	explicit CLImageMap(const CLImage& image, int clRWType): image(image.image) {
 		int error;
 		size_t origin[]{0, 0, 0};
-		size_t region[]{(size_t)width, (size_t)height, 1};
-		map = (T*) clEnqueueMapImage(cl::CommandQueue::getDefault()(), image(), true, clRWType, origin, region, &bytePitch, nullptr, 0, nullptr, nullptr, &error);
+		size_t region[]{(size_t)image.width, (size_t)image.height, 1};
+		map = (T*) clEnqueueMapImage(cl::CommandQueue::getDefault()(), image.image(), true, clRWType, origin, region, &bytePitch, nullptr, 0, nullptr, nullptr, &error);
 		if(error != CL_SUCCESS) {
 			std::cerr << "[OpenCL] Enqueue map image error: " << error << std::endl;
 			exit(1);
 		}
 		rowPitch = bytePitch/sizeof(T);
-		cv = ::cv::Mat(height, width, f ? CV_32FC1 : CV_8UC4, map, bytePitch);
+		cv = ::cv::Mat(image.height, image.width, image.format == &PixelFormat::F32 ? CV_32FC1 : CV_8UC4, map, bytePitch);
 	}
 	~CLImageMap() {
 		if(unmoved) {
@@ -138,19 +194,4 @@ private:
 	const cl::Image2D image;
 	T* map;
 	bool unmoved = true;
-};
-
-class CLImage {
-public:
-	CLImage();
-	CLImage(int width, int height, bool f);
-
-	template<typename T> CLImageMap<T> read() const { return std::move(CLImageMap<T>(image, width, height, f, CL_MAP_READ)); }
-	template<typename T> CLImageMap<T> write() { return std::move(CLImageMap<T>(image, width, height, f, CL_MAP_WRITE_INVALIDATE_REGION)); }
-	template<typename T> CLImageMap<T> readWrite() { return std::move(CLImageMap<T>(image, width, height, f, CL_MAP_WRITE)); }
-
-	cl::Image2D image;
-	int width;
-	int height;
-	bool f;
 };

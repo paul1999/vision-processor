@@ -44,8 +44,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     recorder = VisionRecorder(args=args)
-    total_error = defaultdict(lambda: 0.0)
-    total_fields = defaultdict(lambda: 0)
+    total_bot_error = defaultdict(lambda: 0.0)
+    total_bot_fields = defaultdict(lambda: 0)
+    total_ball_error = defaultdict(lambda: 0.0)
+    total_ball_fields = defaultdict(lambda: 0)
 
     for field in args.data_folder.iterdir():
         if not field.is_dir():
@@ -72,7 +74,7 @@ if __name__ == '__main__':
                         min_dist = 1000.0
                         min_ball = None
                         for b_ball in b_detection[0]:
-                            diff = (a_ball.x - a_ball.x, a_ball.y - a_ball.y)
+                            diff = (b_ball.x - a_ball.x, b_ball.y - a_ball.y)
                             dist = math.sqrt(diff[0]**2 + diff[1]**2)
                             if dist < min_dist:
                                 min_dist = dist
@@ -81,22 +83,42 @@ if __name__ == '__main__':
                         if min_ball:
                             ball_pair_candidates.append((a_ball, min_ball))
 
-                    ball_pairs = []
-                    #for a_ball, b_ball in ball_pair_candidates:
-                    #TODO balls
+                    balls_error = 0.0
+                    balls = 0
+                    for a_ball, b_ball in ball_pair_candidates:
+                        min_dist = 1000.0
+                        min_ball = None
+                        for a_ball2 in a_detection[0]:
+                            diff = (b_ball.x - a_ball2.x, b_ball.y - a_ball2.y)
+                            dist = math.sqrt(diff[0] ** 2 + diff[1] ** 2)
+                            if dist < min_dist:
+                                min_dist = dist
+                                min_ball = a_ball2
 
-                    error = 0.0
+                        if min_ball and min_ball == a_ball:
+                            diff = (a_ball.x - b_ball.x, a_ball.y - b_ball.y)
+                            balls_error += math.sqrt(diff[0] ** 2 + diff[1] ** 2)
+                            balls += 1
+
+                    bots_error = 0.0
                     bots = 0
                     for a_bot, b_bot in merge_bots(a_detection[1], b_detection[1]) + merge_bots(a_detection[2], b_detection[2]):
                         diff = (a_bot.x - b_bot.x, a_bot.y - b_bot.y)
-                        error += math.sqrt(diff[0]**2 + diff[1]**2)
+                        bots_error += math.sqrt(diff[0] ** 2 + diff[1] ** 2)
                         bots += 1
 
-                    error = error / bots if bots > 0 else math.nan
-                    print(f"Reprojection error: {error} mm for {bots} bots")
-                    if bots > 0:
-                        total_error[geometryname] += error
-                        total_fields[geometryname] += 1
+                    balls_error = balls_error / balls if balls > 0 else math.nan
+                    print(f"Reprojection error: {balls_error} mm for {balls} balls")
+                    if balls > 0:
+                        total_ball_error[geometryname] += balls_error
+                        total_ball_fields[geometryname] += 1
 
-    for geometryname in total_error:
-        print(f"Total error: {total_error[geometryname] / total_fields[geometryname]} mm for {total_fields[geometryname]} combinations with {geometryname}")
+                    bots_error = bots_error / bots if bots > 0 else math.nan
+                    print(f"Reprojection error: {bots_error} mm for {bots} bots")
+                    if bots > 0:
+                        total_bot_error[geometryname] += bots_error
+                        total_bot_fields[geometryname] += 1
+
+    for geometryname in total_bot_error:
+        print(f"Total error: {total_bot_error[geometryname] / total_bot_fields[geometryname]} mm for {total_bot_fields[geometryname]} combinations with {geometryname}")
+        print(f"Total error: {total_ball_error[geometryname] / total_ball_fields[geometryname]} mm for {total_ball_fields[geometryname]} combinations with {geometryname}")

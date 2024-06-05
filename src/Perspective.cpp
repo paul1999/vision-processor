@@ -1,10 +1,21 @@
 #include "Perspective.h"
 
-#include <cfloat>
 #include <cmath>
 
-void Perspective::geometryCheck(int width, int height) {
-	if(socket->getGeometryVersion() == geometryVersion)
+static void updateExtent(Eigen::Vector4f& visibleFieldExtent, const Eigen::Vector3f& point) {
+	if(point.x() < visibleFieldExtent[0])
+		visibleFieldExtent[0] = point.x();
+	if(point.x() > visibleFieldExtent[1])
+		visibleFieldExtent[1] = point.x();
+
+	if(point.y() < visibleFieldExtent[2])
+		visibleFieldExtent[2] = point.y();
+	if(point.y() > visibleFieldExtent[3])
+		visibleFieldExtent[3] = point.y();
+}
+
+void Perspective::geometryCheck(const int width, const int height, const double maxBotHeight) {
+	if(socket->getGeometryVersion() == geometryVersion && model.size.x() == width && model.size.y() == height)
 		return;
 
 	bool calibFound = false;
@@ -22,6 +33,34 @@ void Perspective::geometryCheck(int width, int height) {
 	model.ensureSize({width, height});
 	geometryVersion = socket->getGeometryVersion();
 	field = socket->getGeometry().field();
+
+	//update visibleFieldExtent
+	Eigen::Vector2f center = model.image2field({0.0f, 0.0f}, (float)maxBotHeight).head<2>();
+	visibleFieldExtent = {center.x(), center.x(), center.y(), center.y()};
+
+	for(int x = 0; x < width; x++)
+		updateExtent(visibleFieldExtent, model.image2field({(float)x, 0.0f}, (float)maxBotHeight));
+	for(int x = 0; x < width; x++)
+		updateExtent(visibleFieldExtent, model.image2field({(float)x, (float)height - 1.0f}, (float)maxBotHeight));
+
+	for(int y = 0; y < height; y++)
+		updateExtent(visibleFieldExtent, model.image2field({0.0f, (float)y}, (float)maxBotHeight));
+	for(int y = 0; y < height; y++)
+		updateExtent(visibleFieldExtent, model.image2field({(float)width - 1.0f, (float)y}, (float)maxBotHeight));
+
+	// clamp to field boundaries
+	const float halfLength = (float)getFieldLength()/2.0f + (float)getBoundaryWidth();
+	const float halfWidth = (float)getFieldWidth()/2.0f + (float)getBoundaryWidth();
+	visibleFieldExtent[0] = std::max(visibleFieldExtent[0], -halfLength);
+	visibleFieldExtent[1] = std::min(visibleFieldExtent[1], halfLength);
+	visibleFieldExtent[2] = std::max(visibleFieldExtent[2], -halfWidth);
+	visibleFieldExtent[3] = std::min(visibleFieldExtent[3], halfWidth);
+
+	//TODO optimalFieldScale
+	reprojectedFieldSize = (Eigen::Vector2f(
+			visibleFieldExtent[1] - visibleFieldExtent[0],
+			visibleFieldExtent[3] - visibleFieldExtent[2]
+	) * (1.0f/optimalFieldScale)).array().rint().cast<int>();
 }
 
 V2 Perspective::image2field(V2 pos, double height) const {
@@ -82,35 +121,4 @@ inline static bool inRange(V2 a, V2 b, double sqInner, double sqRadius) {
 	V2 diff = {a.x - b.x, a.y - b.y};
 	double sqr = diff.x*diff.x + diff.y*diff.y;
 	return sqr >= sqInner && sqr <= sqRadius;
-}
-
-RLEVector Perspective::getRing(V2 pos, double height, double inner, double radius) {
-	V2 root = image2field(pos, height);
-	double sqInner = inner*inner;
-	double sqRadius = radius*radius;
-	RLEVector result;
-	if(inner == 0)
-		result.add(pos.x, pos.y);
-
-	//TODO outside of perspective
-	//TODO more accurate size (due to distortion)
-	V2 min = pos;
-	while(inRange(root, image2field({min.x-1, pos.y}, height), 0, sqRadius) && min.x > 0)
-		min.x--;
-	while(inRange(root, image2field({pos.x, min.y-1}, height), 0, sqRadius) && min.y > 0)
-		min.y--;
-
-	V2 max = pos;
-	while(inRange(root, image2field({max.x+1, pos.y}, height), 0, sqRadius) && max.x+1 < getWidth())
-		max.x++;
-	while(inRange(root, image2field({pos.x, max.y+1}, height), 0, sqRadius) && max.y+1 < getHeight())
-		max.y++;
-
-	for(int x = min.x; x <= max.x; x++) {
-		for(int y = min.y; y <= max.y; y++) {
-			if(inRange(root, image2field({(double)x, (double)y}, height), sqInner, sqRadius))
-				result.add(x, y);
-		}
-	}
-	return result;
 }

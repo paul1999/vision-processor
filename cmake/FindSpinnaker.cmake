@@ -10,7 +10,8 @@ find_path(SPINNAKER_INCLUDE_DIRS NAMES
         /usr/include/spinnaker/
         /usr/local/include/spinnaker/)
 
-find_library(SPINNAKER_LIBS NAMES Spinnaker
+find_library(SPINNAKER_LIBS NAMES
+        Spinnaker
         HINTS
         /opt/spinnaker/lib
         /usr/lib

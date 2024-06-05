@@ -3,35 +3,6 @@
 #include <opencv2/imgcodecs.hpp>
 #include "image.h"
 
-const PixelFormat PixelFormat::RGGB8 = PixelFormat(2, 2, true, CV_8UC1, "void kernel c(global const uchar* in, global uchar* out) {"
-															   "	const int i0 = 2*get_global_id(0) + 2*get_global_id(1)*2*get_global_size(0);"
-															   "	const int i1 = i0 + 2*get_global_size(0);"
-															   "	const int uvout = UV_OFFSET + get_global_id(0)/2*2 + get_global_id(1)/2*get_global_size(0);"
-															   "	const short r = in[i0]; const short g0 = in[i0+1]; const short g1 = in[i1]; const short b = in[i1+1];"
-															   "	out[get_global_id(0) + get_global_id(1)*get_global_size(0)] = (uchar)((66*r + 64*g0 + 65*g1 + 25*b) / 256 + 16);"
-															   "	out[uvout] = (uchar)((-38*r + -37*g0 + -37*g1 + 112*b) / 256 + 128);"
-															   "  out[uvout+1] = (uchar)((112*r + -47*g0 + -47*g1 + -18*b) / 256 + 128);"
-															   "}");
-const PixelFormat PixelFormat::BGR888 = PixelFormat(3, 1, true, CV_8UC3, "void kernel c(global const uchar* in, global uchar* out) {"
-																"	const int i = 3*get_global_id(0) + get_global_id(1)*3*get_global_size(0);"
-																"	const int uvout = UV_OFFSET + get_global_id(0)/2*2 + get_global_id(1)/2*get_global_size(0);"
-																"	const short b = in[i]; const short g = in[i+1]; const short r = in[i+2];"
-																"	out[get_global_id(0) + get_global_id(1)*get_global_size(0)] = (uchar)((66*r + 129*g + 25*b) / 256 + 16);"
-																"	out[uvout] = (uchar)((-38*r + -74*g + 112*b) / 256 + 128);"
-																"  out[uvout+1] = (uchar)((112*r + -94*g + -18*b) / 256 + 128);"
-																"}");
-const PixelFormat PixelFormat::U8 = PixelFormat(1, 1, false, CV_8UC1, "void kernel c(global const uchar* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = in[i]; }");
-const PixelFormat PixelFormat::I8 = PixelFormat(1, 1, false, CV_8UC1, "void kernel c(global const char* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i] + 127; }");
-const PixelFormat PixelFormat::F32 = PixelFormat(4, 1, false, CV_32FC1, "void kernel c(global const float* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i]; }");  //(uchar)fabs(in[i]) + 127
-//TODO oversized du to planar architecture (1.5)
-const PixelFormat PixelFormat::NV12 = PixelFormat(1, 2, true, CV_8UC1, "void kernel c(global const uchar* in, global uchar* out) {"
-															  "	const int yi = get_global_id(0) + get_global_id(1)*get_global_size(0);"
-															  "	const int uvi = UV_OFFSET + get_global_id(0)/2 + get_global_id(1)/2*get_global_size(0);"
-															  "	out[yi] = in[yi];"
-															  "	out[uvi] = in[uvi];"
-															  "	out[uvi+1] = in[uvi+1];"
-															  "}");
-
 CVMap Image::cvRead() const {
 	return std::move(CVMap(*this, CL_MAP_READ));
 }
@@ -162,7 +133,3 @@ CVMap::CVMap(const Image& image, int clRWType): map(std::move(CLMap<uint8_t>(ima
 	else
 		mat = cv::Mat(image.height, image.width, image.format->cvType, *map);
 }
-
-/*CLImage::CLImage(int width, int height, int planes): width(width), height(height), planes(planes) {
-
-}*/

@@ -2,7 +2,6 @@
 
 #include "proto/ssl_vision_geometry.pb.h"
 #include "udpsocket.h"
-#include "RLEVector.h"
 #include "CameraModel.h"
 
 struct V2 {
@@ -29,7 +28,7 @@ typedef struct __attribute__ ((packed)) {
 class Perspective {
 public:
 	Perspective(std::shared_ptr<VisionSocket> socket, int camId): socket(std::move(socket)), camId(camId) {}
-	void geometryCheck(int width, int height);
+	void geometryCheck(int width, int height, const double maxBotHeight);
 
 	V2 image2field(V2 pos, double height) const;
 	V2 field2image(V3 pos) const;
@@ -41,10 +40,13 @@ public:
 	int getBoundaryWidth();
 
 	ClPerspective getClPerspective() const;
-	RLEVector getRing(V2 pos, double height, double inner, double radius);
 
 	SSL_GeometryFieldSize field;
 	CameraModel model;
+
+	Eigen::Vector4f visibleFieldExtent; // xmin, xmax, ymin, ymax
+	float optimalFieldScale = 5.f; // [mm/px]
+	Eigen::Vector2i reprojectedFieldSize = Eigen::Vector2i(0, 0);
 
 	int geometryVersion = 0;
 

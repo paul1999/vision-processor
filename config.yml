@@ -95,3 +95,5 @@ benchmark:
   #ground_truth: gt.yml
   # Wait for geometry prior to processing frames
   #wait_for_geometry: false
+  # Print code debug images
+  #debug_images: false

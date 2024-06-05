@@ -9,7 +9,6 @@
 #include "source/opencvsource.h"
 #include "source/imagesource.h"
 #include "rtpstreamer.h"
-#include "Mask.h"
 #include "udpsocket.h"
 #include "Perspective.h"
 #include "opencl.h"
@@ -73,13 +72,13 @@ public:
 
 	std::string groundTruth;
 	bool waitForGeometry;
+	bool debugImages;
 
 	std::shared_ptr<GCSocket> gcSocket;
 	std::shared_ptr<VisionSocket> socket;
 	std::shared_ptr<Perspective> perspective;
 	std::shared_ptr<OpenCL> openCl;
 	std::shared_ptr<AlignedArrayPool> arrayPool;
-	std::shared_ptr<Mask> mask;
 	std::shared_ptr<RTPStreamer> rtpStreamer;
 
 	cl::Kernel blurkernel;

@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	std::shared_ptr<Image> img = r.camera->readImage();
-	r.perspective->geometryCheck(img->width, img->height);
+	r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
 
 	Image gray = img->toGrayscale();
 	Image thresholded = thresholdImage(r, gray, halfLineWidthEstimation(r, gray));

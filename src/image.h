@@ -7,27 +7,6 @@
 #include <utility>
 #include "opencl.h"
 
-class PixelFormat {
-public:
-	static const PixelFormat RGGB8;
-	static const PixelFormat BGR888;
-	static const PixelFormat U8;
-	static const PixelFormat I8;
-	static const PixelFormat F32;
-	static const PixelFormat NV12;
-
-	[[nodiscard]] int pixelSize() const { return stride*rowStride; }
-
-	const int stride;
-	const int rowStride;
-	const bool color;
-	const int cvType;
-
-	const std::string clKernelToNV12;
-private:
-	PixelFormat(int stride, int rowStride, bool color, int cvType, std::string clKernelToNV12): stride(stride), rowStride(rowStride), color(color), cvType(cvType), clKernelToNV12(std::move(clKernelToNV12)) {}
-};
-
 
 class CVMap;
 
@@ -63,19 +42,6 @@ public:
 	const double timestamp;
 	const std::string name;
 };
-
-/*class CLImage {
-	explicit CLImage(int width, int height, int planes);
-
-	template<typename T> CLMap<T> read() const { return std::move(CLMap<T>(buffer, size, CL_MAP_READ)); }
-	template<typename T> CLMap<T> write() { return std::move(CLMap<T>(buffer, size, CL_MAP_WRITE_INVALIDATE_REGION)); }
-	template<typename T> CLMap<T> readWrite() { return std::move(CLMap<T>(buffer, size, CL_MAP_WRITE)); }
-
-	const cl::Image2DArray image;
-	const int width;
-	const int height;
-	const int planes;
-};*/
 
 
 class CVMap {
