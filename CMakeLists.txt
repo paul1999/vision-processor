@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.22)
 project(vision_processor)
 
 option(WITH_SPINNAKER "Build with Spinnaker support (if library available)" ON)
+option(WITH_MVIMPACT "Build with mvIMPACT/Bluefox support (if library available)" ON)
 
 # Adapted from https://stackoverflow.com/a/48832234 CC BY-SA 4.0 by einpoklum
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
@@ -21,10 +22,11 @@ find_package(Protobuf REQUIRED)
 find_package(OpenCL REQUIRED)
 
 find_package(Spinnaker)
+find_package(mvIMPACT)
 
 add_compile_definitions(CL_HPP_TARGET_OPENCL_VERSION=300)
-link_libraries(${YAML_CPP_LIBRARIES} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL ${Protobuf_LIBRARIES})
-include_directories(src ${YAML_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_INCLUDE_DIRS} ${Protobuf_INCLUDE_DIRS} Eigen3::Eigen)
+link_libraries(${YAML_CPP_LIBRARIES} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL ${Protobuf_LIBRARIES} ${mvIMPACT_LIBS})
+include_directories(src ${YAML_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_INCLUDE_DIRS} ${Protobuf_INCLUDE_DIRS} Eigen3::Eigen ${mvIMPACT_INCLUDE_DIRS})
 
 file(GLOB PROTO_FILES proto/*.proto)
 file(GLOB CL_KERNELS RELATIVE "kernel/" kernel/*.cl)

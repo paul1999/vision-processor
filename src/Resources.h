@@ -4,9 +4,6 @@
 #include <string>
 #include <memory>
 #include <yaml-cpp/node/node.h>
-#include "source/spinnakersource.h"
-#include "source/videosource.h"
-#include "source/opencvsource.h"
 #include "source/imagesource.h"
 #include "rtpstreamer.h"
 #include "udpsocket.h"

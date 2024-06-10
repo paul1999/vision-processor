@@ -4,11 +4,11 @@
 #cam_id: 0
 
 # Camera source type. Availability depending on libraries installed.
-# SPINNAKER, IMAGES, OPENCV
+# SPINNAKER, MVIMPACT, IMAGES, OPENCV
 #source: SPINNAKER
 
-# Spinnaker camera id
-#spinnaker_id: 0
+# Spinnaker, mvIMPACT or OpenCV(V4L) camera id
+#source_id: 0
 
 #OpenCV camera device or video file path
 #opencv_path: /dev/video0

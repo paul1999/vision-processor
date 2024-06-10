@@ -3,6 +3,11 @@
 #include <utility>
 #include "Resources.h"
 
+#include "source/spinnakersource.h"
+#include "source/mvimpactsource.h"
+#include "source/videosource.h"
+#include "source/opencvsource.h"
+
 static uint8_t readHue(const YAML::Node& node, double fallback) {
 	return node.as<double>(fallback) * 256.0 / 360.0;
 }
@@ -23,29 +28,35 @@ Resources::Resources(YAML::Node config) {
 	arrayPool = std::make_shared<AlignedArrayPool>();
 
 	auto source = config["source"].as<std::string>("SPINNAKER");
+	int source_id = config["source_id"].as<int>(0);
 
 #ifdef SPINNAKER
 	if(source == "SPINNAKER")
-		camera = std::make_unique<SpinnakerSource>(config["spinnaker_id"].as<int>(0));
+		camera = std::make_unique<SpinnakerSource>(source_id);
+#endif
+
+#ifdef MVIMPACT
+	if(source == "MVIMPACT")
+		camera = std::make_unique<MVImpactSource>(source_id);
 #endif
 
 	if(source == "OPENCV")
-		camera = std::make_unique<OpenCVSource>(config["opencv_path"].as<std::string>("/dev/video0"));
+		camera = std::make_unique<OpenCVSource>(config["opencv_path"].as<std::string>("/dev/video" + std::to_string(source_id)));
 
 	if(source == "IMAGES") {
 		auto paths = config["images"].as<std::vector<std::string>>();
 
 		if(paths.empty()) {
-			std::cerr << "Source IMAGES needs at least one image." << std::endl;
-			return;
+			std::cerr << "[Resources] Source IMAGES needs at least one image." << std::endl;
+			exit(1);
 		}
 
 		camera = std::make_unique<ImageSource>(paths);
 	}
 
 	if(camera == nullptr) {
-		std::cerr << "No camera/image source defined." << std::endl;
-		return;
+		std::cerr << "[Resources] No camera/image source defined." << std::endl;
+		exit(1);
 	}
 
 	camId = config["cam_id"].as<int>(0);
