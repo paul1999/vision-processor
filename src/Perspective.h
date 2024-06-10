@@ -28,16 +28,13 @@ typedef struct __attribute__ ((packed)) {
 class Perspective {
 public:
 	Perspective(std::shared_ptr<VisionSocket> socket, int camId): socket(std::move(socket)), camId(camId) {}
-	void geometryCheck(int width, int height, const double maxBotHeight);
+	void geometryCheck(int width, int height, double maxBotHeight);
 
 	V2 image2field(V2 pos, double height) const;
 	V2 field2image(V3 pos) const;
 
-	int getWidth();
-	int getHeight();
-	int getFieldLength();
-	int getFieldWidth();
-	int getBoundaryWidth();
+	Eigen::Vector2f flat2field(const Eigen::Vector2f& pos) const;
+	Eigen::Vector2f field2flat(const Eigen::Vector2f& pos) const;
 
 	ClPerspective getClPerspective() const;
 
@@ -45,7 +42,7 @@ public:
 	CameraModel model;
 
 	Eigen::Vector4f visibleFieldExtent; // xmin, xmax, ymin, ymax
-	float optimalFieldScale = 5.f; // [mm/px]
+	float fieldScale = 5.f; // [mm/px]
 	Eigen::Vector2i reprojectedFieldSize = Eigen::Vector2i(0, 0);
 
 	int geometryVersion = 0;

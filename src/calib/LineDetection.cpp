@@ -21,8 +21,8 @@ int halfLineWidthEstimation(const Resources& r, const Image& img) {
 }
 
 static inline bool threshold(const Resources& r, int value, int neg, int pos) {
-	//return value - neg > r.fieldLineThreshold && value - pos > r.fieldLineThreshold;
-	return value - neg > r.fieldLineThreshold && value - pos > r.fieldLineThreshold && abs(pos - neg) < r.fieldLineThreshold;
+	return value - neg > r.fieldLineThreshold && value - pos > r.fieldLineThreshold;
+	//return value - neg > r.fieldLineThreshold && value - pos > r.fieldLineThreshold && abs(pos - neg) < r.fieldLineThreshold;
 }
 
 Image thresholdImage(const Resources& r, const Image& gray, const int halfLineWidth) {
@@ -62,8 +62,10 @@ std::vector<CVLines> groupLineSegments(const Resources& r, CVLines& segments) {
 				if(
 						abs(acosf(abs(v2.dot(v1) / (sqrtf(v1.dot(v1)) * sqrtf(v2.dot(v2)))))) <= r.maxLineSegmentAngle &&
 						// https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
-						std::min(abs(v1[0]*(l.first[1] - root.first[1]) - (l.first[0] - root.first[0])*v1[1]) / sqrtf(v1.dot(v1)), abs(v1[0]*(l.second[1] - root.first[1]) - (l.second[0] - root.first[0])*v1[1]) / sqrtf(v1.dot(v1))) <= r.maxLineSegmentOffset
+						std::min(abs(v1[0]*(l.first[1] - root.first[1]) - (l.first[0] - root.first[0])*v1[1]) / sqrtf(v1.dot(v1)), abs(v1[0]*(l.second[1] - root.first[1]) - (l.second[0] - root.first[0])*v1[1]) / sqrtf(v1.dot(v1))) <= r.maxLineSegmentOffset &&
+						(dist(root.first, l.first) <= 200 || dist(root.second, l.first) <= 200 || dist(root.first, l.second) <= 200 || dist(root.second, l.second) <= 200)
 						) {
+					//TODO max dist
 					compound.push_back(l);
 					lit = segments.erase(lit);
 				} else {

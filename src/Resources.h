@@ -15,6 +15,8 @@
 
 double getTime();
 
+void ensureSize(CLImage& image, int width, int height, std::string name);
+
 
 typedef struct __attribute__ ((packed)) RGB {
 	cl_uchar r;

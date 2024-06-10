@@ -15,7 +15,8 @@ static void updateExtent(Eigen::Vector4f& visibleFieldExtent, const Eigen::Vecto
 }
 
 void Perspective::geometryCheck(const int width, const int height, const double maxBotHeight) {
-	if(socket->getGeometryVersion() == geometryVersion && model.size.x() == width && model.size.y() == height)
+	Eigen::Vector2i size(width, height);
+	if(socket->getGeometryVersion() == geometryVersion && model.size == size)
 		return;
 
 	bool calibFound = false;
@@ -30,7 +31,7 @@ void Perspective::geometryCheck(const int width, const int height, const double 
 	if(!calibFound)
 		return;
 
-	model.ensureSize({width, height});
+	model.ensureSize(size);
 	geometryVersion = socket->getGeometryVersion();
 	field = socket->getGeometry().field();
 
@@ -48,19 +49,21 @@ void Perspective::geometryCheck(const int width, const int height, const double 
 	for(int y = 0; y < height; y++)
 		updateExtent(visibleFieldExtent, model.image2field({(float)width - 1.0f, (float)y}, (float)maxBotHeight));
 
+	Eigen::Vector2f unclampedFieldSize = Eigen::Vector2f(visibleFieldExtent[1] - visibleFieldExtent[0], visibleFieldExtent[3] - visibleFieldExtent[2]);
+	fieldScale = std::min(unclampedFieldSize.maxCoeff() / (float)size.maxCoeff(), unclampedFieldSize.minCoeff() / (float)size.minCoeff());
+
 	// clamp to field boundaries
-	const float halfLength = (float)getFieldLength()/2.0f + (float)getBoundaryWidth();
-	const float halfWidth = (float)getFieldWidth()/2.0f + (float)getBoundaryWidth();
+	const float halfLength = (float)field.field_length()/2.0f + (float)field.boundary_width();
+	const float halfWidth = (float)field.field_width()/2.0f + (float)field.boundary_width();
 	visibleFieldExtent[0] = std::max(visibleFieldExtent[0], -halfLength);
 	visibleFieldExtent[1] = std::min(visibleFieldExtent[1], halfLength);
 	visibleFieldExtent[2] = std::max(visibleFieldExtent[2], -halfWidth);
 	visibleFieldExtent[3] = std::min(visibleFieldExtent[3], halfWidth);
 
-	//TODO optimalFieldScale
-	reprojectedFieldSize = (Eigen::Vector2f(
-			visibleFieldExtent[1] - visibleFieldExtent[0],
-			visibleFieldExtent[3] - visibleFieldExtent[2]
-	) * (1.0f/optimalFieldScale)).array().rint().cast<int>();
+	Eigen::Vector2f fieldSize = Eigen::Vector2f(visibleFieldExtent[1] - visibleFieldExtent[0], visibleFieldExtent[3] - visibleFieldExtent[2]);
+	reprojectedFieldSize = (fieldSize * (1.0f / fieldScale)).array().rint().cast<int>();
+
+	std::cout << "[Perspective] Visible field extent: " << visibleFieldExtent.transpose() << "mm (xmin,xmax,ymin,ymax) Field scale: " << fieldScale << "mm/px" << std::endl;
 }
 
 V2 Perspective::image2field(V2 pos, double height) const {
@@ -73,25 +76,14 @@ V2 Perspective::field2image(V3 pos) const {
 	return {p.x(), p.y()};
 }
 
-int Perspective::getWidth() {
-	return model.size.x();
+Eigen::Vector2f Perspective::flat2field(const Eigen::Vector2f& pos) const {
+	return pos * fieldScale + Eigen::Vector2f(visibleFieldExtent[0], visibleFieldExtent[2]);
 }
 
-int Perspective::getHeight() {
-	return model.size.y();
+Eigen::Vector2f Perspective::field2flat(const Eigen::Vector2f& pos) const {
+	return (pos - Eigen::Vector2f(visibleFieldExtent[0], visibleFieldExtent[2])) / fieldScale;
 }
 
-int Perspective::getFieldLength() {
-	return field.field_length();
-}
-
-int Perspective::getFieldWidth() {
-	return field.field_width();
-}
-
-int Perspective::getBoundaryWidth() {
-	return field.boundary_width();
-}
 
 ClPerspective Perspective::getClPerspective() const {
 	const Eigen::Matrix3f& i2f = model.i2fOrientation;
@@ -115,10 +107,4 @@ ClPerspective Perspective::getClPerspective() const {
 				f2i(2, 0), f2i(2, 1), f2i(2, 2)
 			}
 	};
-}
-
-inline static bool inRange(V2 a, V2 b, double sqInner, double sqRadius) {
-	V2 diff = {a.x - b.x, a.y - b.y};
-	double sqr = diff.x*diff.x + diff.y*diff.y;
-	return sqr >= sqInner && sqr <= sqRadius;
 }

@@ -7,39 +7,12 @@
 #include "Resources.h"
 #include "GroundTruth.h"
 #include "calib/GeomModel.h"
+#include "pattern.h"
 #include <opencv2/video/background_segm.hpp>
 
 #define DRAW_DEBUG_BLOBS true
 #define DEBUG_PRINT false
 #define RUNAWAY_PRINT false
-
-//1 indicates green, 0 pink, increasing 2d angle starting from bot orientation most significant bit to least significant bit
-/*const int patterns[16] = {
-		0b0100, // 0
-		0b1100, // 1
-		0b1101, // 2
-		0b0101, // 3
-		0b0010, // 4
-		0b1010, // 5
-		0b1011, // 6
-		0b0011, // 7
-		0b1111, // 8
-		0b0000, // 9
-		0b0110, //10
-		0b1001, //11
-		0b1110, //12
-		0b1000, //13
-		0b0111, //14
-		0b0001  //15
-};*/
-const int patternLUT[16] = { 9, 15, 4, 7, 0, 3, 10, 14, 13, 11, 5, 6, 1, 2, 12, 8 };
-
-const double patternAngles[4] = {
-		1.0021839078803572,
-		2.5729802346752537,
-		-2.5729802346752537, //3.7102050725043325
-		-1.0021839078803572 //5.281001399299229
-};
 
 struct __attribute__ ((packed)) Match {
 	float x, y;
@@ -230,20 +203,13 @@ static void bgrDrawBlobs(const Resources& r, Image& bgr, const std::list<Match>&
 	}
 }
 
-static void ensureSize(CLImage& image, int width, int height, std::string name) {
-	if(image.width == width && image.height == height)
-		return;
-
-	image = CLImage(image.format, width, height, name);
-}
-
 int main(int argc, char* argv[]) {
 	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
-	cl::Kernel buf2img = r.openCl->compileFile("kernel/buf2img.cl", "-D RGGB");
-	cl::Kernel sobel = r.openCl->compileFile("kernel/sobel.cl");
-	cl::Kernel blur = r.openCl->compileFile("kernel/blur.cl");
+	cl::Kernel buf2img = r.openCl->compileFile("kernel/rggb2img.cl");
+	//cl::Kernel sobel = r.openCl->compileFile("kernel/sobel.cl");
+	//cl::Kernel blur = r.openCl->compileFile("kernel/blur.cl");
 	cl::Kernel matchKernel = r.openCl->compileFile("kernel/matches.cl");
-	cl::Kernel houghKernel = r.openCl->compileFile("kernel/hough.cl");
+	//cl::Kernel houghKernel = r.openCl->compileFile("kernel/hough.cl");
 
 	cl::Kernel perspectiveKernel = r.openCl->compileFile("kernel/perspective.cl");
 	cl::Kernel colorKernel = r.openCl->compileFile("kernel/color.cl");
@@ -291,16 +257,8 @@ int main(int argc, char* argv[]) {
 			ensureSize(color, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 			ensureSize(circ, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 
-			SSL_WrapperPacket wrapper;
-			SSL_DetectionFrame* detection = wrapper.mutable_detection();
-			detection->set_frame_number(frameId);
-			detection->set_t_capture(startTime);
-			if(img->timestamp != 0)
-				detection->set_t_capture_camera(img->timestamp);
-			detection->set_camera_id(r.camId);
-
 			cl::NDRange visibleFieldRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1]);
-			OpenCL::wait(r.openCl->run(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg.image, flat.image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->optimalFieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]));
+			OpenCL::wait(r.openCl->run(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg.image, flat.image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]));
 			if(r.debugImages)
 				flat.save(".perspective.png");
 
@@ -316,7 +274,7 @@ int main(int argc, char* argv[]) {
 			int maxMatches = 10000; //TODO make configurable
 			CLArray matchArray(sizeof(Match)*maxMatches);
 			//TODO ROUND
-			OpenCL::wait(r.openCl->run(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat.image, circ.image, matchArray.buffer, counter.buffer, (float)r.minCircularity, r.minSaturation, r.minBrightness, (int)round(r.sideBlobRadius/r.perspective->optimalFieldScale), maxMatches));
+			OpenCL::wait(r.openCl->run(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat.image, circ.image, matchArray.buffer, counter.buffer, (float)r.minCircularity, r.minSaturation, r.minBrightness, (int)round(r.sideBlobRadius/r.perspective->fieldScale), maxMatches));
 			//std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 
 			std::list<Match> matches;
@@ -325,8 +283,9 @@ int main(int argc, char* argv[]) {
 				int matchAmount = 0;
 				while(matchAmount < maxMatches && (matchMap[matchAmount].x != 0 || matchMap[matchAmount].y != 0 || matchMap[matchAmount].score != 0)) {
 					Match& match = matchMap[matchAmount];
-					match.x = match.x*r.perspective->optimalFieldScale + r.perspective->visibleFieldExtent[0];
-					match.y = match.y*r.perspective->optimalFieldScale + r.perspective->visibleFieldExtent[2];
+					Eigen::Vector2f pos = r.perspective->flat2field({match.x, match.y});
+					match.x = pos.x();
+					match.y = pos.y();
 					matchAmount++;
 				}
 
@@ -364,6 +323,14 @@ int main(int argc, char* argv[]) {
 					pinkBlobs.push_back(match);
 			}
 			//std::cout << "[blob ordering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl; //TODO 2.5 out of 10 ms!
+
+			SSL_WrapperPacket wrapper;
+			SSL_DetectionFrame* detection = wrapper.mutable_detection();
+			detection->set_frame_number(frameId);
+			detection->set_t_capture(startTime);
+			if(img->timestamp != 0)
+				detection->set_t_capture_camera(img->timestamp);
+			detection->set_camera_id(r.camId);
 
 			findBalls(r, orangeBlobs, detection);
 			findBots(r, yellowBlobs, greenBlobs, pinkBlobs, detection, true);

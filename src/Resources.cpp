@@ -1,12 +1,21 @@
 #include <yaml-cpp/yaml.h>
+
+#include <utility>
 #include "Resources.h"
 
-static uint8_t readHue(YAML::Node node, double fallback) {
+static uint8_t readHue(const YAML::Node& node, double fallback) {
 	return node.as<double>(fallback) * 256.0 / 360.0;
 }
 
 double getTime() {
 	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
+}
+
+void ensureSize(CLImage& image, int width, int height, std::string name) {
+	if(image.width == width && image.height == height)
+		return;
+
+	image = CLImage(image.format, width, height, std::move(name));
 }
 
 Resources::Resources(YAML::Node config) {

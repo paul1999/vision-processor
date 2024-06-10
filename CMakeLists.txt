@@ -29,10 +29,11 @@ include_directories(src ${YAML_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_
 file(GLOB PROTO_FILES proto/*.proto)
 file(GLOB CL_KERNELS RELATIVE "kernel/" kernel/*.cl)
 file(GLOB_RECURSE SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
-list(REMOVE_ITEM SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/geometry_benchmark.cpp")
+list(REMOVE_ITEM SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/geometry_benchmark.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/blob_benchmark.cpp")
 
 add_executable(${PROJECT_NAME} ${SRC} "src/main.cpp")
 add_executable("geometry_benchmark" ${SRC} "src/geometry_benchmark.cpp")
+add_executable("blob_benchmark" ${SRC} "src/blob_benchmark.cpp")
 
 # Adapted from https://stackoverflow.com/a/47801116 CC BY-SA 3.0 by Martin R.
 foreach(input_file IN LISTS CL_KERNELS)
@@ -44,6 +45,7 @@ endforeach()
 
 protobuf_generate(TARGET ${PROJECT_NAME} LANGUAGE cpp PROTOC_OUT_DIR "src" PROTOS ${PROTO_FILES})
 protobuf_generate(TARGET "geometry_benchmark" LANGUAGE cpp PROTOC_OUT_DIR "src" PROTOS ${PROTO_FILES})
+protobuf_generate(TARGET "blob_benchmark" LANGUAGE cpp PROTOC_OUT_DIR "src" PROTOS ${PROTO_FILES})
 protobuf_generate(TARGET ${PROJECT_NAME} LANGUAGE python PROTOC_OUT_DIR "python" PROTOS ${PROTO_FILES} PROTOC_OPTIONS --pyi_out ":${CMAKE_CURRENT_SOURCE_DIR}/python")
 
 #file(GLOB_RECURSE HEADERS "src/*.h")
