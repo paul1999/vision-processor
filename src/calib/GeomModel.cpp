@@ -23,30 +23,78 @@ static cv::Vec2f eigen2cv(const Eigen::Vector2f& v) {
 	return {v[0], v[1]};
 }
 
-static bool estimateDistortion(const std::vector<std::vector<Eigen::Vector2f>>& mergedPoints, CameraModel& model) {
-	return calibrateDistortion(mergedPoints, model);
+
+static inline float pointError(const Eigen::Vector2f& n, const Eigen::Vector2f& u, const float d0) {
+	return n.transpose().dot(u) - d0;
 }
 
-static cv::Vec2f undistort(const CameraModel& model, const cv::Vec2f& v) {
-	return eigen2cv(model.undistort(cv2eigen(v)));
+static std::vector<float> lineError(const std::vector<Eigen::Vector2f>& undistorted) {
+	float Ex = 0;
+	float Ey = 0;
+	float Exx = 0;
+	float Eyy = 0;
+	float Exy = 0;
+	for(const Eigen::Vector2f& u : undistorted) {
+		Ex += u.x();
+		Ey += u.y();
+		Exx += u.x()*u.x();
+		Eyy += u.y()*u.y();
+		Exy += u.x()*u.y();
+	}
+	Ex /= undistorted.size();
+	Ey /= undistorted.size();
+	Exx /= undistorted.size();
+	Eyy /= undistorted.size();
+	Exy /= undistorted.size();
+
+	Eigen::Vector2f n;
+	float d0;
+	if (Exx - Ex*Ex >= Eyy - Ey*Ey) {
+		float a = (Exy - Ex*Ey) / (Exx - Ex*Ex);
+		float b = (Exx*Ey - Ex*Exy) / (Exx - Ex*Ex);
+		n.x() = -a / sqrtf(a*a + 1);
+		n.y() = 1 / sqrtf(a*a + 1);
+		d0 = b / sqrtf(a*a + 1);
+	} else {
+		float c = (Exy - Ex*Ey) / (Eyy - Ey*Ey);
+		float d = (Eyy*Ex - Ey*Exy) / (Eyy - Ey*Ey);
+		n.x() = 1 / sqrtf(c*c + 1);
+		n.y() = -c / sqrtf(c*c + 1);
+		d0 = d / sqrtf(c*c + 1);
+	}
+
+	std::vector<float> error;
+	for(const Eigen::Vector2f& u : undistorted) {
+		float pe = pointError(n, u, d0);
+		/*if(isnanf(pe)) {
+			std::cout << "NaNP: " << std::endl << n << std::endl << u << std::endl << d0 << " " << Ex << " " << Ey << std::endl;
+			exit(1);
+		}*/
+		error.push_back(pe);
+	}
+	return error;
 }
 
 struct GeometryFit : public Eigen::DenseFunctor<float> {
-	const std::list<Eigen::Vector2f>& imageEdges;
+	const std::vector<std::vector<Eigen::Vector2f>>& lines;
+	const std::vector<Eigen::Vector2f>& imageEdges;
 	const std::list<Eigen::Vector2f>& fieldEdges;
 	const CameraModel& reference;
 	const bool calibHeight;
 
-	explicit GeometryFit(const std::list<Eigen::Vector2f>& imageEdges, const std::list<Eigen::Vector2f>& fieldEdges, const CameraModel& model, const bool calibHeight): imageEdges(imageEdges), fieldEdges(fieldEdges), reference(model), calibHeight(calibHeight) {}
+	explicit GeometryFit(const std::vector<std::vector<Eigen::Vector2f>>& lines, const std::vector<Eigen::Vector2f>& imageEdges, const std::list<Eigen::Vector2f>& fieldEdges, const CameraModel& model, const bool calibHeight): lines(lines), imageEdges(imageEdges), fieldEdges(fieldEdges), reference(model), calibHeight(calibHeight) {}
 
 	int operator()(const InputType &x, ValueType& fvec) const {
 		CameraModel model = reference;
-		model.updateFocalLength(x[0]);
-		model.updateEuler({x[1], x[2], x[3]});
-		model.pos.x() = x[4];
-		model.pos.y() = x[5];
+		model.distortionK2 = x[0];
+		model.principalPoint.x() = x[1];
+		model.principalPoint.y() = x[2];
+		model.focalLength = x[3];
+		model.updateEuler({x[4], x[5], x[6]});
+		model.pos.x() = x[7];
+		model.pos.y() = x[8];
 		if(calibHeight)
-			model.pos.z() = x[6];
+			model.pos.z() = x[9];
 		model.updateDerived();
 
 		auto iIt = imageEdges.cbegin();
@@ -59,11 +107,29 @@ struct GeometryFit : public Eigen::DenseFunctor<float> {
 			fvec[i++] = error.x();
 			fvec[i++] = error.y();
 		}
+
+		for(const std::vector<Eigen::Vector2f>& distorted : lines) {
+			std::vector<Eigen::Vector2f> undistorted;
+			for(const Eigen::Vector2f& d : distorted)
+				undistorted.push_back(model.normalizeUndistort(d));
+
+			std::vector<float> error = lineError(undistorted);
+			for(float e : error) {
+				if(e == NAN)
+					return -1;
+				fvec(i++) = e;
+			}
+		}
 		return 0;
 	}
 
 	int values() const {
-		return 8;
+		int size = 8;
+
+		for (const auto& item : lines)
+			size += item.size();
+
+		return size;
 	}
 };
 
@@ -131,6 +197,90 @@ std::vector<Eigen::Vector2f> getLinePixels(const Image& thresholded) {
 	return std::move(linePixels);
 }
 
+bool isClockwiseConvexQuadrilateral(const std::vector<Eigen::Vector2f>& vertexlist) {
+	//Convexity check adapted from https://math.stackexchange.com/a/1745427 by Nominal Animal under CC BY-SA 3.0
+	//Clockwise check adapted from https://stackoverflow.com/a/1165943 by Roberteo Bonvallet under CC BY-SA 3.0
+	float clockwise = 0;
+
+	float wSign = 0;
+
+	int xSign = 0;
+	int xFirstSign = 0;
+	int xFlips = 0;
+
+	int ySign = 0;
+	int yFirstSign = 0;
+	int yFlips = 0;
+
+	Eigen::Vector2f curr = vertexlist.back(); //unused
+	Eigen::Vector2f next = vertexlist.back();
+
+	for(const Eigen::Vector2f& v : vertexlist) {
+		Eigen::Vector2f prev = curr;
+		curr = next;
+		next = v;
+
+		Eigen::Vector2f b = curr - prev;
+		Eigen::Vector2f a = next - curr;
+
+		clockwise += a[0] * (next[1]+curr[1]);
+
+		if (a[0] > 0) {
+			if (xSign == 0)
+				xFirstSign = 1;
+			else if (xSign < 0)
+				xFlips++;
+
+			xSign = 1;
+		} else if (a[0] < 0) {
+			if (xSign == 0)
+				xFirstSign = -1;
+			else if (xSign > 0)
+				xFlips++;
+
+			xSign = -1;
+		}
+
+		if (xFlips > 2)
+			return false;
+
+		if (a[1] > 0) {
+			if (ySign == 0)
+				yFirstSign = 1;
+			else if (ySign < 0)
+				yFlips++;
+
+			ySign = 1;
+		} else if (a[1] < 0) {
+			if (ySign == 0)
+				yFirstSign = -1;
+			else if (ySign > 0)
+				yFlips++;
+
+			ySign = -1;
+		}
+
+		if (yFlips > 2)
+			return false;
+
+		float w = b[0]*a[1] - a[0]*b[1];
+		if (wSign == 0 && w != 0)
+			wSign = w;
+		else if ((wSign > 0 && w < 0) || (wSign < 0 && w > 0))
+			return false;
+	}
+
+	if (xSign != 0 && xFirstSign != 0 && xSign != xFirstSign)
+		xFlips++;
+	if (ySign != 0 && yFirstSign != 0 && ySign != yFirstSign)
+		yFlips++;
+
+	if (xFlips != 2 || yFlips != 2)
+		return false;
+
+	return clockwise < 0;
+}
+
 int modelError(const Resources& r, const CameraModel& model, const std::vector<Eigen::Vector2f>& linePixels) {
 	const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
 	const float halfLineWidth = (float)field.line_thickness() / 2.0f;
@@ -152,11 +302,78 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	const int halfLineWidth = halfLineWidthEstimation(r, gray);
 	std::cout << "[Geometry calibration] Half line width: " << halfLineWidth << std::endl;
 
+	// Adapted from https://stackoverflow.com/a/25436112 by user2398029 under CC BY-SA 3.0
+	// J. Immerkær, “Fast Noise Variance Estimation”, Computer Vision and Image Understanding, Vol. 64, No. 2, pp. 300-302, Sep. 1996
+	cv::Mat noiseKernel = (cv::Mat_<float>(3, 3) << 1, -2, 1, -2, 4, -2, 1, -2, 1);
+	cv::Mat noise;
+	cv::filter2D(*gray.cvRead(), noise, -1, noiseKernel);
+	float sigma = cv::sum(cv::abs(noise))[0] * sqrtf(0.5f * M_PI) / (6 * gray.width * gray.height);
+	std::cout << "[Geometry calibration] Noise sigma: " << sigma << std::endl;
+
+	//0.05 (schubert) - 0.3 (default) - 0.45 (rc19)
+
+	//https://docs.opencv.org/4.x/da/d7f/tutorial_back_projection.html
+
+	Image t(&PixelFormat::U8, gray.width, gray.height, gray.name);
+	/*cv::Mat t1, t2;
+	cv::adaptiveThreshold(*gray.cvRead(), t1, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 100 + 1, r.fieldLineThreshold);
+	cv::adaptiveThreshold(*gray.cvRead(), t2, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY_INV, 100 + 1, -r.fieldLineThreshold);
+	{
+		CLMap<uint8_t> tData = t.write<uint8_t>();
+		for (int y = 0; y < gray.height; y++) {
+			for (int x = 0; x < gray.width; x++) {
+				int pos = x + y * gray.width;
+				tData[pos] = (t1.data[pos] && t2.data[pos]) ? 255 : 0;
+			}
+		}
+	}
+	t.save(".carpet.png");*/
+	//return;
+
+	Image bgr = img.toBGR();
+	std::vector<cv::Mat> split_bgr(3);
+	cv::split(*bgr.cvRead(), split_bgr);
+
+	cv::Scalar mean, stddev;
+	cv::meanStdDev(*bgr.cvRead(), mean, stddev);
+
+	cv::Mat tb, tg, tr;
+	cv::adaptiveThreshold(split_bgr[0], tb, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 20*halfLineWidth + 1, -r.fieldLineThreshold);
+	cv::adaptiveThreshold(split_bgr[1], tg, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 20*halfLineWidth + 1, -r.fieldLineThreshold);
+	cv::adaptiveThreshold(split_bgr[2], tr, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 20*halfLineWidth + 1, -r.fieldLineThreshold);
+
+	//Image t(&PixelFormat::U8, bgr.width, bgr.height, bgr.name);
+	{
+		const CLMap<uint8_t> data = bgr.read<uint8_t>();
+		CLMap<uint8_t> tData = t.write<uint8_t>();
+		for (int y = 0; y < bgr.height; y++) {
+			for (int x = 0; x < bgr.width; x++) {
+				int pos = x + y * bgr.width;
+				tData[pos] = (tb.data[pos] && tb.data[pos+1] && tb.data[pos+2]) ? 255 : 0;
+			}
+		}
+	}
+	t.save(".carpet.png");
+
 	Image thresholded = thresholdImage(r, gray, halfLineWidth);
+	thresholded.save(".linepoints.png");
+	{
+		CVMap map = thresholded.cvReadWrite();
+		cv::bitwise_and(*map, *t.cvRead(), *map);
+	}
+	thresholded.save(".thresholded.png");
 
 	cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
 	cv::Mat4f linesMat;
 	detector->detect(*thresholded.cvRead(), linesMat);
+
+	//TODO gray/thresholded width/height might diverge from img/bgr width/height
+	//Image bgr = img.toBGR();
+	{
+		CVMap cvBgr = bgr.cvReadWrite();
+		detector->drawSegments(*cvBgr, linesMat);
+	}
+	bgr.save(".linesegments.png");
 
 	CVLines lines;
 	for(int i = 0; i < linesMat.rows; i++) {
@@ -168,6 +385,13 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	}
 	std::cout << "[Geometry calibration] Line segments: " << lines.size() << std::endl;
 
+
+	//TODO region growing field and field line search (field lines, separate)
+	//TODO crossings to field line net ("field" holes)
+	//TODO edge estimation for 90° loops (arcs and circles?)
+	//TODO reprojection error (how far are the 4 points projected)
+
+	//TODO unified calibration
 	const std::vector<CVLines> compoundLines = groupLineSegments(r, lines);
 	const CVLines mergedLines = mergeLineSegments(compoundLines);
 	std::cout << "[Geometry calibration] Lines: " << mergedLines.size() << std::endl;
@@ -193,39 +417,53 @@ void geometryCalibration(const Resources& r, const Image& img) {
 		}
 	}
 
-	CameraModel distortionModel({thresholded.width, thresholded.height}, r.camId, r.cameraAmount, r.socket->getGeometry().field());
-	//TODO better focal length
-	//TODO relative error too small with default focal length
-	//TODO check if distortion rescaling math correct
-	distortionModel.focalLength /= 4.0f;
-	if(!estimateDistortion(mergedPixels, distortionModel))
-		return;
-	distortionModel.updateFocalLength(distortionModel.focalLength * 4.0f);
-
+	//TODO major line filter necessary? Improve?
 	CVLines majorLines;
-	const float minMajorLength = std::min(img.width, img.height) * r.minMajorLineLength;
+	const float minMajorLength = std::max(img.width, img.height) * r.minMajorLineLength;
 	for(const auto& line : mergedLines) {
 		if(dist(line.first, line.second) >= minMajorLength)
-			majorLines.emplace_back(undistort(distortionModel, line.first), undistort(distortionModel, line.second));
+			majorLines.emplace_back(line.first, line.second);
 	}
 	std::cout << "[Geometry calibration] Major lines: " << majorLines.size() << std::endl;
+
+	{
+		CVMap cvBgr = bgr.cvReadWrite();
+		for (const auto& item : mergedLines) {
+			cv::line(*cvBgr, {item.first}, {item.second}, CV_RGB(0, 255, 0));
+		}
+		for (const auto& item : majorLines) {
+			cv::line(*cvBgr, {item.first}, {item.second}, CV_RGB(0, 0, 255));
+		}
+	}
+	bgr.save(".lines.png");
+
 	if(majorLines.size() < 4) {
 		std::cout << "[Geometry calibration] Less than 4 major lines, aborting calibration for this frame" << std::endl;
 		return;
 	}
 
-	const std::vector<cv::Vec2f> majorIntersections = lineIntersections(majorLines, thresholded.width, thresholded.height, r.maxIntersectionDistance);
-	std::cout << "[Geometry calibration] Major line intersections: " << majorIntersections.size() << std::endl;
-	if(majorIntersections.size() < 4) {
+	const std::vector<Eigen::Vector2f> intersections = lineIntersections(majorLines, thresholded.width, thresholded.height, r.maxIntersectionDistance);
+	std::cout << "[Geometry calibration] Line intersections: " << intersections.size() << std::endl;
+
+	{
+		CVMap cvBgr = bgr.cvReadWrite();
+		for (const auto& item : mergedLines) {
+			cv::line(*cvBgr, {item.first}, {item.second}, CV_RGB(0, 255, 0));
+		}
+		for (const auto& item : majorLines) {
+			cv::line(*cvBgr, {item.first}, {item.second}, CV_RGB(0, 0, 255));
+		}
+
+		for (const auto& item : intersections) {
+			cv::drawMarker(*cvBgr, {eigen2cv(item)}, CV_RGB(0, 255, 255));
+		}
+	}
+	bgr.save(".lines.png");
+
+	if(intersections.size() < 4) {
 		std::cout << "[Geometry calibration] Less than 4 intersections, aborting calibration for this frame" << std::endl;
 		return;
 	}
-
-	std::list<Eigen::Vector2f> edges = findOuterEdges(majorIntersections);
-	std::cout << "[Geometry calibration] Selecting image edges: ";
-	for(const Eigen::Vector2f& edge : edges)
-		std::cout << edge.transpose() << " ";
-	std::cout << std::endl;
 
 	Eigen::Vector2f extentMin;
 	Eigen::Vector2f extentMax;
@@ -240,68 +478,91 @@ void geometryCalibration(const Resources& r, const Image& img) {
 		std::cout << edge.transpose() << " ";
 	std::cout << std::endl;
 
+	CameraModel basicModel({thresholded.width, thresholded.height}, r.camId, r.cameraAmount, r.socket->getGeometry().field());
 	const bool calibHeight = r.cameraHeight == 0.0;
 	if(calibHeight) {
-		distortionModel.pos.z() = 5000.0f;
+		basicModel.pos.z() = 5000.0f;
 	} else {
-		distortionModel.pos.z() = r.cameraHeight;
+		basicModel.pos.z() = r.cameraHeight;
 	}
-	distortionModel.updateDerived();
+	basicModel.updateDerived();
 
+	float minFastError = INFINITY;
 	int minError = INT_MAX;
 	CameraModel minModel;
-	for(int orientation = 0; orientation < 8; orientation++) {
-		CameraModel model = distortionModel;
+	std::vector<Eigen::Vector2f> minEdges;
 
-		GeometryFit functor(edges, fieldEdges, distortionModel, calibHeight);
-		Eigen::NumericalDiff<GeometryFit> numDiff(functor);
-		Eigen::LevenbergMarquardt<Eigen::NumericalDiff<GeometryFit>> lm(numDiff);
+	std::vector<Eigen::Vector2f> edges(4);
+	for(const Eigen::Vector2f& a : intersections) {
+		for(const Eigen::Vector2f& b : intersections) {
+			for(const Eigen::Vector2f& c : intersections) {
+				for(const Eigen::Vector2f& d : intersections) {
+					edges[0] = a;
+					edges[1] = b;
+					edges[2] = c;
+					edges[3] = d;
+					if(!isClockwiseConvexQuadrilateral(edges))
+						continue;
 
-		Eigen::VectorXf k(calibHeight ? 7 : 6);
-		k[0] = model.focalLength;
-		Eigen::Vector3f euler = model.getEuler();
-		k[1] = euler.x();
-		k[2] = euler.y();
-		k[3] = euler.z();
-		k[4] = model.pos.x();
-		k[5] = model.pos.y();
-		if(calibHeight)
-			k[6] = model.pos.z();
+					//TODO calibrate model, evaluate score
+					for(int orientation = 0; orientation < 8; orientation++) {
+						CameraModel model = basicModel;
 
-		lm.minimize(k);
+						GeometryFit functor(mergedPixels, edges, fieldEdges, basicModel, calibHeight);
+						Eigen::NumericalDiff<GeometryFit> numDiff(functor);
+						Eigen::LevenbergMarquardt<Eigen::NumericalDiff<GeometryFit>> lm(numDiff);
 
-		if(lm.info() != Eigen::ComputationInfo::Success && lm.info() != Eigen::ComputationInfo::NoConvergence) //xtol might be too aggressive
-			continue;
+						Eigen::VectorXf k(calibHeight ? 10 : 9);
+						k[0] = model.distortionK2;
+						k[1] = model.principalPoint.x();
+						k[2] = model.principalPoint.y();
+						k[3] = model.focalLength;
+						Eigen::Vector3f euler = model.getEuler();
+						k[4] = euler.x();
+						k[5] = euler.y();
+						k[6] = euler.z();
+						k[7] = model.pos.x();
+						k[8] = model.pos.y();
+						if(calibHeight)
+							k[9] = model.pos.z();
 
-		//TODO Fixable instead of skipping? (Wrong clockwise direction?)
-		if(calibHeight && k[6] < 0) // camera below field
-			continue;
+						lm.minimize(k);
 
-		model.updateFocalLength(k[0]);
-		model.updateEuler({k[1], k[2], k[3]});
-		model.pos.x() = k[4];
-		model.pos.y() = k[5];
-		if(calibHeight)
-			model.pos.z() = k[6];
+						if(lm.info() != Eigen::ComputationInfo::Success && lm.info() != Eigen::ComputationInfo::NoConvergence) //xtol might be too aggressive
+							continue;
 
-		if(model.focalLength < 0) {
-			model.updateFocalLength(-k[0]);
-			model.f2iOrientation = Eigen::AngleAxisf(M_PI_2, Eigen::Vector3f::UnitZ()) * model.f2iOrientation;
-		}
+						if(calibHeight && k[6] < 0) // camera below field
+							continue;
 
-		model.updateDerived();
+						model.distortionK2 = k[0];
+						model.principalPoint.x() = k[1];
+						model.principalPoint.y() = k[2];
+						model.focalLength = k[3];
+						model.updateEuler({k[4], k[5], k[6]});
+						model.pos.x() = k[7];
+						model.pos.y() = k[8];
+						if(calibHeight)
+							model.pos.z() = k[9];
 
-		//TODO use modelError to refine model further
-		int error = modelError(r, model, linePixels);
-		if(error < minError) {
-			minError = error;
-			minModel = model;
-		}
+						if(model.focalLength < 0) {
+							model.focalLength = -k[3];
+							model.f2iOrientation = Eigen::AngleAxisf(M_PI_2, Eigen::Vector3f::UnitZ()) * model.f2iOrientation;
+						}
 
-		std::rotate(edges.begin(), std::next(edges.begin()), edges.end());
-		if(orientation == 3) {
-			//TODO better solution than double model checks
-			std::reverse(edges.begin(), edges.end());
+						model.updateDerived();
+
+						//TODO use modelError to refine model further
+						int error = modelError(r, model, linePixels);
+						if(error < minError) {
+							minError = error;
+							minModel = model;
+							minEdges = edges;
+						}
+
+						std::rotate(edges.begin(), std::next(edges.begin()), edges.end());
+					}
+				}
+			}
 		}
 	}
 
@@ -312,7 +573,7 @@ void geometryCalibration(const Resources& r, const Image& img) {
 
 	std::cout << "[Geometry calibration] Best model: " << minModel << " error " << (minError/(float)linePixels.size()) << std::endl;
 	std::cout << "[Geometry calibration] Best model field points: ";
-	for(const Eigen::Vector2f& edge : edges)
+	for(const Eigen::Vector2f& edge : minEdges)
 		std::cout << minModel.image2field(edge, 0.0f).head<2>().transpose() << " ";
 	std::cout << std::endl;
 
@@ -334,43 +595,5 @@ void geometryCalibration(const Resources& r, const Image& img) {
 			data[(int)linePixel.x() + (int)linePixel.y()*thresholded.width] = pointAtLine(minModel, lines, arcs, halfLineWidth, linePixel) ? 255 : 128;
 		}
 	}
-	thresholded.save(".linepoints.png");
-
-	//TODO gray/thresholded width/height might diverge from img/bgr width/height
-	Image bgr = img.toBGR();
-	{
-		CVMap cvBgr = bgr.cvReadWrite();
-		detector->drawSegments(*cvBgr, linesMat);
-	}
-	bgr.save(".linesegments.png");
-
-	{
-		CVMap cvBgr = bgr.cvReadWrite();
-		for (const auto& item : mergedLines) {
-			cv::line(*cvBgr, {item.first}, {item.second}, CV_RGB(0, 255, 0));
-		}
-		for (const auto& item : majorLines) {
-			cv::line(*cvBgr, {item.first}, {item.second}, CV_RGB(0, 0, 255));
-		}
-
-		for (const auto& item : majorIntersections) {
-			cv::drawMarker(*cvBgr, {item}, CV_RGB(0, 255, 255));
-		}
-
-		for (const auto& edge : edges) {
-			cv::drawMarker(*cvBgr, {eigen2cv(edge)}, CV_RGB(0, 255, 255), cv::MARKER_DIAMOND);
-		}
-	}
-	bgr.save(".lines.png");
-
-	{
-		CVMap cvBgr = bgr.cvReadWrite();
-		for(const auto& line : mergedLines) {
-			cv::Vec2f start = undistort(distortionModel, line.first);
-			cv::Vec2f end = undistort(distortionModel, line.second);
-			cv::arrowedLine(*cvBgr, {start}, {end}, CV_RGB(0, 255, 255));
-			cv::arrowedLine(*cvBgr, {end}, {start}, CV_RGB(0, 255, 255));
-		}
-	}
-	bgr.save(".linesundistorted.png");
+	thresholded.save(".thresholded.png");
 }

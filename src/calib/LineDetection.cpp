@@ -144,8 +144,8 @@ cv::Vec2f lineLineIntersection(const CVLine& a, const CVLine& b) {
 	return a.first + da * t1;
 }
 
-std::vector<cv::Vec2f> lineIntersections(const CVLines& lines, const int width, const int height, const double maxIntersectionDistance) {
-	std::vector<cv::Vec2f> intersections;
+std::vector<Eigen::Vector2f> lineIntersections(const CVLines& lines, const int width, const int height, const double maxIntersectionDistance) {
+	std::vector<Eigen::Vector2f> intersections;
 
 	float minX = -width*maxIntersectionDistance;
 	float minY = -height*maxIntersectionDistance;
@@ -157,7 +157,7 @@ std::vector<cv::Vec2f> lineIntersections(const CVLines& lines, const int width, 
 		while(itb != lines.cend()) {
 			cv::Vec2f c = lineLineIntersection(*ita, *itb);
 			if(c[0] >= minX && c[1] >= minY && c[0] < maxX && c[1] < maxY)
-				intersections.push_back(c);
+				intersections.push_back(cv2eigen(c));
 
 			itb++;
 		}

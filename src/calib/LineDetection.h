@@ -22,7 +22,7 @@ CVLines mergeLineSegments(const std::vector<CVLines>& compoundLines);
 cv::Vec2f lineLineIntersection(const CVLine& a, const CVLine& b);
 
 /* Finds all intersections of the given line list inside or next to the image. */
-std::vector<cv::Vec2f> lineIntersections(const CVLines& lines, int width, int height, double maxIntersectionDistance);
+std::vector<Eigen::Vector2f> lineIntersections(const CVLines& lines, int width, int height, double maxIntersectionDistance);
 
-/* Determines the quadrilateral with the largest area for the given point set */
+/* Determines the clockwise quadrilateral with the largest area for the given point set */
 std::list<Eigen::Vector2f> findOuterEdges(const std::vector<cv::Vec2f>& intersections);
