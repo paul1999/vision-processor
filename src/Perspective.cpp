@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-static void updateExtent(Eigen::Vector4f& visibleFieldExtent, const Eigen::Vector3f& point) {
+static void updateExtent(Eigen::Vector4f& visibleFieldExtent, const Eigen::Vector2f& point) {
 	if(point.x() < visibleFieldExtent[0])
 		visibleFieldExtent[0] = point.x();
 	if(point.x() > visibleFieldExtent[1])
@@ -14,7 +14,7 @@ static void updateExtent(Eigen::Vector4f& visibleFieldExtent, const Eigen::Vecto
 		visibleFieldExtent[3] = point.y();
 }
 
-void Perspective::geometryCheck(const int width, const int height, const double maxBotHeight) {
+void Perspective::geometryCheck(const int camAmount, const int width, const int height, const double maxBotHeight) {
 	Eigen::Vector2i size(width, height);
 	if(socket->getGeometryVersion() == geometryVersion && model.size == size)
 		return;
@@ -35,22 +35,34 @@ void Perspective::geometryCheck(const int width, const int height, const double 
 	geometryVersion = socket->getGeometryVersion();
 	field = socket->getGeometry().field();
 
+	//calculate optimal fieldScale
+	Eigen::Vector2f extentMin, extentMax;
+	visibleFieldExtentEstimation(camId, camAmount, socket->getGeometry().field(), true, extentMin, extentMax);
+	Eigen::Vector2f extentSize = extentMax - extentMin;
+	Eigen::Vector2f minmin = model.field2image({extentMin.x(), extentMin.y(), (float)maxBotHeight});
+	Eigen::Vector2f minmax = model.field2image({extentMin.x(), extentMax.y(), (float)maxBotHeight});
+	Eigen::Vector2f maxmax = model.field2image({extentMax.x(), extentMax.y(), (float)maxBotHeight});
+	Eigen::Vector2f maxmin = model.field2image({extentMax.x(), extentMin.y(), (float)maxBotHeight});
+	float xSides[4]{abs(minmax.x() - minmin.x()), abs(maxmin.x() - minmin.x()), abs(maxmax.x() - minmax.x()), abs(maxmax.x() - maxmin.x())};
+	float ySides[4]{abs(minmax.y() - minmin.y()), abs(maxmin.y() - minmin.y()), abs(maxmax.y() - minmax.y()), abs(maxmax.y() - maxmin.y())};
+	std::sort(xSides, xSides+4);
+	std::sort(ySides, ySides+4);
+	//TODO option for best possible scale
+	Eigen::Vector2f imageSize = {(xSides[3] + xSides[2]) / 2, (ySides[3] + ySides[2]) / 2}; //Average out both image sides (largest two)
+	fieldScale = (extentSize.maxCoeff() / imageSize.maxCoeff() + extentSize.minCoeff() / imageSize.minCoeff()) / 2; //Assume large extent side oriented along large image side
+
 	//update visibleFieldExtent
 	Eigen::Vector2f center = model.image2field({0.0f, 0.0f}, (float)maxBotHeight).head<2>();
 	visibleFieldExtent = {center.x(), center.x(), center.y(), center.y()};
 
-	for(int x = 0; x < width; x++)
-		updateExtent(visibleFieldExtent, model.image2field({(float)x, 0.0f}, (float)maxBotHeight));
-	for(int x = 0; x < width; x++)
-		updateExtent(visibleFieldExtent, model.image2field({(float)x, (float)height - 1.0f}, (float)maxBotHeight));
-
-	for(int y = 0; y < height; y++)
-		updateExtent(visibleFieldExtent, model.image2field({0.0f, (float)y}, (float)maxBotHeight));
-	for(int y = 0; y < height; y++)
-		updateExtent(visibleFieldExtent, model.image2field({(float)width - 1.0f, (float)y}, (float)maxBotHeight));
-
-	Eigen::Vector2f unclampedFieldSize = Eigen::Vector2f(visibleFieldExtent[1] - visibleFieldExtent[0], visibleFieldExtent[3] - visibleFieldExtent[2]);
-	fieldScale = std::min(unclampedFieldSize.maxCoeff() / (float)size.maxCoeff(), unclampedFieldSize.minCoeff() / (float)size.minCoeff());
+	for(int x = 0; x < width; x++) {
+		updateExtent(visibleFieldExtent, model.image2field({(float)x, 0.0f}, (float)maxBotHeight).head<2>());
+		updateExtent(visibleFieldExtent, model.image2field({(float)x, (float)height - 1.0f}, (float)maxBotHeight).head<2>());
+	}
+	for(int y = 0; y < height; y++) {
+		updateExtent(visibleFieldExtent, model.image2field({0.0f, (float)y}, (float)maxBotHeight).head<2>());
+		updateExtent(visibleFieldExtent, model.image2field({(float)width - 1.0f, (float)y}, (float)maxBotHeight).head<2>());
+	}
 
 	// clamp to field boundaries
 	const float halfLength = (float)field.field_length()/2.0f + (float)field.boundary_width();
@@ -61,7 +73,7 @@ void Perspective::geometryCheck(const int width, const int height, const double 
 	visibleFieldExtent[3] = std::min(visibleFieldExtent[3], halfWidth);
 
 	Eigen::Vector2f fieldSize = Eigen::Vector2f(visibleFieldExtent[1] - visibleFieldExtent[0], visibleFieldExtent[3] - visibleFieldExtent[2]);
-	reprojectedFieldSize = (fieldSize * (1.0f / fieldScale)).array().rint().cast<int>();
+	reprojectedFieldSize = (fieldSize / fieldScale).array().rint().cast<int>();
 
 	std::cout << "[Perspective] Visible field extent: " << visibleFieldExtent.transpose() << "mm (xmin,xmax,ymin,ymax) Field scale: " << fieldScale << "mm/px" << std::endl;
 }

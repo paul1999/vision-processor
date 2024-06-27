@@ -234,7 +234,7 @@ int main(int argc, char* argv[]) {
 
 		double startTime = getTime();
 		r.socket->geometryCheck();
-		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
+		r.perspective->geometryCheck(r.cameraAmount, img->width, img->height, r.gcSocket->maxBotHeight);
 
 		//std::shared_ptr<Image> mask = std::make_shared<Image>(&PixelFormat::U8, img->width, img->height);
 		//OpenCL::wait(r.openCl->run(r.bgkernel, cl::EnqueueArgs(cl::NDRange(img->width, img->height)), img->buffer, bg->buffer, mask->buffer, img->format->stride, img->format->rowStride, (uint8_t)16)); //TODO adaptive threshold
@@ -266,7 +266,7 @@ int main(int argc, char* argv[]) {
 			if(r.debugImages)
 				color.save(".color.png", 0.0625f, 128.f);
 
-			OpenCL::wait(r.openCl->run(circleKernel, cl::EnqueueArgs(visibleFieldRange), color.image, circ.image));
+			OpenCL::wait(r.openCl->run(circleKernel, cl::EnqueueArgs(visibleFieldRange), color.image, circ.image, (int)floor(r.minBlobRadius/r.perspective->fieldScale), (int)ceil(r.maxBlobRadius/r.perspective->fieldScale)));
 			if(r.debugImages)
 				circ.save(".circle.png");
 

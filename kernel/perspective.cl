@@ -6,7 +6,7 @@
 #endif
 
 inline float2 field2image(const Perspective p, float3 fieldpos) {
-	fieldpos += (float3)(p.c[0], p.c[1], p.c[2]);
+	fieldpos -= (float3)(p.c[0], p.c[1], p.c[2]);
 
 	float3 camRay = (float3)(
 			p.rInv[0] * fieldpos.x + p.rInv[1] * fieldpos.y + p.rInv[2] * fieldpos.z,

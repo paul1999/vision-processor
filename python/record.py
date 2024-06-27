@@ -27,12 +27,14 @@ def thread_local_ip():
 
 
 if __name__ == '__main__':
-    args = parser_test_data(parser_binary(argparse.ArgumentParser(prog='Vision recorder'))).parse_args()
+    parser = parser_test_data(parser_binary(argparse.ArgumentParser(prog='Vision recorder')))
+    parser.add_argument('--scenes_per_field', default=None, type=int, help='Amount of scenes per field to process')
+    args = parser.parse_args()
 
     def consumer(dataset):
         recorder = VisionRecorder(vision_ip=thread_local_ip())
 
-        for video in dataset.images():
+        for video, _ in zip(dataset.images(), range(args.scenes_per_field)):
             print(f"Recording {video}")
 
             if video.suffix == '.mp4':
@@ -53,6 +55,8 @@ if __name__ == '__main__':
                     print(f"{video}: Detection size mismatch: Expected {frames} Vision {len(detections)}, repeating", file=sys.stderr)
 
             with video.with_suffix('.' + args.binary.name + '.yml').open('w') as file:
-                yaml.dump(detections, file, Dumper=yaml.CDumper)
+                # Fix incorrect NaN style emitted by yaml
+                file.write(yaml.dump(detections, Dumper=yaml.CDumper).replace('NaN', '.nan'))
+                #yaml.dump(detections, file, Dumper=yaml.CDumper)
 
     threaded_field_iter(args.data_folder, consumer, field_filter=args.field)

@@ -14,7 +14,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -Wall -ftree-vectorize -ffast-mat
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 find_package(yaml-cpp REQUIRED)
-find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio bgsegm)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio ximgproc) #bgsegm
 find_package(PkgConfig REQUIRED)
 find_package(Eigen3 REQUIRED)
 pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil)
@@ -45,10 +45,12 @@ foreach(input_file IN LISTS CL_KERNELS)
     unset(content)
 endforeach()
 
-protobuf_generate(TARGET ${PROJECT_NAME} LANGUAGE cpp PROTOC_OUT_DIR "src" PROTOS ${PROTO_FILES})
-protobuf_generate(TARGET "geometry_benchmark" LANGUAGE cpp PROTOC_OUT_DIR "src" PROTOS ${PROTO_FILES})
-protobuf_generate(TARGET "blob_benchmark" LANGUAGE cpp PROTOC_OUT_DIR "src" PROTOS ${PROTO_FILES})
-protobuf_generate(TARGET ${PROJECT_NAME} LANGUAGE python PROTOC_OUT_DIR "python" PROTOS ${PROTO_FILES} PROTOC_OPTIONS --pyi_out ":${CMAKE_CURRENT_SOURCE_DIR}/python")
+protobuf_generate(TARGET ${PROJECT_NAME} LANGUAGE cpp PROTOC_OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src" PROTOS ${PROTO_FILES})
+protobuf_generate(TARGET "geometry_benchmark" LANGUAGE cpp PROTOC_OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src" PROTOS ${PROTO_FILES})
+protobuf_generate(TARGET "blob_benchmark" LANGUAGE cpp PROTOC_OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src" PROTOS ${PROTO_FILES})
+protobuf_generate(TARGET ${PROJECT_NAME} LANGUAGE python PROTOC_OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python" PROTOS ${PROTO_FILES} PROTOC_OPTIONS --pyi_out ":${CMAKE_CURRENT_SOURCE_DIR}/python")
+protobuf_generate(TARGET "geometry_benchmark" LANGUAGE python PROTOC_OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python" PROTOS ${PROTO_FILES} PROTOC_OPTIONS --pyi_out ":${CMAKE_CURRENT_SOURCE_DIR}/python")
+protobuf_generate(TARGET "blob_benchmark" LANGUAGE python PROTOC_OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python" PROTOS ${PROTO_FILES} PROTOC_OPTIONS --pyi_out ":${CMAKE_CURRENT_SOURCE_DIR}/python")
 
 #file(GLOB_RECURSE HEADERS "src/*.h")
 #target_precompile_headers(${PROJECT_NAME} PRIVATE ${HEADERS})

@@ -12,32 +12,40 @@ enum BlobColor {
 };
 
 typedef struct Blob {
+	Eigen::Vector3f field;
 	Eigen::Vector2f flat;
 	float radius;
 	BlobColor color;
 } Blob;
 
-static inline Eigen::Vector2f field2flat(const Resources& r, float x, float y, float height) {
-	return r.perspective->field2flat(r.perspective->model.image2field(r.perspective->model.field2image({x, y, height}), (float)r.gcSocket->maxBotHeight).head<2>());
+static inline Eigen::Vector2f field2flat(const Resources& r, const Eigen::Vector3f& field) {
+	return r.perspective->field2flat(r.perspective->model.image2field(r.perspective->model.field2image(field), (float)r.gcSocket->maxBotHeight).head<2>());
 }
 
 static void bot2blobs(const Resources& r, const SSL_DetectionRobot& bot, const BlobColor botColor, std::vector<Blob>& blobs) {
+	Eigen::Vector3f field(bot.x(), bot.y(), bot.height());
 	blobs.push_back({
-		.flat = field2flat(r, bot.x(), bot.y(), bot.height()),
+		.field = field,
+		.flat = field2flat(r, field),
 		.radius = (float)r.centerBlobRadius / r.perspective->fieldScale,
 		.color = botColor
 	});
 
 	int pattern = patterns[bot.robot_id()];
 	for(int i = 0; i < 4; i++) {
-		Eigen::Vector2f offset(r.sideBlobDistance * cosf(bot.orientation()), r.sideBlobDistance * sinf(bot.orientation()));
+		float orientation = bot.orientation() + (float)patternAngles[i];
+		Eigen::Vector3f field(bot.x() + (float)r.sideBlobDistance * cosf(orientation), bot.y() + (float)r.sideBlobDistance * sinf(orientation), bot.height());
 		blobs.push_back({
-			.flat = field2flat(r, bot.x() + (float)r.sideBlobDistance * cosf(bot.orientation()), bot.y() + (float)r.sideBlobDistance * sinf(bot.orientation()), bot.height()),
+			.field = field,
+			.flat = field2flat(r, field),
 			.radius = (float)r.sideBlobRadius / r.perspective->fieldScale,
-			.color = (pattern & (8 >> pattern)) ? GREEN : PINK
+			.color = (pattern & (8 >> i)) ? GREEN : PINK
 		});
 	}
 }
+
+#define DRAW_DEBUG_IMAGES true
+#define WARN_INVISIBLE_BLOBS false
 
 int main(int argc, char* argv[]) {
 	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
@@ -49,6 +57,7 @@ int main(int argc, char* argv[]) {
 
 	cl::Kernel perspectiveKernel = r.openCl->compileFile("kernel/perspective.cl");
 	CLImage flat(&PixelFormat::RGBA8);
+	CLImage blurred(&PixelFormat::RGBA8);
 
 	cl::Kernel colorKernel = r.openCl->compileFile("kernel/color.cl");
 	CLImage color(&PixelFormat::F32);
@@ -56,9 +65,8 @@ int main(int argc, char* argv[]) {
 	cl::Kernel circleKernel = r.openCl->compileFile("kernel/circularize.cl");
 	CLImage circ(&PixelFormat::F32);
 
+	cl::Kernel scoreKernel = r.openCl->compileFile("kernel/score.cl");
 	CLImage score(&PixelFormat::F32);
-
-	//cl::Kernel matchKernel = r.openCl->compileFile("kernel/matches.cl");
 
 	while(r.waitForGeometry && !r.socket->getGeometryVersion()) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -66,78 +74,142 @@ int main(int argc, char* argv[]) {
 	}
 
 	int frameId = 0;
+	long circTotal = 0;
+	long circHits = 0;
+	double imageTime = 0.0;
 	double processingTime = 0.0;
+	double analysisTime = 0.0;
 
-	int blobAmount;
-	double positionOffset = 0.0;
+	std::map<BlobColor, int> blobAmount;
+	std::map<BlobColor, int> criticalOffset;
+	std::map<BlobColor, double> positionError;
+	std::map<BlobColor, Eigen::Vector2f> positionOffset;
+	positionOffset[BlobColor::ORANGE] = {0.f, 0.f};
+	positionOffset[BlobColor::YELLOW] = {0.f, 0.f};
+	positionOffset[BlobColor::BLUE] = {0.f, 0.f};
+	positionOffset[BlobColor::GREEN] = {0.f, 0.f};
+	positionOffset[BlobColor::PINK] = {0.f, 0.f};
+
+	//TODO Check outside peaks outside blob radius (since score next to scale)
 
 	while(true) {
+		double startTime = getTime();
 		std::shared_ptr<Image> img = r.camera->readImage();
 		if(img == nullptr)
 			break;
 
-		double startTime = getTime();
-		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
+		imageTime += getTime() - startTime;
+		startTime = getTime();
+
+		r.perspective->geometryCheck(r.cameraAmount, img->width, img->height, r.gcSocket->maxBotHeight);
 
 		ensureSize(clImg, img->width, img->height, img->name);
-		ensureSize(flat, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		ensureSize(color, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		ensureSize(circ, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		ensureSize(score, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+		for(CLImage& image : {std::ref(flat), std::ref(blurred), std::ref(color), std::ref(circ), std::ref(score)})
+			ensureSize(image, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 
 		cl::NDRange visibleFieldRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1]);
 		//TODO better type switching
-		OpenCL::wait(r.openCl->run(img->format == &PixelFormat::RGGB8 ? rggb2img : bgr2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), img->buffer, clImg.image));
-		OpenCL::wait(r.openCl->run(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg.image, flat.image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]));
-		OpenCL::wait(r.openCl->run(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat.image, color.image));
-		OpenCL::wait(r.openCl->run(circleKernel, cl::EnqueueArgs(visibleFieldRange), color.image, circ.image));
+		r.openCl->await(img->format == &PixelFormat::RGGB8 ? rggb2img : bgr2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), img->buffer, clImg.image);
+		r.openCl->await(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg.image, flat.image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]);
+		//cv::GaussianBlur(flat.read<RGBA>().cv, blurred.write<RGBA>().cv, {5, 5}, 0, 0, cv::BORDER_REPLICATE);
+		r.openCl->await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat.image, color.image);
+		r.openCl->await(circleKernel, cl::EnqueueArgs(visibleFieldRange), color.image, circ.image, (int)floor(r.minBlobRadius/r.perspective->fieldScale), (int)ceil(r.maxBlobRadius/r.perspective->fieldScale));
+		r.openCl->await(scoreKernel, cl::EnqueueArgs(visibleFieldRange), flat.image, circ.image, score.image, (float)r.minCircularity, (int)floor(r.minBlobRadius/r.perspective->fieldScale));
 
-		//TODO scoring
 		processingTime += getTime() - startTime;
+
+		startTime = getTime();
 
 		const SSL_DetectionFrame& detection = getCorrespondingFrame(groundTruth, ++frameId);
 		std::vector<Blob> blobs;
-		for(const SSL_DetectionBall& ball : detection.balls())
+		for(const SSL_DetectionBall& ball : detection.balls()) {
+			Eigen::Vector3f field(ball.x(), ball.y(), 30.0f); // See ssl-vision/src/app/plugins/plugin_detect_balls.h
 			blobs.push_back({
-				.flat = field2flat(r, ball.x(), ball.y(), 30.0f), // See ssl-vision/src/app/plugins/plugin_detect_balls.h
-				.radius = (float)r.ballRadius / r.perspective->fieldScale,
+				.field = field,
+				.flat = field2flat(r, field),
+				.radius = (float) r.ballRadius / r.perspective->fieldScale,
 				.color = ORANGE
 			});
+		}
 		for(const SSL_DetectionRobot& bot : detection.robots_yellow())
 			bot2blobs(r, bot, YELLOW, blobs);
 		for(const SSL_DetectionRobot& bot : detection.robots_blue())
 			bot2blobs(r, bot, BLUE, blobs);
 
-		blobAmount += blobs.size();
-		float worstBlob = INFINITY;
+		float worstBlobCirc = INFINITY;
+		float worstBlobScore = INFINITY;
 
-		CLImageMap<float> map = score.read<float>();
+		CLImageMap<float> circMap = circ.read<float>();
+		CLImageMap<float> scoreMap = score.read<float>();
+		//CLImageMap<float> scoreMap = circ.read<float>();
 		for(const Blob& blob : blobs) {
 			Eigen::Vector2i maxPos;
 			float maxScore = -INFINITY;
-			for(int y = (int)(blob.flat.y() - blob.radius); y < (int)(blob.flat.y() + blob.radius); y++) {
-				for(int x = (int)(blob.flat.x() - blob.radius); x < (int)(blob.flat.x() + blob.radius); x++) {
-					if(map[x + y*map.rowPitch] > maxScore) {
+			for(int y = std::max(0, (int)floorf(blob.flat.y() - blob.radius)); y < std::min(r.perspective->reprojectedFieldSize[1], (int)ceilf(blob.flat.y() + blob.radius)); y++) {
+				for(int x = std::max(0, (int)floorf(blob.flat.x() - blob.radius)); x < std::min(r.perspective->reprojectedFieldSize[0], (int)ceilf(blob.flat.x() + blob.radius)); x++) {
+					float s = scoreMap(x, y);
+					if(s > maxScore) {
 						//TOOD subpixel precision?
 						maxPos = {x, y};
-						maxScore = map[x + y*map.rowPitch];
+						maxScore = s;
 					}
 				}
 			}
 
-			positionOffset += r.perspective->fieldScale * (maxPos.cast<float>() - blob.flat).norm();
-			if(maxScore < worstBlob)
-				worstBlob = maxScore;
+			if(maxScore == -INFINITY) {
+				if(WARN_INVISIBLE_BLOBS)
+					std::cerr << "Blob with color " << blob.color << " in frame " << frameId << " without score." << std::endl;
+				continue;
+			}
+
+			if(DRAW_DEBUG_IMAGES && frameId == 1) {
+				cv::drawMarker(flat.readWrite<RGBA>().cv, {maxPos.x(), maxPos.y()}, CV_RGB(0, 0, 255));
+				cv::drawMarker(flat.readWrite<RGBA>().cv, {(int)blob.flat.x(), (int)blob.flat.y()}, CV_RGB(255, 0, 0));
+			}
+
+			Eigen::Vector2f offset = r.perspective->flat2field(maxPos.cast<float>()) - r.perspective->flat2field(blob.flat);
+			float offsetNorm = offset.norm();
+			blobAmount[blob.color] += 1;
+			positionError[blob.color] += offsetNorm;
+			positionOffset[blob.color] += offset;
+			if(offsetNorm > 10.0f)
+				criticalOffset[blob.color] += 1;
+			if(maxScore < worstBlobScore) {
+				worstBlobScore = maxScore;
+				worstBlobCirc = circMap(maxPos.x(), maxPos.y());
+			}
 		}
 
 		for(int y = 0; y < r.perspective->reprojectedFieldSize[1]; y++) {
 			for(int x = 0; x < r.perspective->reprojectedFieldSize[0]; x++) {
+				if(circMap(x, y) > 0) {
+					circTotal++;
 
+					if(circMap(x, y) > worstBlobCirc)
+						circHits++;
+				}
 			}
 		}
-		//TODO evaluation
 		//TODO max in blob area (location offset) worst blob to best blob ratio, worst blob -> how many detections
+		analysisTime += getTime() - startTime;
+
+		if(DRAW_DEBUG_IMAGES && frameId == 1)  {
+			flat.save(".flat.png");
+			color.save(".color.png", 0.0625f, 128.f);
+			circ.save(".circ.png", 0.5f);
+			score.save(".score.png", 0.3333f, 256.f);
+		}
 	}
 
-	std::cout << "[Blob benchmark] Avg processing time: " << (processingTime / frameId) << std::endl;
+	std::cout << "[Blob benchmark] Avg circ hits " << ((double)circHits/frameId) << " Avg circ total " << ((double)circTotal/frameId)  << std::endl;
+	double totalOffset = 0.0;
+	int totalAmount = 0;
+	for(const auto& offset : positionError) {
+		totalOffset += offset.second;
+		totalAmount += blobAmount[offset.first];
+		std::cout << "[Blob benchmark] Avg color: " << offset.first << " position error: " << (offset.second / blobAmount[offset.first]) << " critical offset: " << ((double)criticalOffset[offset.first] / blobAmount[offset.first]) << " systematic offset: " << (positionOffset[offset.first].transpose() / blobAmount[offset.first]) << std::endl;
+	}
+	std::cout << "[Blob benchmark] Avg processing time: " << (processingTime / frameId) << " frame load time: " << (imageTime / frameId) << " analysis time: " << (analysisTime / frameId) << " frames: " << frameId << std::endl;
+
+	std::cout << "[BlobMachine] " << ((double)circTotal/frameId) << " " << ((double)circHits/frameId) << " " << (totalOffset/totalAmount) << std::endl;
 }

@@ -103,4 +103,7 @@ def threaded_field_iter(fields: Path, consumer, workers=None, field_filter='*'):
 
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
 
-    concurrent.futures.wait(pool.map(consumer, iterate_fields(fields, field_filter)))
+    try:
+        concurrent.futures.wait(pool.map(consumer, iterate_fields(fields, field_filter)))
+    except AttributeError:
+        pass # Thrown if consumer returns None, not an error in our case

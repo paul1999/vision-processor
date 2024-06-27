@@ -122,6 +122,10 @@ void Image::save(const std::string &suffix, float factor) const {
 			}
 		}
 		cv::imwrite("img/" + name + suffix, *grayscale.cvRead());
+	} else if(format == &PixelFormat::I8) {
+		cv::Mat u8;
+		cv::add(*cvRead(), 128, u8, cv::noArray(), CV_8UC1);
+		cv::imwrite("img/" + name + suffix, u8);
 	} else {
 		cv::imwrite("img/" + name + suffix, *cvRead());
 	}

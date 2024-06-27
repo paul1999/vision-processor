@@ -3,7 +3,7 @@
 
 #include "proto/ssl_vision_geometry.pb.h"
 
-void visibleFieldExtent(int camId, int camAmount, const SSL_GeometryFieldSize& field, bool withBoundary, Eigen::Vector2f &min, Eigen::Vector2f &max);
+void visibleFieldExtentEstimation(const int camId, const int camAmount, const SSL_GeometryFieldSize& field, const bool withBoundary, Eigen::Vector2f &min, Eigen::Vector2f &max);
 
 
 class CameraModel {

@@ -1,8 +1,7 @@
-#include <cfloat>
 #include "CameraModel.h"
 
 
-void visibleFieldExtent(const int camId, const int camAmount, const SSL_GeometryFieldSize& field, const bool withBoundary, Eigen::Vector2f &min, Eigen::Vector2f &max) {
+void visibleFieldExtentEstimation(const int camId, const int camAmount, const SSL_GeometryFieldSize& field, const bool withBoundary, Eigen::Vector2f &min, Eigen::Vector2f &max) {
 	Eigen::Vector2f fieldSize(field.field_length(), field.field_width());
 
 	Eigen::Vector2i size;
@@ -51,7 +50,7 @@ CameraModel::CameraModel(const Eigen::Vector2i &size, int camId, int camAmount, 
 		size(size) {
 	Eigen::Vector2f min;
 	Eigen::Vector2f max;
-	visibleFieldExtent(camId, camAmount, field, true, min, max);
+	visibleFieldExtentEstimation(camId, camAmount, field, true, min, max);
 	pos.head<2>() = min/2 + max/2;
 
 	updateDerived();

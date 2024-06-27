@@ -78,6 +78,8 @@ Resources::Resources(YAML::Node config) {
 	centerBlobRadius = sizes["center_blob_radius"].as<double>(25.0);
 	sideBlobRadius = sizes["side_blob_radius"].as<double>(20.0);
 	ballRadius = sizes["ball_radius"].as<double>(21.5);
+	minBlobRadius = std::min({centerBlobRadius, sideBlobRadius, ballRadius});
+	maxBlobRadius = std::max({centerBlobRadius, sideBlobRadius, ballRadius});
 
 	YAML::Node tracking = config["tracking"].IsDefined() ? config["tracking"] : YAML::Node();
 	minTrackingRadius = tracking["min_tracking_radius"].as<double>(30.0);

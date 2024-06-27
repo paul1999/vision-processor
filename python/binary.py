@@ -1,5 +1,6 @@
 import argparse
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -24,13 +25,18 @@ def run_ssl_vision(binary: Path, recorder: VisionRecorder, dataset: Dataset, ima
     dataset.write_ssl_config(config)
 
     with recorder:
-        with subprocess.Popen([str(binary.absolute()), '-s', '-c', '1'], cwd=str(dataset.config_dir), stdout=subprocess.PIPE) as vision:
+        with subprocess.Popen([str(binary.absolute()), '-s', '-c', '1'], cwd=str(dataset.config_dir), stdout=subprocess.PIPE, env={
+            'QT_QPA_PLATFORM': 'offscreen'  # Don't render ssl-vision UI
+        }) as vision:
             while (line := vision.stdout.readline().decode('utf-8')) != 'End of video stream reached\n':
                 #print(line, end='')
                 pass
 
             vision.terminate()
             vision.wait()
+
+            if vision.returncode != 0:
+                print(f'Nonzero return code: {vision.returncode}', file=sys.stderr)
 
 
 def run_processor(binary: Path, recorder: VisionRecorder, dataset: Dataset, image: Path, geometry: SSL_WrapperPacket = None, ground_truth: Path = None, stdoutconsumer=lambda line: None):
@@ -50,6 +56,9 @@ def run_processor(binary: Path, recorder: VisionRecorder, dataset: Dataset, imag
 
             while vision.poll() is None:
                 stdoutconsumer(vision.stdout.readline().decode('utf-8'))
+
+            if vision.returncode != 0:
+                print(f'Nonzero return code: {vision.returncode}', file=sys.stderr)
 
 
 def run_binary(binary: Path, recorder: VisionRecorder, dataset: Dataset, image: Path, geometry: SSL_WrapperPacket = None, ground_truth: Path = None, stdoutconsumer=lambda line: None):

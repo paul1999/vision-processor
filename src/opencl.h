@@ -57,6 +57,11 @@ public:
 		return event;
 	}
 
+	template<typename... Ts>
+	void await(cl::Kernel kernel, const cl::EnqueueArgs& args, Ts... ts) {
+		wait(run(kernel, args, std::forward<Ts>(ts)...));
+	}
+
 	static void wait(const cl::Event& event);
 
 private:
@@ -132,8 +137,8 @@ public:
 	CLImage(const PixelFormat* format, int width, int height, std::string name);
 
 	template<typename T> CLImageMap<T> read() const { return std::move(CLImageMap<T>(*this, CL_MAP_READ)); }
-	template<typename T> CLImageMap<T> write() { return std::move(CLImageMap<T>(this, CL_MAP_WRITE_INVALIDATE_REGION)); }
-	template<typename T> CLImageMap<T> readWrite() { return std::move(CLImageMap<T>(this, CL_MAP_WRITE)); }
+	template<typename T> CLImageMap<T> write() { return std::move(CLImageMap<T>(*this, CL_MAP_WRITE_INVALIDATE_REGION)); }
+	template<typename T> CLImageMap<T> readWrite() { return std::move(CLImageMap<T>(*this, CL_MAP_WRITE)); }
 
 	void save(const std::string& suffix, float factor = 1.0f, float offset = 0.0f) const;
 
@@ -159,7 +164,7 @@ public:
 			exit(1);
 		}
 		rowPitch = bytePitch/sizeof(T);
-		cv = ::cv::Mat(image.height, image.width, image.format == &PixelFormat::F32 ? CV_32FC1 : CV_8UC4, map, bytePitch);
+		cv = ::cv::Mat(image.height, image.width, image.format->cvType, map, bytePitch);
 	}
 	~CLImageMap() {
 		if(unmoved) {

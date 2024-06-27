@@ -4,6 +4,7 @@
 #include <fstream>
 #include <utility>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 
 const PixelFormat PixelFormat::RGBA8 = PixelFormat(4, 1, true, CV_8UC4, "NOT IMPLEMENTED");
@@ -25,7 +26,7 @@ const PixelFormat PixelFormat::BGR888 = PixelFormat(3, 1, true, CV_8UC3, "void k
 																		 "  out[uvout+1] = (uchar)((112*r + -94*g + -18*b) / 256 + 128);"
 																		 "}");
 const PixelFormat PixelFormat::U8 = PixelFormat(1, 1, false, CV_8UC1, "void kernel c(global const uchar* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = in[i]; }");
-const PixelFormat PixelFormat::I8 = PixelFormat(1, 1, false, CV_8UC1, "void kernel c(global const char* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i] + 127; }");
+const PixelFormat PixelFormat::I8 = PixelFormat(1, 1, false, CV_8SC1, "void kernel c(global const char* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i] + 127; }");
 const PixelFormat PixelFormat::F32 = PixelFormat(4, 1, false, CV_32FC1, "void kernel c(global const float* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i]; }");  //(uchar)fabs(in[i]) + 127
 //TODO oversized du to planar architecture (1.5)
 const PixelFormat PixelFormat::NV12 = PixelFormat(1, 2, true, CV_8UC1, "void kernel c(global const uchar* in, global uchar* out) {"
@@ -177,6 +178,10 @@ void CLImage::save(const std::string &suffix, float factor, float offset) const 
 		}
 
 		cv::imwrite("img/" + name + suffix, grayscale);
+	} else if(format == &PixelFormat::RGBA8) {
+		cv::Mat bgr;
+		cv::cvtColor(read<RGBA>().cv, bgr, cv::COLOR_RGBA2BGR);
+		cv::imwrite("img/" + name + suffix, bgr);
 	} else {
 		cv::imwrite("img/" + name + suffix, read<RGBA>().cv);
 	}

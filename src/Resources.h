@@ -36,6 +36,8 @@ public:
 	double centerBlobRadius;
 	double sideBlobRadius;
 	double ballRadius;
+	double minBlobRadius;
+	double maxBlobRadius;
 
 	double minTrackingRadius;
 	double maxBallVelocity;
