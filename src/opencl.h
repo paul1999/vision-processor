@@ -1,3 +1,18 @@
+/*
+     Copyright 2024 Felix Weinmann
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+ */
 #pragma once
 
 #include <CL/opencl.hpp>
@@ -5,6 +20,7 @@
 #include <vector>
 #include <iostream>
 #include <opencv2/core/mat.hpp>
+#include <map>
 
 
 class PixelFormat {
@@ -15,7 +31,6 @@ public:
 	static const PixelFormat U8;
 	static const PixelFormat I8;
 	static const PixelFormat F32;
-	static const PixelFormat NV12;
 
 	[[nodiscard]] int pixelSize() const { return stride*rowStride; }
 
@@ -23,10 +38,8 @@ public:
 	const int rowStride;
 	const bool color;
 	const int cvType;
-
-	const std::string clKernelToNV12;
 private:
-	PixelFormat(int stride, int rowStride, bool color, int cvType, std::string clKernelToNV12): stride(stride), rowStride(rowStride), color(color), cvType(cvType), clKernelToNV12(std::move(clKernelToNV12)) {}
+	PixelFormat(int stride, int rowStride, bool color, int cvType): stride(stride), rowStride(rowStride), color(color), cvType(cvType) {}
 };
 
 
@@ -37,16 +50,17 @@ typedef struct __attribute__ ((packed)) RGBA {
 	cl_uchar a;
 } RGBA;
 
+class CLImage;
+
 
 class OpenCL {
 public:
 	OpenCL();
 
-	cl::Kernel compileFile(const std::string& path, const std::string& options = "");
-	cl::Kernel compile(const std::string& code, const std::string& options = "");
+	cl::Kernel compile(const char* code, const char* codeEnd, const std::string& options = "");
 
 	template<typename... Ts>
-	cl::Event run(cl::Kernel kernel, const cl::EnqueueArgs& args, Ts... ts) {
+	static cl::Event run(cl::Kernel kernel, const cl::EnqueueArgs& args, Ts... ts) {
 		cl::KernelFunctor<Ts...> functor(std::move(kernel));
 		cl_int error;
 		cl::Event event = functor(args, std::forward<Ts>(ts)..., error);
@@ -58,11 +72,13 @@ public:
 	}
 
 	template<typename... Ts>
-	void await(cl::Kernel kernel, const cl::EnqueueArgs& args, Ts... ts) {
+	static void await(cl::Kernel kernel, const cl::EnqueueArgs& args, Ts... ts) {
 		wait(run(kernel, args, std::forward<Ts>(ts)...));
 	}
 
 	static void wait(const cl::Event& event);
+
+	std::shared_ptr<CLImage> acquire(const PixelFormat* format, int width, int height, const std::string& name);
 
 private:
 	bool searchDevice(const std::vector<cl::Platform>& platforms, cl_device_type type);
@@ -70,6 +86,8 @@ private:
 	cl::Device device;
 	cl::Context context;
 	cl::CommandQueue queue;
+
+	std::map<const PixelFormat*, std::vector<std::shared_ptr<CLImage>>> pool;
 };
 
 template<typename T>

@@ -1,3 +1,18 @@
+/*
+     Copyright 2024 Felix Weinmann
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+ */
 #pragma once
 
 
@@ -11,8 +26,6 @@
 #include "opencl.h"
 
 double getTime();
-
-void ensureSize(CLImage& image, int width, int height, std::string name);
 
 
 typedef struct __attribute__ ((packed)) RGB {
@@ -79,11 +92,5 @@ public:
 	std::shared_ptr<VisionSocket> socket;
 	std::shared_ptr<Perspective> perspective;
 	std::shared_ptr<OpenCL> openCl;
-	std::shared_ptr<AlignedArrayPool> arrayPool;
 	std::shared_ptr<RTPStreamer> rtpStreamer;
-
-	cl::Kernel blurkernel;
-	cl::Kernel gradientkernel;
-	cl::Kernel diffkernel;
-	cl::Kernel ringkernel;
 };

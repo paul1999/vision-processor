@@ -1,5 +1,19 @@
+/*
+     Copyright 2024 Felix Weinmann
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+ */
 #include <iostream>
-#include <iomanip>
 #include <opencv2/bgsegm.hpp>
 #include <yaml-cpp/yaml.h>
 
@@ -8,11 +22,11 @@
 #include "GroundTruth.h"
 #include "calib/GeomModel.h"
 #include "pattern.h"
+#include "cl_kernels.h"
 #include <opencv2/video/background_segm.hpp>
 
 #define DRAW_DEBUG_BLOBS true
 #define DEBUG_PRINT false
-#define RUNAWAY_PRINT false
 
 struct __attribute__ ((packed)) Match {
 	float x, y;
@@ -205,20 +219,13 @@ static void bgrDrawBlobs(const Resources& r, Image& bgr, const std::list<Match>&
 
 int main(int argc, char* argv[]) {
 	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
-	cl::Kernel buf2img = r.openCl->compileFile("kernel/rggb2img.cl");
-	//cl::Kernel sobel = r.openCl->compileFile("kernel/sobel.cl");
-	//cl::Kernel blur = r.openCl->compileFile("kernel/blur.cl");
-	cl::Kernel matchKernel = r.openCl->compileFile("kernel/matches.cl");
-	//cl::Kernel houghKernel = r.openCl->compileFile("kernel/hough.cl");
 
-	cl::Kernel perspectiveKernel = r.openCl->compileFile("kernel/perspective.cl");
-	cl::Kernel colorKernel = r.openCl->compileFile("kernel/color.cl");
-	cl::Kernel circleKernel = r.openCl->compileFile("kernel/circularize.cl");
-
-	CLImage clImg(&PixelFormat::RGBA8);
-	CLImage flat(&PixelFormat::RGBA8);
-	CLImage color(&PixelFormat::F32);
-	CLImage circ(&PixelFormat::F32);
+	cl::Kernel rggb2img = r.openCl->compile(kernel_rggb2img_cl, kernel_rggb2img_cl_end);
+	cl::Kernel bgr2img = r.openCl->compile(kernel_bgr2img_cl, kernel_bgr2img_cl_end);
+	cl::Kernel perspectiveKernel = r.openCl->compile(kernel_perspective_cl, kernel_perspective_cl_end);
+	cl::Kernel colorKernel = r.openCl->compile(kernel_color_cl, kernel_color_cl_end);
+	cl::Kernel circleKernel = r.openCl->compile(kernel_circularize_cl, kernel_circularize_cl_end);
+	cl::Kernel matchKernel = r.openCl->compile(kernel_matches_cl, kernel_matches_cl_end);
 
 	while(r.waitForGeometry && !r.socket->getGeometryVersion()) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -236,6 +243,10 @@ int main(int argc, char* argv[]) {
 		r.socket->geometryCheck();
 		r.perspective->geometryCheck(r.cameraAmount, img->width, img->height, r.gcSocket->maxBotHeight);
 
+		std::shared_ptr<CLImage> clImg = r.openCl->acquire(&PixelFormat::RGBA8, img->width, img->height, img->name);
+		//TODO better type switching
+		OpenCL::await(img->format == &PixelFormat::RGGB8 ? rggb2img : bgr2img, cl::EnqueueArgs(cl::NDRange(clImg->width, clImg->height)), img->buffer, clImg->image);
+
 		//std::shared_ptr<Image> mask = std::make_shared<Image>(&PixelFormat::U8, img->width, img->height);
 		//OpenCL::wait(r.openCl->run(r.bgkernel, cl::EnqueueArgs(cl::NDRange(img->width, img->height)), img->buffer, bg->buffer, mask->buffer, img->format->stride, img->format->rowStride, (uint8_t)16)); //TODO adaptive threshold
 		//bgsub->apply(*img->cvRead(), *mask->cvWrite());
@@ -245,36 +256,26 @@ int main(int argc, char* argv[]) {
 		//TODO idea: delta images for new targets finding, else just tracking
 
 		if(r.perspective->geometryVersion) {
-			{
-				//TODO fix toRGGB necessity
-				Image rggb = img->toRGGB();
-				ensureSize(clImg, rggb.width, rggb.height, img->name);
-
-				OpenCL::wait(r.openCl->run(buf2img, cl::EnqueueArgs(cl::NDRange(clImg.width, clImg.height)), rggb.buffer, clImg.image));
-			}
-
-			ensureSize(flat, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			ensureSize(color, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			ensureSize(circ, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-
 			cl::NDRange visibleFieldRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1]);
-			OpenCL::wait(r.openCl->run(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg.image, flat.image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]));
-			if(r.debugImages)
-				flat.save(".perspective.png");
+			std::shared_ptr<CLImage> flat = r.openCl->acquire(&PixelFormat::RGBA8, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+			OpenCL::await(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg->image, flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]);
+			//cv::GaussianBlur(flat.read<RGBA>().cv, blurred.write<RGBA>().cv, {5, 5}, 0, 0, cv::BORDER_REPLICATE);
+			std::shared_ptr<CLImage> color = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+			OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image);
+			std::shared_ptr<CLImage> circ = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+			OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), color->image, circ->image, (int)floor(r.minBlobRadius/r.perspective->fieldScale), (int)ceil(r.maxBlobRadius/r.perspective->fieldScale));
 
-			OpenCL::wait(r.openCl->run(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat.image, color.image));
-			if(r.debugImages)
-				color.save(".color.png", 0.0625f, 128.f);
-
-			OpenCL::wait(r.openCl->run(circleKernel, cl::EnqueueArgs(visibleFieldRange), color.image, circ.image, (int)floor(r.minBlobRadius/r.perspective->fieldScale), (int)ceil(r.maxBlobRadius/r.perspective->fieldScale)));
-			if(r.debugImages)
-				circ.save(".circle.png");
+			if(r.debugImages) {
+				flat->save(".perspective.png");
+				color->save(".color.png", 0.0625f, 128.f);
+				circ->save(".circle.png");
+			}
 
 			CLArray counter(sizeof(int));
 			int maxMatches = 10000; //TODO make configurable
 			CLArray matchArray(sizeof(Match)*maxMatches);
 			//TODO ROUND
-			OpenCL::wait(r.openCl->run(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat.image, circ.image, matchArray.buffer, counter.buffer, (float)r.minCircularity, r.minSaturation, r.minBrightness, (int)round(r.sideBlobRadius/r.perspective->fieldScale), maxMatches));
+			OpenCL::await(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, r.minSaturation, r.minBrightness, (int)round(r.sideBlobRadius/r.perspective->fieldScale), maxMatches);
 			//std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 
 			std::list<Match> matches;
@@ -423,7 +424,7 @@ int main(int argc, char* argv[]) {
 			geometryCalibration(r, *img);
 		}
 
-		r.rtpStreamer->sendFrame(img);
+		r.rtpStreamer->sendFrame(clImg);
 	}
 
 	return 0;

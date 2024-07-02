@@ -13,14 +13,20 @@
      See the License for the specific language governing permissions and
      limitations under the License.
  */
-#pragma once
+#ifndef CL_VERSION_1_0
+#include "clstd.h"
+#endif
 
-#include <string>
-#include <vector>
+const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_NONE;
 
-#include "proto/ssl_vision_detection.pb.h"
+void kernel yuv2nv12(read_only image2d_t in, global uchar* out) {
+	int2 pos = (int2)(get_global_id(0), get_global_id(1));
+	const uint4 v = read_imageui(in, sampler, pos);
 
+	out[pos.x + pos.y*get_global_size(0)] = v.x;
 
-std::vector<SSL_DetectionFrame> parseGroundTruth(const std::string& source);
-const SSL_DetectionFrame& getCorrespondingFrame(const std::vector<SSL_DetectionFrame>& groundTruth, uint32_t frameId);
-
+	pos /= 2;
+	const int uvout = UV_OFFSET + pos.x*2 + pos.y*get_global_size(0);
+	out[uvout] = v.y;
+    out[uvout+1] = v.z;
+}

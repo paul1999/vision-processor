@@ -1,4 +1,20 @@
+/*
+     Copyright 2024 Felix Weinmann
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+ */
 #include "rtpstreamer.h"
+#include "cl_kernels.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -28,7 +44,7 @@ RTPStreamer::~RTPStreamer() {
 }
 
 //Adopted from CC BY-SA 4.0 https://stackoverflow.com/a/61988145 Dmitrii Zabotlin
-void RTPStreamer::sendFrame(std::shared_ptr<Image> image) {
+void RTPStreamer::sendFrame(std::shared_ptr<CLImage> image) {
 	std::unique_lock<std::mutex> lock(queueMutex);
 
 	queue = std::move(image);
@@ -82,8 +98,8 @@ void RTPStreamer::allocResources() {
 	std::cout << "[RtpStreamer] Using codec: " << codec->long_name << std::endl;
 
 	fmtCtx  = avformat_alloc_context();
-	AVOutputFormat* format = (AVOutputFormat*)av_guess_format("rtp", nullptr, nullptr);
-	avformat_alloc_output_context2(&fmtCtx, format, format->name, uri.c_str());
+	auto* avFormat = (AVOutputFormat*)av_guess_format("rtp", nullptr, nullptr);
+	avformat_alloc_output_context2(&fmtCtx, avFormat, avFormat->name, uri.c_str());
 	avio_open(&fmtCtx->pb, uri.c_str(), AVIO_FLAG_WRITE);
 
 	stream = avformat_new_stream(fmtCtx, codec);
@@ -109,7 +125,13 @@ void RTPStreamer::allocResources() {
 	pkt = av_packet_alloc();
 
 	int uvOffset = width*height;
-	converter = openCl->compile(this->format->clKernelToNV12, "-D UV_OFFSET=" + std::to_string(uvOffset));
+	std::string compilerFlags = "-D UV_OFFSET=" + std::to_string(uvOffset);
+	if(format == &PixelFormat::RGBA8) {
+		converter = openCl->compile(kernel_yuv2nv12_cl, kernel_yuv2nv12_cl_end, compilerFlags);
+	} else {
+		std::cerr << "[RtpStreamer] Unsupported pixel format" << std::endl;
+		exit(1);
+	}
 
 	if(!this->format->color) {
 		CLMap<uint8_t> uv = buffer->write<uint8_t>();
@@ -142,7 +164,7 @@ void RTPStreamer::freeResources() {
 
 void RTPStreamer::encoderRun() {
 	while(!stopEncoding) {
-		std::shared_ptr<Image> image;
+		std::shared_ptr<CLImage> image;
 		{
 			std::unique_lock<std::mutex> lock(queueMutex);
 			while(queue == nullptr && !stopEncoding)
@@ -167,7 +189,8 @@ void RTPStreamer::encoderRun() {
 		allocResources();
 
 		auto startTime = std::chrono::high_resolution_clock::now();
-		openCl->run(converter, cl::EnqueueArgs(cl::NDRange(width, height)), image->buffer, buffer->buffer).wait();
+		OpenCL::await(converter, cl::EnqueueArgs(cl::NDRange(width, height)), image->image, buffer->buffer);
+		image = nullptr;
 
 		{
 			CLMap<uint8_t> data = buffer->read<uint8_t>();

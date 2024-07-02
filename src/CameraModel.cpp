@@ -1,3 +1,18 @@
+/*
+     Copyright 2024 Felix Weinmann
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+ */
 #include "CameraModel.h"
 
 
@@ -44,14 +59,21 @@ CameraModel::CameraModel(): focalLength(1224.0f), principalPoint({612, 512}), si
 	updateDerived();
 }
 
-CameraModel::CameraModel(const Eigen::Vector2i &size, int camId, int camAmount, const SSL_GeometryFieldSize& field):
-		focalLength((float)size.x()),
+CameraModel::CameraModel(const Eigen::Vector2i &size, int camId, int camAmount, const float cameraHeight, const SSL_GeometryFieldSize& field):
 		principalPoint(size.cast<float>()/2),
 		size(size) {
 	Eigen::Vector2f min;
 	Eigen::Vector2f max;
 	visibleFieldExtentEstimation(camId, camAmount, field, true, min, max);
 	pos.head<2>() = min/2 + max/2;
+	if(cameraHeight != 0.f)
+		pos.z() = cameraHeight;
+
+	//Whole field visible
+	Eigen::Vector2f orderedSize(size.maxCoeff(), size.minCoeff());
+	Eigen::Vector2f orderedExtent((max - min).maxCoeff(), (max - min).minCoeff());
+	focalLength = ((orderedSize - principalPoint).array() * pos.z() / orderedExtent.array()).minCoeff();
+	std::cout << focalLength  << std::endl;
 
 	updateDerived();
 }

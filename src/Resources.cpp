@@ -1,3 +1,18 @@
+/*
+     Copyright 2024 Felix Weinmann
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+ */
 #include <yaml-cpp/yaml.h>
 
 #include <utility>
@@ -16,16 +31,8 @@ double getTime() {
 	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
 }
 
-void ensureSize(CLImage& image, int width, int height, std::string name) {
-	if(image.width == width && image.height == height)
-		return;
-
-	image = CLImage(image.format, width, height, std::move(name));
-}
-
 Resources::Resources(YAML::Node config) {
 	openCl = std::make_shared<OpenCL>();
-	arrayPool = std::make_shared<AlignedArrayPool>();
 
 	auto source = config["source"].as<std::string>("SPINNAKER");
 	int source_id = config["source_id"].as<int>(0);
@@ -106,9 +113,4 @@ Resources::Resources(YAML::Node config) {
 	socket = std::make_shared<VisionSocket>(network["vision_ip"].as<std::string>("224.5.23.2"), network["vision_port"].as<int>(10006), gcSocket->defaultBotHeight, ballRadius);
 	perspective = std::make_shared<Perspective>(socket, camId);
 	rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + network["stream_ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(network["stream_ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(network["stream_port"].as<int>(10100)));
-
-	blurkernel = openCl->compileFile("kernel/blur.cl");
-	gradientkernel = openCl->compileFile("kernel/gradient.cl", "-D RGGB");
-	diffkernel = openCl->compileFile("kernel/delta.cl");
-	ringkernel = openCl->compileFile("kernel/midpointssd.cl", "-D RGGB");
 }

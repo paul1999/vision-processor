@@ -1,3 +1,18 @@
+/*
+     Copyright 2024 Felix Weinmann
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+ */
 #include "GeomModel.h"
 #include "Distortion.h"
 #include "LineDetection.h"
@@ -13,8 +28,7 @@ float dist(const cv::Vec2f& v1, const cv::Vec2f& v2) {
 }
 
 void visibleFieldExtent(const Resources &r, const bool withBoundary, Eigen::Vector2f &min, Eigen::Vector2f &max) {
-	return visibleFieldExtentEstimation(r.camId, r.cameraAmount, r.socket->getGeometry().field(), withBoundary, min,
-										max);
+	return visibleFieldExtentEstimation(r.camId, r.cameraAmount, r.socket->getGeometry().field(), withBoundary, min, max);
 }
 
 Eigen::Vector2f cv2eigen(const cv::Vec2f& v) {
@@ -95,7 +109,7 @@ struct GeometryFit : public Eigen::DenseFunctor<float> {
 		}
 
 		for(const LineArc& arc : arcs) {
-			float step = 2.f * sinf((stepSize/2.f) / arc.radius);
+			float step = 2.f * asinf((stepSize/2.f) / arc.radius); //TODO test with fixed stepping
 			for(float i = arc.a1; i <= arc.a2; i += step)
 				modelPoints.emplace_back(arc.center + Eigen::Vector2f(cosf(i), sinf(i))*arc.radius);
 		}
@@ -266,7 +280,6 @@ void geometryCalibration(const Resources& r, const Image& img) {
 		cv::threshold(u8, *thresholded.cvWrite(), 0.0, 255.0, cv::THRESH_BINARY + cv::THRESH_OTSU);
 		//cv::ximgproc::thinning(thresh, *t.cvWrite());
 	}
-	thresholded.save(".otsu.png");
 	//return;
 
 	//https://docs.opencv.org/4.x/da/d7f/tutorial_back_projection.html
@@ -295,14 +308,24 @@ void geometryCalibration(const Resources& r, const Image& img) {
 
 	const std::vector<Eigen::Vector2f> linePixels = getLinePixels(thresholded);
 
-	CameraModel basicModel({thresholded.width, thresholded.height}, r.camId, r.cameraAmount, r.socket->getGeometry().field());
+
+	CameraModel basicModel({thresholded.width, thresholded.height}, r.camId, r.cameraAmount, (float)r.cameraHeight, r.socket->getGeometry().field());
 	const bool calibHeight = r.cameraHeight == 0.0;
-	if(calibHeight) {
-		basicModel.pos.z() = 5000.0f;
-	} else {
-		basicModel.pos.z() = r.cameraHeight;
+
+	{
+		const SSL_GeometryFieldSize& field = r.socket->getGeometry().field();
+		const float halfLineWidth = (float)field.line_thickness() / 2.0f;
+
+		std::vector<std::pair<Eigen::Vector2f, Eigen::Vector2f>> lines;
+		std::vector<LineArc> arcs;
+		fieldToLines(r, lines, arcs);
+
+		CLMap<uint8_t> data = thresholded.write<uint8_t>();
+		for(const Eigen::Vector2f& linePixel : linePixels) {
+			data[(int)linePixel.x() + (int)linePixel.y()*thresholded.width] = pointAtLine(basicModel, lines, arcs, halfLineWidth, linePixel) ? 255 : 128;
+		}
 	}
-	basicModel.updateDerived();
+	thresholded.save(".initial.png");
 
 	GeometryFit functor(r, linePixels, basicModel, calibHeight);
 	Eigen::NumericalDiff<GeometryFit> numDiff(functor);

@@ -1,41 +1,32 @@
+/*
+     Copyright 2024 Felix Weinmann
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+ */
 #include "opencl.h"
 
 #include <iostream>
-#include <fstream>
 #include <utility>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 
-const PixelFormat PixelFormat::RGBA8 = PixelFormat(4, 1, true, CV_8UC4, "NOT IMPLEMENTED");
-const PixelFormat PixelFormat::RGGB8 = PixelFormat(2, 2, true, CV_8UC1, "void kernel c(global const uchar* in, global uchar* out) {"
-																		"	const int i0 = 2*get_global_id(0) + 2*get_global_id(1)*2*get_global_size(0);"
-																		"	const int i1 = i0 + 2*get_global_size(0);"
-																		"	const int uvout = UV_OFFSET + get_global_id(0)/2*2 + get_global_id(1)/2*get_global_size(0);"
-																		"	const short r = in[i0]; const short g0 = in[i0+1]; const short g1 = in[i1]; const short b = in[i1+1];"
-																		"	out[get_global_id(0) + get_global_id(1)*get_global_size(0)] = (uchar)((66*r + 64*g0 + 65*g1 + 25*b) / 256 + 16);"
-																		"	out[uvout] = (uchar)((-38*r + -37*g0 + -37*g1 + 112*b) / 256 + 128);"
-																		"  out[uvout+1] = (uchar)((112*r + -47*g0 + -47*g1 + -18*b) / 256 + 128);"
-																		"}");
-const PixelFormat PixelFormat::BGR888 = PixelFormat(3, 1, true, CV_8UC3, "void kernel c(global const uchar* in, global uchar* out) {"
-																		 "	const int i = 3*get_global_id(0) + get_global_id(1)*3*get_global_size(0);"
-																		 "	const int uvout = UV_OFFSET + get_global_id(0)/2*2 + get_global_id(1)/2*get_global_size(0);"
-																		 "	const short b = in[i]; const short g = in[i+1]; const short r = in[i+2];"
-																		 "	out[get_global_id(0) + get_global_id(1)*get_global_size(0)] = (uchar)((66*r + 129*g + 25*b) / 256 + 16);"
-																		 "	out[uvout] = (uchar)((-38*r + -74*g + 112*b) / 256 + 128);"
-																		 "  out[uvout+1] = (uchar)((112*r + -94*g + -18*b) / 256 + 128);"
-																		 "}");
-const PixelFormat PixelFormat::U8 = PixelFormat(1, 1, false, CV_8UC1, "void kernel c(global const uchar* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = in[i]; }");
-const PixelFormat PixelFormat::I8 = PixelFormat(1, 1, false, CV_8SC1, "void kernel c(global const char* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i] + 127; }");
-const PixelFormat PixelFormat::F32 = PixelFormat(4, 1, false, CV_32FC1, "void kernel c(global const float* in, global uchar* out) { int i = get_global_id(0) + get_global_id(1)*get_global_size(0); out[i] = (uchar)in[i]; }");  //(uchar)fabs(in[i]) + 127
-//TODO oversized du to planar architecture (1.5)
-const PixelFormat PixelFormat::NV12 = PixelFormat(1, 2, true, CV_8UC1, "void kernel c(global const uchar* in, global uchar* out) {"
-																	   "	const int yi = get_global_id(0) + get_global_id(1)*get_global_size(0);"
-																	   "	const int uvi = UV_OFFSET + get_global_id(0)/2 + get_global_id(1)/2*get_global_size(0);"
-																	   "	out[yi] = in[yi];"
-																	   "	out[uvi] = in[uvi];"
-																	   "	out[uvi+1] = in[uvi+1];"
-																	   "}");
+const PixelFormat PixelFormat::RGBA8 = PixelFormat(4, 1, true, CV_8UC4);
+const PixelFormat PixelFormat::RGGB8 = PixelFormat(2, 2, true, CV_8UC1);
+const PixelFormat PixelFormat::BGR888 = PixelFormat(3, 1, true, CV_8UC3);
+const PixelFormat PixelFormat::U8 = PixelFormat(1, 1, false, CV_8UC1);
+const PixelFormat PixelFormat::I8 = PixelFormat(1, 1, false, CV_8SC1);
+const PixelFormat PixelFormat::F32 = PixelFormat(4, 1, false, CV_32FC1);
 
 
 OpenCL::OpenCL() {
@@ -93,9 +84,9 @@ bool OpenCL::searchDevice(const std::vector<cl::Platform>& platforms, cl_device_
 	return false;
 }
 
-cl::Kernel OpenCL::compile(const std::string& code, const std::string& options) {
+cl::Kernel OpenCL::compile(const char *code, const char* codeEnd, const std::string &options) {
 	cl::Program::Sources sources;
-	sources.emplace_back(code.c_str(), code.length());
+	sources.emplace_back(code, codeEnd - code);
 
 	cl::Program program(context, sources);
 	if (program.build({device}, options.c_str()) != CL_SUCCESS) {
@@ -124,10 +115,21 @@ void OpenCL::wait(const cl::Event& event) {
 	}
 }
 
-cl::Kernel OpenCL::compileFile(const std::string& path, const std::string& options) {
-	std::ifstream sourceFile(path);
-	std::string sourceCode( std::istreambuf_iterator<char>(sourceFile), (std::istreambuf_iterator<char>()));
-	return compile(sourceCode, options);
+//Pool design adapted from Jonathan Mee https://stackoverflow.com/a/27828584 CC BY-SA 3.0
+std::shared_ptr<CLImage> OpenCL::acquire(const PixelFormat* format, int width, int height, const std::string& name) {
+	std::vector<std::shared_ptr<CLImage>>& formatPool = pool[format];
+
+	auto iterator = std::find_if(formatPool.begin(), formatPool.end(), [&](const std::shared_ptr<CLImage>& i){
+		return i.use_count() == 1 && i->width == width && i->height == height;
+	});
+	if(iterator != formatPool.end()) {
+		(*iterator)->name = name;
+		return *iterator;
+	}
+
+	auto array = std::make_shared<CLImage>(format, width, height, name);
+	formatPool.push_back(array);
+	return std::move(array);
 }
 
 static inline cl::Buffer clAlloc(cl_mem_flags type, cl::size_type size, void* data) {
