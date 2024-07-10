@@ -21,9 +21,9 @@ from pathlib import Path
 import yaml
 from google.protobuf.json_format import ParseDict
 
+from visionsocket import parser_vision_network, VisionSocket  # Importing visionsocket generates protobuf files
 from proto.ssl_vision_wrapper_pb2 import SSL_WrapperPacket
 from proto.ssl_vision_geometry_pb2 import SSL_FieldShapeType
-from visionsocket import parser_vision_network, VisionSocket
 
 
 def yaml_load(path: Path, default = None):

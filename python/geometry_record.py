@@ -26,7 +26,9 @@ from record import thread_local_ip
 from visionsocket import VisionRecorder
 
 if __name__ == '__main__':
-    args = parser_test_data(parser_binary(argparse.ArgumentParser(prog='Vision geometry recorder'))).parse_args()
+    parser = parser_test_data(parser_binary(argparse.ArgumentParser(prog='Vision geometry recorder')))
+    parser.add_argument('--scenes_per_field', default=None, type=int, help='Amount of scenes per field to process')
+    args = parser.parse_args()
 
     def consumer(dataset):
         print(f"Recording {dataset} geometry")
@@ -47,5 +49,5 @@ if __name__ == '__main__':
         else:
             print(f"No calibration received!", file=sys.stderr)
 
-    threaded_field_iter(args.data_folder, consumer, 1)
+    threaded_field_iter(args.data_folder, consumer, 1, field_filter=args.field)
 

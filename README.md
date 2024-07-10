@@ -22,9 +22,15 @@ A replacement for the aging (ssl-vision)[https://github.com/RoboCup-SSL/ssl-visi
     opencv
     libav
 
-    python-protobuf
-    python-pyyaml
-    mpv
+### Python dependencies
+
+`mpv` is only required for `python/cam_viewer.py`.
+
+Arch based distributions: `python-protobuf python-yaml python-grpcio-tools mpv`
+
+Debian/Ubuntu based distributions: `python3-protobuf python3-yaml python3-grpc-tools mpv`
+
+PIP: `protobuf pyyaml grpcio-tools`
 
 
 ## Components

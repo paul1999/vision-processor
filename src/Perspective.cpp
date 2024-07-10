@@ -63,8 +63,14 @@ void Perspective::geometryCheck(const int camAmount, const int width, const int 
 	std::sort(xSides, xSides+4);
 	std::sort(ySides, ySides+4);
 	//TODO option for best possible scale
-	Eigen::Vector2f imageSize = {(xSides[3] + xSides[2]) / 2, (ySides[3] + ySides[2]) / 2}; //Average out both image sides (largest two)
-	fieldScale = (extentSize.maxCoeff() / imageSize.maxCoeff() + extentSize.minCoeff() / imageSize.minCoeff()) / 2; //Assume large extent side oriented along large image side
+	Eigen::Vector2f imageSize = {std::max(xSides[3], xSides[2]), std::max(ySides[3], ySides[2])}; //Max image side
+	fieldScale = std::max(extentSize.maxCoeff() / imageSize.maxCoeff(), extentSize.minCoeff() / imageSize.minCoeff()); //Assume large extent side oriented along large image side
+
+	std::cout << "[Perspective] Best field scale: " << fieldScale << std::endl;
+	imageSize = {(xSides[3] + xSides[2]) / 2, (ySides[3] + ySides[2]) / 2}; //Average out both image sides (largest two)
+	std::cout << "[Perspective] Avg. field scale: " << (extentSize.maxCoeff() / imageSize.maxCoeff() + extentSize.minCoeff() / imageSize.minCoeff()) / 2 << std::endl;
+	imageSize = {std::min(xSides[3], xSides[2]), std::min(ySides[3], ySides[2])};
+	std::cout << "[Perspective] Worst field scale: " << std::min(extentSize.maxCoeff() / imageSize.maxCoeff(), extentSize.minCoeff() / imageSize.minCoeff()) << std::endl;
 
 	//update visibleFieldExtent
 	Eigen::Vector2f center = model.image2field({0.0f, 0.0f}, (float)maxBotHeight).head<2>();

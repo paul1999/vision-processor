@@ -19,8 +19,8 @@ import time
 from pathlib import Path
 
 from dataset import Dataset
+from visionsocket import VisionRecorder  # Importing visionsocket generates protobuf files
 from proto.ssl_vision_wrapper_pb2 import SSL_WrapperPacket
-from visionsocket import VisionRecorder
 
 
 def parser_binary(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:

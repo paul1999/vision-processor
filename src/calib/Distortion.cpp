@@ -104,7 +104,7 @@ struct Functor : public Eigen::DenseFunctor<float> {
 
 bool calibrateDistortion(const std::vector<std::vector<Eigen::Vector2f>>& linePoints, CameraModel& model) {
 	Functor functor(linePoints, model);
-	std::cout << "[Distortion] Lines: " << linePoints.size() << " with line points: " << functor.values() << std::endl;
+	//std::cout << "[Distortion] Lines: " << linePoints.size() << " with line points: " << functor.values() << std::endl;
 	Eigen::NumericalDiff<Functor> numDiff(functor);
 	Eigen::LevenbergMarquardt<Eigen::NumericalDiff<Functor>> lm(numDiff);
 	Eigen::VectorXf k(3);
@@ -112,14 +112,14 @@ bool calibrateDistortion(const std::vector<std::vector<Eigen::Vector2f>>& linePo
 	k(1) = model.principalPoint.x();
 	k(2) = model.principalPoint.y();
 
-	std::cout << lm.minimize(k) << " " << lm.iterations() << std::endl;
+	lm.minimize(k);
 
 	if(lm.info() != Eigen::ComputationInfo::Success) {
 		std::cout << "[Distortion] Levenberg-Marquandt minimization failed with code, aborting calibration for this frame: " << lm.info() << std::endl;
 		return false;
 	}
 
-	std::cout << "[Distortion] Determined parameters: distortion " << k(0) << " principal point " << k(1) << "|" << k(2) << std::endl;
+	//std::cout << "[Distortion] Determined parameters: distortion " << k(0) << " principal point " << k(1) << "|" << k(2) << std::endl;
 	if(k(1) < 0.0f || k(2) < 0.0f || k(1) >= model.size.x() || k(2) >= model.size.y()) {
 		std::cout << "[Distortion] Principal point outside of image, aborting calibration for this frame" << std::endl;
 		return false;

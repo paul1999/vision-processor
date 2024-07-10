@@ -85,9 +85,9 @@ class Dataset:
             yaml.dump(config, file)
 
     def images(self) -> Iterable[Path]:
-        for video in self.folder.glob('*.mp4'):
+        for video in sorted(self.folder.glob('*.mp4')):
             yield video
-        for image in self.folder.glob('*.png'):
+        for image in sorted(self.folder.glob('*.png')):
             if image != self.field:
                 yield image
 

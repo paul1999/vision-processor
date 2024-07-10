@@ -37,10 +37,10 @@ geometry:
 thresholds:
   # Minimum mean cosine similarity of the blob border gradient (0 - 1) TODO
   #circularity: 10.0
-  # Minimum saturation of the blob area (0 - 255)
-  #saturation: 24
-  # Minimum brightness of the blob area (0 - 255)
-  #brightness: 32
+  # Minimum circularity/(3*stddev) blob score
+  #score: 32.0
+  # Max blobs
+  #blobs: 2000
 
 # Hues of the colors used to classify the blobs in ° (0 - 359°)
 hues:

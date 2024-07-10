@@ -70,8 +70,8 @@ Resources::Resources(YAML::Node config) {
 
 	YAML::Node thresholds = config["thresholds"].IsDefined() ? config["thresholds"] : YAML::Node();
 	minCircularity = thresholds["circularity"].as<double>(10.0);
-	minSaturation = thresholds["saturation"].as<int>(0);
-	minBrightness = thresholds["brightness"].as<int>(0);
+	minScore = thresholds["score"].as<double>(32.0);
+	maxBlobs = thresholds["blobs"].as<int>(2000);
 
 	YAML::Node hues = config["hues"].IsDefined() ? config["hues"] : YAML::Node();
 	orangeHue = readHue(hues["orange"], 30.0);

@@ -53,6 +53,8 @@ void write_imagef(image2d_t, int2, float);
 
 int get_global_id(int);
 int get_global_size(int);
+int get_image_width(image2d_t);
+int get_image_height(image2d_t);
 
 int min(int, int);
 int max(int, int);

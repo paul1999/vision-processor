@@ -110,21 +110,26 @@ int main(int argc, char* argv[]) {
 		r.perspective->geometryCheck(r.cameraAmount, img->width, img->height, r.gcSocket->maxBotHeight);
 
 		std::shared_ptr<CLImage> clImg = r.openCl->acquire(&PixelFormat::RGBA8, img->width, img->height, img->name);
-		OpenCL::await(img->format == &PixelFormat::RGGB8 ? rggb2img : bgr2img, cl::EnqueueArgs(cl::NDRange(clImg->width, clImg->height)), img->buffer, clImg->image);
+		std::shared_ptr<CLImage> flat = r.openCl->acquire(&PixelFormat::RGBA8, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+		std::shared_ptr<CLImage> color = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+		std::shared_ptr<CLImage> circ = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+		std::shared_ptr<CLImage> score = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 
 		cl::NDRange visibleFieldRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1]);
-		std::shared_ptr<CLImage> flat = r.openCl->acquire(&PixelFormat::RGBA8, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		OpenCL::await(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg->image, flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]);
 		//cv::GaussianBlur(flat.read<RGBA>().cv, blurred.write<RGBA>().cv, {5, 5}, 0, 0, cv::BORDER_REPLICATE);
-		std::shared_ptr<CLImage> color = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image);
-		std::shared_ptr<CLImage> circ = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), color->image, circ->image, (int)floor(r.minBlobRadius/r.perspective->fieldScale), (int)ceil(r.maxBlobRadius/r.perspective->fieldScale));
-		std::shared_ptr<CLImage> score = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		OpenCL::await(scoreKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, score->image, (float)r.minCircularity, (int)floor(r.minBlobRadius/r.perspective->fieldScale));
+
+		OpenCL::await(scoreKernel, cl::EnqueueArgs(
+				OpenCL::run(circleKernel, cl::EnqueueArgs(
+						OpenCL::run(colorKernel, cl::EnqueueArgs(
+								OpenCL::run(perspectiveKernel, cl::EnqueueArgs(
+										OpenCL::run(img->format == &PixelFormat::RGGB8 ? rggb2img : bgr2img, cl::EnqueueArgs(cl::NDRange(clImg->width, clImg->height)), img->buffer, clImg->image),
+								visibleFieldRange), clImg->image, flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]),
+						visibleFieldRange), flat->image, color->image, (int)ceil(r.maxBlobRadius/r.perspective->fieldScale)/3),
+				visibleFieldRange), color->image, circ->image, (int)floor(r.minBlobRadius/r.perspective->fieldScale), (int)ceil(r.maxBlobRadius/r.perspective->fieldScale)),
+		visibleFieldRange), flat->image, circ->image, score->image, (float)r.minCircularity, (int)floor(r.minBlobRadius/r.perspective->fieldScale));
 
 		processingTime += getTime() - startTime;
-
+		//std::cout << "Radius " << floor(r.minBlobRadius/r.perspective->fieldScale) << "->" << ceil(r.maxBlobRadius/r.perspective->fieldScale) << std::endl;
 		startTime = getTime();
 
 		const SSL_DetectionFrame& detection = getCorrespondingFrame(groundTruth, ++frameId);
@@ -148,7 +153,7 @@ int main(int argc, char* argv[]) {
 
 		CLImageMap<float> circMap = circ->read<float>();
 		CLImageMap<float> scoreMap = score->read<float>();
-		//CLImageMap<float> scoreMap = circ.read<float>();
+		//CLImageMap<float> scoreMap = circ->read<float>();
 		for(const Blob& blob : blobs) {
 			Eigen::Vector2i maxPos;
 			float maxScore = -INFINITY;
@@ -203,8 +208,9 @@ int main(int argc, char* argv[]) {
 		if(DRAW_DEBUG_IMAGES && frameId == 1)  {
 			flat->save(".flat.png");
 			color->save(".color.png", 0.0625f, 128.f);
-			circ->save(".circ.png", 0.5f);
-			score->save(".score.png", 0.3333f, 256.f);
+			circ->save(".circ.png", 2.0f);
+			//score->save(".score.png", 0.3333f, 256.f);
+			score->save(".score.png", 2.0f);
 		}
 	}
 

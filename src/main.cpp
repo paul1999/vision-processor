@@ -271,18 +271,19 @@ int main(int argc, char* argv[]) {
 				circ->save(".circle.png");
 			}
 
-			CLArray counter(sizeof(int));
-			int maxMatches = 10000; //TODO make configurable
-			CLArray matchArray(sizeof(Match)*maxMatches);
-			//TODO ROUND
-			OpenCL::await(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, r.minSaturation, r.minBrightness, (int)round(r.sideBlobRadius/r.perspective->fieldScale), maxMatches);
+			CLArray counter(sizeof(cl_int)*2);
+			CLArray matchArray(sizeof(Match)*r.maxBlobs);
+			OpenCL::await(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, r.minScore, (int)floor(r.minBlobRadius/r.perspective->fieldScale), r.maxBlobs);
 			//std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 
+			//TODO filterAmount from counter -> incomplete bot analysis
 			std::list<Match> matches;
 			{
+				CLMap<int> counterMap = counter.read<int>();
 				CLMap<Match> matchMap = matchArray.read<Match>();
-				int matchAmount = 0;
-				while(matchAmount < maxMatches && (matchMap[matchAmount].x != 0 || matchMap[matchAmount].y != 0 || matchMap[matchAmount].score != 0)) {
+				int matchAmount = std::min(r.maxBlobs, counterMap[0]);
+				int scoreFiltered = counterMap[1];
+				while(matchAmount < r.maxBlobs && (matchMap[matchAmount].x != 0 || matchMap[matchAmount].y != 0 || matchMap[matchAmount].score != 0)) {
 					Match& match = matchMap[matchAmount];
 					Eigen::Vector2f pos = r.perspective->flat2field({match.x, match.y});
 					match.x = pos.x();
@@ -290,8 +291,8 @@ int main(int argc, char* argv[]) {
 					matchAmount++;
 				}
 
-				if(matchAmount == maxMatches)
-					std::cerr << "[blob] max blob amount reached" << std::endl;
+				if(matchAmount == r.maxBlobs)
+					std::cerr << "[blob] max blob amount reached: " << counterMap[0] << "/" << r.maxBlobs << std::endl;
 
 				matches = std::list<Match>(*matchMap, *matchMap+matchAmount);
 			}

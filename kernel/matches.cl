@@ -32,57 +32,49 @@ typedef struct __attribute__ ((packed)) {
 
 const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE;
 
-kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Match* matches, global volatile int* counter, const float circThreshold, const uchar sThreshold, const uchar vThreshold, const int radius, const int maxMatches) {
+kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Match* matches, global volatile int* counter, const float circThreshold, const float minScore, const int radius, const int maxMatches) {
 	int2 pos = (int2)(get_global_id(0), get_global_id(1));
 	float circScore = read_imagef(circ, sampler, pos).x;
 	if(circScore < circThreshold)
 		return;
 
 	//TODO subpixel position
-	/*if(
+	if(
 			read_imagef(circ, sampler, (int2)(pos.x-1, pos.y)).x > circScore ||
 			read_imagef(circ, sampler, (int2)(pos.x+1, pos.y)).x > circScore ||
 			read_imagef(circ, sampler, (int2)(pos.x, pos.y-1)).x > circScore ||
 			read_imagef(circ, sampler, (int2)(pos.x, pos.y+1)).x > circScore
 	)
-		return;*/
+		return;
 
+	//https://en.wikipedia.org/wiki/Standard_deviation#Rapid_calculation_methods
 	int n = 0;
-	uint4 color = (uint4)(0, 0, 0, 0);
+	uint4 s1 = (uint4)(0, 0, 0, 0);
+	uint4 s2 = (uint4)(0, 0, 0, 0); // Value estimation (255*255) * (16*16) /256^4 (far in range of uint)
 	{
-		const float sqRadius = radius*radius;
-		for(int y = pos.y - radius; y <= pos.y + radius; y++) {
-			for(int x = pos.x - radius; x <= pos.x + radius; x++) {
-				int2 pxpos = (int2)(x, y);
-				int2 mpos = pxpos - pos;
-				mpos *= mpos;
-				if(mpos.x + mpos.y <= sqRadius) {
-					color += read_imageui(img, sampler, pxpos);
-					n++; //TODO faster by computation
+		const int sqRadius = radius*radius;
+		for(int y = -radius; y <= radius; y++) {
+			for(int x = -radius; x <= radius; x++) {
+				if(x*x + y*y <= sqRadius) {
+					uint4 v = read_imageui(img, sampler, pos + (int2)(x, y));
+					s1 += v;
+					s2 += v*v;
+					n++; //TODO faster by computation? -> https://mathworld.wolfram.com/GausssCircleProblem.html
 				}
 			}
 		}
 	}
 
-	color /= n;
+	//https://en.wikipedia.org/wiki/Summed-area_table
+	float4 stddev = native_sqrt((convert_float4(s2) - convert_float4(s1)*convert_float4(s1)/n) / n);
 
-	float4 stddev;
-	{
-		const float sqRadius = radius*radius;
-		for(int y = pos.y - radius; y <= pos.y + radius; y++) {
-			for(int x = pos.x - radius; x <= pos.x + radius; x++) {
-				int2 pxpos = (int2)(x, y);
-				int2 mpos = pxpos - pos;
-				mpos *= mpos;
-				if(mpos.x + mpos.y <= sqRadius) {
-					float4 s = convert_float4(read_imageui(img, sampler, pxpos)) - convert_float4(color);
-					s *= s;
-					stddev += s;
-					n++;
-				}
-			}
-		}
+	float score = circScore / (stddev.x + stddev.y + stddev.z);
+	if(score < minScore) {
+		atomic_inc(counter+1);
+		return;
 	}
+
+	uint4 color = s1 / n;
 
 	uchar3 hsv;
 	uchar rgbMin = min(min(color.x, color.y), color.z);

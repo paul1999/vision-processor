@@ -89,6 +89,7 @@ static float minPointModelDistance(const std::vector<std::pair<Eigen::Vector2f, 
 
 struct GeometryFit : public Eigen::DenseFunctor<float> {
 	const std::vector<Eigen::Vector2f>& linePixels;
+	const std::vector<std::vector<Eigen::Vector2f>>& mergedPixels;
 	const CameraModel& reference;
 	const bool calibHeight;
 
@@ -96,7 +97,7 @@ struct GeometryFit : public Eigen::DenseFunctor<float> {
 	std::vector<LineArc> arcs;
 	std::vector<Eigen::Vector2f> modelPoints;
 
-	explicit GeometryFit(const Resources& r, const std::vector<Eigen::Vector2f>& linePixels, const CameraModel& model, const bool calibHeight): linePixels(linePixels), reference(model), calibHeight(calibHeight) {
+	explicit GeometryFit(const Resources& r, const std::vector<Eigen::Vector2f>& linePixels, const std::vector<std::vector<Eigen::Vector2f>>& mergedPixels, const CameraModel& model, const bool calibHeight): linePixels(linePixels), mergedPixels(mergedPixels), reference(model), calibHeight(calibHeight) {
 		fieldToLines(r, lines, arcs);
 
 		float stepSize = 10.f;
@@ -124,15 +125,13 @@ struct GeometryFit : public Eigen::DenseFunctor<float> {
 
 	int operator()(const InputType &x, ValueType& fvec) const {
 		CameraModel model = reference;
-		model.distortionK2 = x[0];
-		model.principalPoint.x() = x[1];
-		model.principalPoint.y() = x[2];
-		model.focalLength = x[3];
-		model.updateEuler({x[4], x[5], x[6]});
-		model.pos.x() = x[7];
-		model.pos.y() = x[8];
+		model.focalLength = x[0];
+		model.updateEuler({x[1], x[2], x[3]});
+		model.pos.x() = x[4];
+		model.pos.y() = x[5];
 		if(calibHeight)
-			model.pos.z() = x[9];
+			model.pos.z() = x[6];
+		calibrateDistortion(mergedPixels, model);
 		model.updateDerived();
 
 		int i = 0;
@@ -269,7 +268,7 @@ void geometryCalibration(const Resources& r, const Image& img) {
 		CVMap map = adaMedian.cvReadWrite();
 		cv::LUT(*map, lut, *map);
 	}*/
-	adaMedian.save(".adamedian.png");
+	//adaMedian.save(".adamedian.png");
 	Image thresholded(&PixelFormat::U8, gray.width, gray.height, gray.name);
 	{
 		CVMap map = adaMedian.cvReadWrite();
@@ -306,10 +305,52 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	//Image thresholded = thresholdImage(r, gray, halfLineWidth);
 	//thresholded.save(".fieldlines.png");
 
+	cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
+	cv::Mat4f linesMat;
+	detector->detect(*thresholded.cvRead(), linesMat);
+
+	CVLines lines;
+	for(int i = 0; i < linesMat.rows; i++) {
+		cv::Vec4f line = linesMat(0, i);
+		cv::Vec2f a = cv::Vec2f(line[0], line[1]);
+		cv::Vec2f b = cv::Vec2f(line[2], line[3]);
+		if(dist(a, b) >= r.minLineSegmentLength)
+			lines.emplace_back(a, b);
+	}
+	std::cout << "[Geometry calibration] Line segments: " << lines.size() << std::endl;
+
+	const std::vector<CVLines> compoundLines = groupLineSegments(r, lines);
+	const CVLines mergedLines = mergeLineSegments(compoundLines);
+	std::cout << "[Geometry calibration] Lines: " << mergedLines.size() << std::endl;
+
+	std::vector<std::vector<Eigen::Vector2f>> mergedPixels(mergedLines.size());
+	{
+		const float sqHalfLineWidth = (float)(halfLineWidth*halfLineWidth);
+		CLMap<uint8_t> data = thresholded.read<uint8_t>();
+		for (int y = 0; y < thresholded.height; y++) {
+			for (int x = 0; x < thresholded.width; x++) {
+				if(data[x + y * thresholded.width]) {
+					for(int i = 0; i < compoundLines.size(); i++) {
+						for(const auto& segment : compoundLines[i]) {
+							if(sqPointLineSegmentDistance(std::make_pair(cv2eigen(segment.first), cv2eigen(segment.second)), {x, y}) <= sqHalfLineWidth) {
+								//TODO duplicate pixels at line segment border
+								mergedPixels[i].emplace_back(x, y);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	CameraModel basicModel({thresholded.width, thresholded.height}, r.camId, r.cameraAmount, (float)r.cameraHeight, r.socket->getGeometry().field());
+	/*if(!calibrateDistortion(mergedPixels, basicModel))
+		return;*/
+
 	const std::vector<Eigen::Vector2f> linePixels = getLinePixels(thresholded);
 
 
-	CameraModel basicModel({thresholded.width, thresholded.height}, r.camId, r.cameraAmount, (float)r.cameraHeight, r.socket->getGeometry().field());
+	//CameraModel basicModel({thresholded.width, thresholded.height}, r.camId, r.cameraAmount, (float)r.cameraHeight, r.socket->getGeometry().field());
 	const bool calibHeight = r.cameraHeight == 0.0;
 
 	{
@@ -325,25 +366,22 @@ void geometryCalibration(const Resources& r, const Image& img) {
 			data[(int)linePixel.x() + (int)linePixel.y()*thresholded.width] = pointAtLine(basicModel, lines, arcs, halfLineWidth, linePixel) ? 255 : 128;
 		}
 	}
-	thresholded.save(".initial.png");
+	//thresholded.save(".initial.png");
 
-	GeometryFit functor(r, linePixels, basicModel, calibHeight);
+	GeometryFit functor(r, linePixels, mergedPixels, basicModel, calibHeight);
 	Eigen::NumericalDiff<GeometryFit> numDiff(functor);
 	Eigen::LevenbergMarquardt<Eigen::NumericalDiff<GeometryFit>> lm(numDiff);
 
-	Eigen::VectorXf k(calibHeight ? 10 : 9);
-	k[0] = basicModel.distortionK2;
-	k[1] = basicModel.principalPoint.x();
-	k[2] = basicModel.principalPoint.y();
-	k[3] = basicModel.focalLength;
+	Eigen::VectorXf k(calibHeight ? 7 : 6);
+	k[0] = basicModel.focalLength;
 	Eigen::Vector3f euler = basicModel.getEuler();
-	k[4] = euler.x();
-	k[5] = euler.y();
-	k[6] = euler.z();
-	k[7] = basicModel.pos.x();
-	k[8] = basicModel.pos.y();
+	k[1] = euler.x();
+	k[2] = euler.y();
+	k[3] = euler.z();
+	k[4] = basicModel.pos.x();
+	k[5] = basicModel.pos.y();
 	if(calibHeight)
-		k[9] = basicModel.pos.z();
+		k[6] = basicModel.pos.z();
 
 	lm.minimize(k);
 
@@ -358,18 +396,15 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	}
 
 	CameraModel model = basicModel;
-	model.distortionK2 = k[0];
-	model.principalPoint.x() = k[1];
-	model.principalPoint.y() = k[2];
-	model.focalLength = k[3];
-	model.updateEuler({k[4], k[5], k[6]});
-	model.pos.x() = k[7];
-	model.pos.y() = k[8];
+	model.focalLength = k[0];
+	model.updateEuler({k[1], k[2], k[3]});
+	model.pos.x() = k[4];
+	model.pos.y() = k[5];
 	if(calibHeight)
-		model.pos.z() = k[9];
+		model.pos.z() = k[6];
 
 	if(model.focalLength < 0) {
-		model.focalLength = -k[3];
+		model.focalLength = -k[0];
 		model.f2iOrientation = Eigen::AngleAxisf(M_PI_2, Eigen::Vector3f::UnitZ()) * model.f2iOrientation;
 	}
 

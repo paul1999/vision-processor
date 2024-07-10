@@ -25,12 +25,6 @@ inline void px(read_only image2d_t color, int2 pos, const int dx, const int dy, 
 
 	*score += read_imagef(color, sampler, pos).x;
 }
-inline void abspx(read_only image2d_t color, int2 pos, const int dx, const int dy, float* score) {
-	pos.x += dx;
-	pos.y += dy;
-
-	*score += fabs(read_imagef(color, sampler, pos).x);
-}
 
 //https://www.thecrazyprogrammer.com/2016/12/bresenhams-midpoint-circle-algorithm-c-c.html
 kernel void circularize(read_only image2d_t color, write_only image2d_t out, int minBlobRadius, int maxBlobRadius) {
@@ -113,24 +107,39 @@ kernel void circularize(read_only image2d_t color, write_only image2d_t out, int
 		px(color, pos, +i, 0, &pxDiv);
 		px(color, pos, 0, +i, &pyDiv);*/
 
-		px(color, pos, -i, +i, &npScore);
+		/*px(color, pos, -i, +i, &npScore);
 		px(color, pos, +i, +i, &ppScore);
 		px(color, pos, -i, -i, &nnScore);
-		px(color, pos, +i, -i, &pnScore);
+		px(color, pos, +i, -i, &pnScore);*/
 	}
-	/*for(int y = 1; y <= maxBlobRadius; y++) {
+	const int sqRadius = maxBlobRadius*maxBlobRadius;
+	int n = 0;
+	for(int y = 1; y <= maxBlobRadius; y++) {
 		for(int x = 1; x <= maxBlobRadius; x++) {
-			px(color, pos, -x, +y, &npScore);
-			px(color, pos, +x, +y, &ppScore);
-			px(color, pos, -x, -y, &nnScore);
-			px(color, pos, +x, -y, &pnScore);
+			//if(x*x + y*y <= sqRadius) {
+				px(color, pos, -x, +y, &npScore);
+				px(color, pos, +x, +y, &ppScore);
+				px(color, pos, -x, -y, &nnScore);
+				px(color, pos, +x, -y, &pnScore);
+				//n += 4;
+				n++;
+			//}
 		}
-	}*/
-	//if(fabs((ppScore/nnScore) - 1) < 0.3f && fabs((pnScore/npScore) - 1) < 0.3f)
-	if(ppScore > 0.0f && nnScore > 0.0f && pnScore < 0.0f && npScore < 0.0f)
-		score = (ppScore + nnScore - pnScore - npScore) / (4*maxBlobRadius);
+	}
 
-	write_imagef(out, pos, score / 4.0f);
+	ppScore /= n;
+	nnScore /= n;
+	pnScore /= n;
+	npScore /= n;
+	//float mean = ppScore + nnScore - pnScore - npScore;
+	//float stddev = native_sqrt(((ppScore-mean)*(ppScore-mean) + (nnScore-mean)*(nnScore-mean) + (pnScore+mean)*(pnScore+mean) + (npScore+mean)*(npScore+mean)) / 4);
+	score = min(min(ppScore, nnScore), min(-pnScore, -npScore));
+	//score = 1024-stddev;
+	//if(fabs((ppScore/nnScore) - 1) < 0.3f && fabs((pnScore/npScore) - 1) < 0.3f)
+	//if(ppScore > 0.0f && nnScore > 0.0f && pnScore < 0.0f && npScore < 0.0f)
+		//score = (ppScore + nnScore - pnScore - npScore) / n /*(4*maxBlobRadius*maxBlobRadius)*/;
+
+	write_imagef(out, pos, score);
 
 	//float absDiff = fabs(nyDiv) + fabs(nxDiv) + fabs(pyDiv) + fabs(pxDiv);
 	//write_imagef(out, pos, absDiff / 80.0f);

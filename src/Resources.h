@@ -57,10 +57,9 @@ public:
 	double maxBotAcceleration;
 
 	double minCircularity;
-	uint8_t minSaturation;
-	uint8_t minBrightness;
+	double minScore;
+	int maxBlobs;
 
-	double contrast = 1.0; //deprecated
 	RGB orange = {255, 64, 0};
 	RGB yellow = {255, 255, 64};
 	//RGB yellow = {255, 192, 128};
