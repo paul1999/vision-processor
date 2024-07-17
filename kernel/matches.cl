@@ -24,16 +24,27 @@ typedef struct __attribute__ ((packed)) {
 } RGB;
 
 typedef struct __attribute__ ((packed)) {
-	float2 pos;
-	float score;
-	float height;
+	int x, y;
 	RGB color;
+	float orangeness;
+	float yellowness;
+	float blueness;
+	float greenness;
+	float pinkness;
 } Match;
+
+typedef struct __attribute__ ((packed)) Hues {
+	uchar orange;
+	uchar yellow;
+	uchar blue;
+	uchar green;
+	uchar pink;
+} Hues;
 
 const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE;
 
-kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Match* matches, global volatile int* counter, const float circThreshold, const float minScore, const int radius, const int maxMatches) {
-	int2 pos = (int2)(get_global_id(0), get_global_id(1));
+kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Match* matches, global volatile int* counter, const float circThreshold, const float minScore, const int radius, const struct Hues hues, const int maxMatches) {
+	const int2 pos = (int2)(get_global_id(0), get_global_id(1));
 	float circScore = read_imagef(circ, sampler, pos).x;
 	if(circScore < circThreshold)
 		return;
@@ -44,8 +55,10 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 			read_imagef(circ, sampler, (int2)(pos.x+1, pos.y)).x > circScore ||
 			read_imagef(circ, sampler, (int2)(pos.x, pos.y-1)).x > circScore ||
 			read_imagef(circ, sampler, (int2)(pos.x, pos.y+1)).x > circScore
-	)
+	) {
+		atomic_inc(counter+2);
 		return;
+	}
 
 	//https://en.wikipedia.org/wiki/Standard_deviation#Rapid_calculation_methods
 	int n = 0;
@@ -76,25 +89,18 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 
 	uint4 color = s1 / n;
 
-	uchar3 hsv;
+	//https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
 	uchar rgbMin = min(min(color.x, color.y), color.z);
-	hsv.z = max(max(color.x, color.y), color.z);
-	if (hsv.z == 0) {
-		hsv.x = 0;
-		hsv.y = 0;
-	} else {
-		uchar span = hsv.z - rgbMin;
-		hsv.y = convert_uchar_sat(255 * convert_int(span) / hsv.z);
-		if (hsv.y == 0) {
-			hsv.x = 0;
-		} else {
-			if (hsv.z == color.x)
-				hsv.x = 0 + 43 * (color.y - color.z) / span;
-			else if (hsv.z == color.y)
-				hsv.x = 85 + 43 * (color.z - color.x) / span;
-			else
-				hsv.x = 171 + 43 * (color.x - color.y) / span;
-		}
+	uchar rgbMax = max(max(color.x, color.y), color.z);
+	uchar hue = 0;
+	uchar span = rgbMax - rgbMin;
+	if (rgbMax != 0 && span != 0) {
+		if (rgbMax == color.x)
+			hue = 0 + 43 * (color.y - color.z) / span;
+		else if (rgbMax == color.y)
+			hue = 85 + 43 * (color.z - color.x) / span;
+		else
+			hue = 171 + 43 * (color.x - color.y) / span;
 	}
 
 	//if(hsv.y < sThreshold || hsv.z < vThreshold)
@@ -105,10 +111,14 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 		return;
 
 	global Match* match = matches + i;
-	match->pos = convert_float2(pos);
-	match->height = 0;
-	match->score = -(stddev.x + stddev.y + stddev.z);
+	match->x = pos.x;
+	match->y = pos.y;
 	match->color.r = color.x;
 	match->color.g = color.y;
 	match->color.b = color.z;
+	match->orangeness = fabs((float)(char)(hue - hues.orange)) / 128.0f;
+	match->yellowness = fabs((float)(char)(hue - hues.yellow)) / 128.0f;
+	match->blueness = fabs((float)(char)(hue - hues.blue)) / 128.0f;
+	match->greenness = fabs((float)(char)(hue - hues.green)) / 128.0f;
+	match->pinkness = fabs((float)(char)(hue - hues.pink)) / 128.0f;
 }

@@ -39,7 +39,7 @@ typedef struct __attribute__ ((packed)) RGB {
 
 class Resources {
 public:
-	explicit Resources(YAML::Node config);
+	explicit Resources(const YAML::Node& config);
 
 	std::unique_ptr<VideoSource> camera = nullptr;
 

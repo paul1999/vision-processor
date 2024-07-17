@@ -14,10 +14,12 @@
      limitations under the License.
  */
 #include <yaml-cpp/node/parse.h>
+#include <yaml-cpp/yaml.h>
 #include "Resources.h"
 #include "GroundTruth.h"
 #include "pattern.h"
 #include "cl_kernels.h"
+#include <fstream>
 
 enum BlobColor {
 	ORANGE,
@@ -60,18 +62,21 @@ static void bot2blobs(const Resources& r, const SSL_DetectionRobot& bot, const B
 	}
 }
 
-#define DRAW_DEBUG_IMAGES true
+#define DRAW_DEBUG_IMAGES false
 #define WARN_INVISIBLE_BLOBS false
 
 int main(int argc, char* argv[]) {
-	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
+	YAML::Node configFile = YAML::LoadFile(argc > 1 ? argv[1] : "config.yml");
+	Resources r(configFile);
 	std::vector<SSL_DetectionFrame> groundTruth = parseGroundTruth(r.groundTruth);
 
 	cl::Kernel rggb2img = r.openCl->compile(kernel_rggb2img_cl, kernel_rggb2img_cl_end);
 	cl::Kernel bgr2img = r.openCl->compile(kernel_bgr2img_cl, kernel_bgr2img_cl_end);
 	cl::Kernel perspectiveKernel = r.openCl->compile(kernel_perspective_cl, kernel_perspective_cl_end);
 	cl::Kernel colorKernel = r.openCl->compile(kernel_color_cl, kernel_color_cl_end);
-	cl::Kernel circleKernel = r.openCl->compile(kernel_circularize_cl, kernel_circularize_cl_end);
+	cl::Kernel satHorizontalKernel = r.openCl->compile(kernel_satHorizontal_cl, kernel_satHorizontal_cl_end);
+	cl::Kernel satVerticalKernel = r.openCl->compile(kernel_satVertical_cl, kernel_satVertical_cl_end);
+	cl::Kernel circleKernel = r.openCl->compile(kernel_satCircle_cl, kernel_satCircle_cl_end);
 	cl::Kernel scoreKernel = r.openCl->compile(kernel_score_cl, kernel_score_cl_end);
 
 	while(r.waitForGeometry && !r.socket->getGeometryVersion()) {
@@ -98,6 +103,21 @@ int main(int argc, char* argv[]) {
 
 	//TODO Check outside peaks outside blob radius (since score next to scale)
 
+	std::string sourcePath = configFile["opencv_path"].as<std::string>();
+	std::ofstream centerOffsetCsv;
+	centerOffsetCsv.open(sourcePath.substr(0, sourcePath.find_last_of('/')) + "/centeroffset.csv", std::ios::out | std::ios::app);
+	std::ofstream sideOffsetCsv;
+	sideOffsetCsv.open(sourcePath.substr(0, sourcePath.find_last_of('/')) + "/sideoffset.csv", std::ios::out | std::ios::app);
+	std::ofstream yellowCsv;
+	yellowCsv.open(sourcePath.substr(0, sourcePath.find_last_of('/')) + "/yellow.csv", std::ios::out | std::ios::app);
+	std::ofstream blueCsv;
+	blueCsv.open(sourcePath.substr(0, sourcePath.find_last_of('/')) + "/blue.csv", std::ios::out | std::ios::app);
+	std::ofstream pinkCsv;
+	pinkCsv.open(sourcePath.substr(0, sourcePath.find_last_of('/')) + "/pink.csv", std::ios::out | std::ios::app);
+	std::ofstream greenCsv;
+	greenCsv.open(sourcePath.substr(0, sourcePath.find_last_of('/')) + "/green.csv", std::ios::out | std::ios::app);
+	std::ofstream orangeCsv;
+	orangeCsv.open(sourcePath.substr(0, sourcePath.find_last_of('/')) + "/orange.csv", std::ios::out | std::ios::app);
 	while(true) {
 		double startTime = getTime();
 		std::shared_ptr<Image> img = r.camera->readImage();
@@ -112,21 +132,25 @@ int main(int argc, char* argv[]) {
 		std::shared_ptr<CLImage> clImg = r.openCl->acquire(&PixelFormat::RGBA8, img->width, img->height, img->name);
 		std::shared_ptr<CLImage> flat = r.openCl->acquire(&PixelFormat::RGBA8, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 		std::shared_ptr<CLImage> color = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+		std::shared_ptr<CLImage> colorHor = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+		std::shared_ptr<CLImage> colorSat = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 		std::shared_ptr<CLImage> circ = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 		std::shared_ptr<CLImage> score = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 
 		cl::NDRange visibleFieldRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1]);
 		//cv::GaussianBlur(flat.read<RGBA>().cv, blurred.write<RGBA>().cv, {5, 5}, 0, 0, cv::BORDER_REPLICATE);
-
-		OpenCL::await(scoreKernel, cl::EnqueueArgs(
-				OpenCL::run(circleKernel, cl::EnqueueArgs(
-						OpenCL::run(colorKernel, cl::EnqueueArgs(
-								OpenCL::run(perspectiveKernel, cl::EnqueueArgs(
-										OpenCL::run(img->format == &PixelFormat::RGGB8 ? rggb2img : bgr2img, cl::EnqueueArgs(cl::NDRange(clImg->width, clImg->height)), img->buffer, clImg->image),
-								visibleFieldRange), clImg->image, flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]),
-						visibleFieldRange), flat->image, color->image, (int)ceil(r.maxBlobRadius/r.perspective->fieldScale)/3),
-				visibleFieldRange), color->image, circ->image, (int)floor(r.minBlobRadius/r.perspective->fieldScale), (int)ceil(r.maxBlobRadius/r.perspective->fieldScale)),
-		visibleFieldRange), flat->image, circ->image, score->image, (float)r.minCircularity, (int)floor(r.minBlobRadius/r.perspective->fieldScale));
+		//4.2ms 4.3ms (incl. perspective & color)
+		OpenCL::await(img->format == &PixelFormat::RGGB8 ? rggb2img : bgr2img, cl::EnqueueArgs(cl::NDRange(clImg->width, clImg->height)), img->buffer, clImg->image);
+		OpenCL::await(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg->image, flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]);
+		OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image, (int)ceil(r.maxBlobRadius/r.perspective->fieldScale)/3);
+		//0.28ms 0.31ms
+		OpenCL::await(satHorizontalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[1])), color->image, colorHor->image);
+		//0.71ms 0.72ms
+		OpenCL::await(satVerticalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0])), colorHor->image, colorSat->image);
+		//3.0ms 3.0ms
+		OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)floor(r.minBlobRadius/r.perspective->fieldScale), (int)ceil(r.maxBlobRadius/r.perspective->fieldScale));
+		//1.7ms 1.7ms
+		OpenCL::await(scoreKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, score->image, (float)r.minCircularity, (int)floor(r.minBlobRadius/r.perspective->fieldScale));
 
 		processingTime += getTime() - startTime;
 		//std::cout << "Radius " << floor(r.minBlobRadius/r.perspective->fieldScale) << "->" << ceil(r.maxBlobRadius/r.perspective->fieldScale) << std::endl;
@@ -151,6 +175,7 @@ int main(int argc, char* argv[]) {
 		float worstBlobCirc = INFINITY;
 		float worstBlobScore = INFINITY;
 
+		CLImageMap<RGBA> flatMap = flat->read<RGBA>();
 		CLImageMap<float> circMap = circ->read<float>();
 		CLImageMap<float> scoreMap = score->read<float>();
 		//CLImageMap<float> scoreMap = circ->read<float>();
@@ -190,6 +215,29 @@ int main(int argc, char* argv[]) {
 				worstBlobScore = maxScore;
 				worstBlobCirc = circMap(maxPos.x(), maxPos.y());
 			}
+
+			const RGBA& deltaRGB = flatMap(maxPos.x(), maxPos.y());
+			switch(blob.color) {
+				case YELLOW:
+					yellowCsv << (int)deltaRGB.r << "," << (int)deltaRGB.g << "," << (int)deltaRGB.b << std::endl;
+					centerOffsetCsv << offsetNorm << std::endl;
+					break;
+				case BLUE:
+					blueCsv << (int)deltaRGB.r << "," << (int)deltaRGB.g << "," << (int)deltaRGB.b << std::endl;
+					centerOffsetCsv << offsetNorm << std::endl;
+					break;
+				case PINK:
+					pinkCsv << (int)deltaRGB.r << "," << (int)deltaRGB.g << "," << (int)deltaRGB.b << std::endl;
+					sideOffsetCsv << offsetNorm << std::endl;
+					break;
+				case GREEN:
+					greenCsv << (int)deltaRGB.r << "," << (int)deltaRGB.g << "," << (int)deltaRGB.b << std::endl;
+					sideOffsetCsv << offsetNorm << std::endl;
+					break;
+				case ORANGE:
+					orangeCsv << (int)deltaRGB.r << "," << (int)deltaRGB.g << "," << (int)deltaRGB.b << std::endl;
+					break;
+			}
 		}
 
 		for(int y = 0; y < r.perspective->reprojectedFieldSize[1]; y++) {
@@ -225,4 +273,11 @@ int main(int argc, char* argv[]) {
 	std::cout << "[Blob benchmark] Avg processing time: " << (processingTime / frameId) << " frame load time: " << (imageTime / frameId) << " analysis time: " << (analysisTime / frameId) << " frames: " << frameId << std::endl;
 
 	std::cout << "[BlobMachine] " << ((double)circTotal/frameId) << " " << ((double)circHits/frameId) << " " << (totalOffset/totalAmount) << std::endl;
+	centerOffsetCsv.close();
+	sideOffsetCsv.close();
+	yellowCsv.close();
+	blueCsv.close();
+	pinkCsv.close();
+	greenCsv.close();
+	orangeCsv.close();
 }

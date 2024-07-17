@@ -31,7 +31,7 @@ double getTime() {
 	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
 }
 
-Resources::Resources(YAML::Node config) {
+Resources::Resources(const YAML::Node& config) {
 	openCl = std::make_shared<OpenCL>();
 
 	auto source = config["source"].as<std::string>("SPINNAKER");
@@ -70,7 +70,7 @@ Resources::Resources(YAML::Node config) {
 
 	YAML::Node thresholds = config["thresholds"].IsDefined() ? config["thresholds"] : YAML::Node();
 	minCircularity = thresholds["circularity"].as<double>(10.0);
-	minScore = thresholds["score"].as<double>(32.0);
+	minScore = thresholds["score"].as<double>(64.0); // 32.0
 	maxBlobs = thresholds["blobs"].as<int>(2000);
 
 	YAML::Node hues = config["hues"].IsDefined() ? config["hues"] : YAML::Node();

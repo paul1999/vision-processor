@@ -25,12 +25,19 @@ kernel void buf2img(global const uchar* img, write_only image2d_t out) {
 	uchar r = img[imgpos];
 	uchar g = img[imgpos+1]/2 + img[imgpos+2*get_global_size(0)]/2;
 	uchar b = img[imgpos+1+2*get_global_size(0)];
-	write_imageui(out, pos, (uint4)(
+	/*write_imageui(out, pos, (uint4)(
 			convert_uchar_sat((66*r + 129*g + 25*b) / 256 + 16),
 			convert_uchar_sat((-38*r + -74*g + 112*b) / 256 + 128),
 			convert_uchar_sat((112*r + -94*g + -18*b) / 256 + 128),
 			255
-	));
+	));*/
+	/*write_imageui(out, pos, (uint4)(
+			(2*r - g - b + 510) / 4,
+			(2*g - r - b + 510) / 4,
+			(2*b - r - g + 510) / 4,
+			255
+	));*/
+	write_imageui(out, pos, (uint4)(r, g, b, 255));
 
 	/* (gamma compensation?)
 	 * 21*pow(img[imgpos], 0.45f), //R

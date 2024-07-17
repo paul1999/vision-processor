@@ -127,7 +127,9 @@ void RTPStreamer::allocResources() {
 	int uvOffset = width*height;
 	std::string compilerFlags = "-D UV_OFFSET=" + std::to_string(uvOffset);
 	if(format == &PixelFormat::RGBA8) {
-		converter = openCl->compile(kernel_yuv2nv12_cl, kernel_yuv2nv12_cl_end, compilerFlags);
+		converter = openCl->compile(kernel_rgb2nv12_cl, kernel_rgb2nv12_cl_end, compilerFlags);
+	} else if(format == &PixelFormat::F32) {
+		converter = openCl->compile(kernel_f2nv12_cl, kernel_f2nv12_cl_end, compilerFlags);
 	} else {
 		std::cerr << "[RtpStreamer] Unsupported pixel format" << std::endl;
 		exit(1);

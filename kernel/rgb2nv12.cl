@@ -19,14 +19,14 @@
 
 const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_NONE;
 
-void kernel yuv2nv12(read_only image2d_t in, global uchar* out) {
+void kernel rgb2nv12(read_only image2d_t in, global uchar* out) {
 	int2 pos = (int2)(get_global_id(0), get_global_id(1));
 	const uint4 v = read_imageui(in, sampler, pos);
 
-	out[pos.x + pos.y*get_global_size(0)] = v.x;
+	out[pos.x + pos.y*get_global_size(0)] = convert_uchar_sat((66*v.r + 129*v.g + 25*v.b) / 256 + 16);
 
 	pos /= 2;
 	const int uvout = UV_OFFSET + pos.x*2 + pos.y*get_global_size(0);
-	out[uvout] = v.y;
-    out[uvout+1] = v.z;
+	out[uvout] = convert_uchar_sat((-38*(int)v.r + -74*(int)v.g + 112*(int)v.b) / 256 + 128);
+    out[uvout+1] = convert_uchar_sat((112*(int)v.r + -94*(int)v.g + -18*(int)v.b) / 256 + 128);
 }

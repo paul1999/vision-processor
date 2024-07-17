@@ -1,0 +1,32 @@
+field:
+  field_length: 8990
+  field_width: 5990
+  goal_width: 1000
+  goal_depth: 180
+  goal_height: 160
+  penalty_area_depth: 990
+  penalty_area_width: 1990
+  goal_center_to_penalty_mark: 6000
+  boundary_width: 300
+  center_circle_radius: 500
+  line_thickness: 10
+  field_lines: []
+  field_arcs: []
+  ball_radius: 21.5
+  max_robot_radius: 90.0
+
+calib:
+- camera_id: 0
+  focal_length: 1456.1398
+  principal_point_x: 1976.71
+  principal_point_y: 940.07
+  distortion: -0.000076
+  q0: -0.99999
+  q1: 0.002610
+  q2: -0.003698
+  q3: 0.000015
+  tx: -3036.57
+  ty: 273.29
+  tz: 5996.0
+  pixel_image_width: 2448.0
+  pixel_image_height: 2048.0

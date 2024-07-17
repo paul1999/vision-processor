@@ -38,7 +38,7 @@ thresholds:
   # Minimum mean cosine similarity of the blob border gradient (0 - 1) TODO
   #circularity: 10.0
   # Minimum circularity/(3*stddev) blob score
-  #score: 32.0
+  #score: 64.0
   # Max blobs
   #blobs: 2000
 

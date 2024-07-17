@@ -96,6 +96,12 @@ void Perspective::geometryCheck(const int camAmount, const int width, const int 
 	Eigen::Vector2f fieldSize = Eigen::Vector2f(visibleFieldExtent[1] - visibleFieldExtent[0], visibleFieldExtent[3] - visibleFieldExtent[2]);
 	reprojectedFieldSize = (fieldSize / fieldScale).array().rint().cast<int>();
 
+	//Make size even for rtpstreamer
+	if(reprojectedFieldSize[0] % 2)
+		reprojectedFieldSize[0]++;
+	if(reprojectedFieldSize[1] % 2)
+		reprojectedFieldSize[1]++;
+
 	std::cout << "[Perspective] Visible field extent: " << visibleFieldExtent.transpose() << "mm (xmin,xmax,ymin,ymax) Field scale: " << fieldScale << "mm/px" << std::endl;
 }
 

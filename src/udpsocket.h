@@ -56,6 +56,7 @@ struct TrackingState {
 	double timestamp;
 	float x, y, z, w;
 	float vx, vy, vz, vw;
+	float confidence;
 };
 
 

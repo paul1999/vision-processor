@@ -158,14 +158,16 @@ static inline void trackBots(const double timestamp, const float defaultBotHeigh
 			objects.push_back({
 				(int)bot.robot_id() + idOffset, timestamp,
 				bot.x(), bot.y(), height, bot.orientation(),
-				0.0f, 0.0f, 0.0f, 0.0f
+				0.0f, 0.0f, 0.0f, 0.0f,
+				bot.confidence()
 			});
 		} else {
 			float timeDelta = timestamp - nextOldBot->timestamp;
 			objects.push_back({
 				nextOldBot->id, timestamp,
 				bot.x(), bot.y(), height, bot.orientation(),
-				(bot.x() - nextOldBot->x) / timeDelta, (bot.y() - nextOldBot->y) / timeDelta, 0.0f, (bot.orientation() - nextOldBot->w) / timeDelta
+				(bot.x() - nextOldBot->x) / timeDelta, (bot.y() - nextOldBot->y) / timeDelta, 0.0f, (bot.orientation() - nextOldBot->w) / timeDelta,
+				bot.confidence()
 			});
 		}
 	}
@@ -202,14 +204,16 @@ void VisionSocket::detectionTracking(const SSL_DetectionFrame &detection) {
 			objects.push_back({
 				-1, timestamp,
 				ball.x(), ball.y(), z, 0.0f,
-				0.0f, 0.0f, 0.0f, 0.0f
+				0.0f, 0.0f, 0.0f, 0.0f,
+				ball.confidence()
 			});
 		} else {
 			float timeDelta = timestamp - nextOldBall->timestamp;
 			objects.push_back({
 				-1, timestamp,
 				ball.x(), ball.y(), z, 0.0f,
-				(ball.x() - nextOldBall->x) / timeDelta, (ball.y() - nextOldBall->y) / timeDelta, (z - nextOldBall->z) / timeDelta, 0.0f
+				(ball.x() - nextOldBall->x) / timeDelta, (ball.y() - nextOldBall->y) / timeDelta, (z - nextOldBall->z) / timeDelta, 0.0f,
+				ball.confidence()
 			});
 		}
 	}

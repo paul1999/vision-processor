@@ -39,10 +39,11 @@ kernel void buf2img(global const uchar* img, write_only image2d_t out) {
 			convert_uchar_sat((112*r + -94*g + -18*b) / 256 + 128),
 			255
 	));*/
-	write_imageui(out, pos, (uint4)(
+	/*write_imageui(out, pos, (uint4)(
 			(2*r - g - b + 510) / 4,
 			(2*g - r - b + 510) / 4,
 			(2*b - r - g + 510) / 4,
 			255
-	));
+	));*/
+	write_imageui(out, pos, (uint4)(r, g, b, 255));
 }
