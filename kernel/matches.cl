@@ -43,6 +43,16 @@ typedef struct __attribute__ ((packed)) Hues {
 
 const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE;
 
+inline float hue2score(const int hue1, const int hue2) {
+	int diff = hue1 - hue2;
+	if(diff > 127) //TODO correct thresholds?
+		diff -= 255;
+	else if(diff < -127)
+		diff += 255;
+
+	return 1.0f - abs(diff) / 128.f;
+}
+
 kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Match* matches, global volatile int* counter, const float circThreshold, const float minScore, const int radius, const struct Hues hues, const int maxMatches) {
 	const int2 pos = (int2)(get_global_id(0), get_global_id(1));
 	float circScore = read_imagef(circ, sampler, pos).x;
@@ -87,7 +97,7 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 		return;
 	}
 
-	uint4 color = s1 / n;
+	int4 color = convert_int4(s1 / n);
 
 	//https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
 	uint rgbMin = min(min(color.x, color.y), color.z);
@@ -116,9 +126,22 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 	match->color.r = color.x;
 	match->color.g = color.y;
 	match->color.b = color.z;
-	match->orangeness = abs((char)hue - (char)hues.orange) / 128.0f;
-	match->yellowness = abs((char)hue - (char)hues.yellow) / 128.0f;
-	match->blueness = abs((char)hue - (char)hues.blue) / 128.0f;
-	match->greenness = abs((char)hue - (char)hues.green) / 128.0f;
-	match->pinkness = abs((char)hue - (char)hues.pink) / 128.0f;
+	/*match->orangeness = hue2score(hue, hues.orange);
+	match->yellowness = hue2score(hue, hues.yellow);
+	match->blueness = hue2score(hue, hues.blue);
+	match->greenness = hue2score(hue, hues.green);
+	match->pinkness = hue2score(hue, hues.pink);*/
+
+	color -= 128;
+	//B4 105,126,149 196,100, 84 198, 99, 83 138,147, 95 195,100, 85
+	//B4 -23, -2, 21  68,-28,-44  70,-29,-45  10, 19,-33  67,-28,-43
+	//   Blue        Pink 		 Pink	     Green		 Pink
+	//Score          -96         -99         9           -95
+	//Classification Pink        Pink        Green       Pink
+	//Detected as D: 13
+	//	 Blue		 Green		 Pink        Pink		 Pink (correct orientation)
+
+	match->orangeness = (color.r - color.b) / 255.0f;
+	match->yellowness = (color.r - color.b) / 255.0f;
+	match->greenness  = (color.g - color.r) / 255.0f;
 }

@@ -14,6 +14,7 @@
      limitations under the License.
  */
 #include <iostream>
+#include <iomanip>
 #include <opencv2/bgsegm.hpp>
 #include <yaml-cpp/yaml.h>
 
@@ -174,14 +175,14 @@ public:
 			Eigen::Vector2f offset = (blob->pos - (p.head<2>() + rotation * patternPos[i])) / 10.0f; // (10.0f) 1cm offset -> 0.5 score
 			float offsetScore = 1 / (1 + offset.squaredNorm());
 
-			float colorScore = i == 0 ? (blob->yellowness - blob->blueness) : (blob->greenness - blob->pinkness);
+			float colorScore = i == 0 ? blob->yellowness : blob->greenness;
 			if(!hasTrackedBot) {
 				colorScore = abs(colorScore);
 			} else if((i == 0 && trackedId > 16) || (((patterns[trackedId % 16] >> (4-i)) & 1) == 0)) {
 				colorScore = -colorScore;
 			}
 
-			score = std::min(score, offsetScore*colorScore);
+			score = std::min(score, offsetScore/**	colorScore*/);
 		}
 
 		score *= blobAmount / 5.f;
@@ -203,11 +204,11 @@ public:
 		if(blobs[0] == nullptr || blobs[1] == nullptr || blobs[2] == nullptr || blobs[3] == nullptr || blobs[4] == nullptr)
 			return -1;
 
-		return (blobs[0]->blueness > blobs[0]->yellowness ? 16 : 0) + patterns[
-				((blobs[1]->greenness > blobs[1]->pinkness ? 1 : 0) << 3) +
-				((blobs[2]->greenness > blobs[2]->pinkness ? 1 : 0) << 2) +
-				((blobs[3]->greenness > blobs[3]->pinkness ? 1 : 0) << 1) +
-				(blobs[4]->greenness > blobs[4]->pinkness ? 1 : 0)
+		return (blobs[0]->yellowness < 0.0f ? 16 : 0) + patternLUT[
+				((blobs[1]->greenness > 0.0f ? 1 : 0) << 3) +
+				((blobs[2]->greenness > 0.0f ? 1 : 0) << 2) +
+				((blobs[3]->greenness > 0.0f ? 1 : 0) << 1) +
+				(blobs[4]->greenness > 0.0f ? 1 : 0)
 		];
 	}
 
@@ -482,14 +483,6 @@ int main(int argc, char* argv[]) {
 						.greenness = match.greenness,
 						.pinkness = match.pinkness
 					});
-
-					if(
-							match.orangeness < 0 || match.orangeness > 1 ||
-							match.yellowness < 0 || match.yellowness > 1 ||
-							match.blueness < 0 || match.blueness > 1 ||
-							match.greenness < 0 || match.greenness > 1 ||
-							match.pinkness < 0 || match.pinkness > 1)
-						std::cout << match.orangeness << " " << match.yellowness << " " << match.blueness << " " << match.greenness << " " << match.pinkness << std::endl;
 				}
 
 				if(counterMap[0] > r.maxBlobs)
@@ -604,6 +597,12 @@ int main(int argc, char* argv[]) {
 				bot->set_orientation(maxPos.z());
 				bot->set_pixel_x(imgPos.x());
 				bot->set_pixel_y(imgPos.y());
+
+				std::cout << entry.first << " " << botmodel.botId() << " " << std::fixed << std::setprecision(2);
+				for(const Match* const& match : botmodel.blobs) {
+					std::cout << (int)match->color.r << "," << (int)match->color.g << "," << (int)match->color.b << "|" << match->greenness << " ";// << match->yellowness << "," << match->blueness << " " << match->greenness << "," << match->pinkness << " ";
+				}
+				std::cout << std::endl;
 			}
 
 			//TODO best ball
