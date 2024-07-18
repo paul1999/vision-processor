@@ -226,7 +226,7 @@ public:
 				Eigen::Vector2f diff = blobs[b]->pos - blobs[a]->pos;
 				float angleDelta = atan2f(diff.y(), diff.x()) - patternAnglesb2b[b*5 + a];
 				oSin += sinf(angleDelta);
-				oCos += sinf(angleDelta);
+				oCos += cosf(angleDelta);
 			}
 		}
 
@@ -482,6 +482,14 @@ int main(int argc, char* argv[]) {
 						.greenness = match.greenness,
 						.pinkness = match.pinkness
 					});
+
+					if(
+							match.orangeness < 0 || match.orangeness > 1 ||
+							match.yellowness < 0 || match.yellowness > 1 ||
+							match.blueness < 0 || match.blueness > 1 ||
+							match.greenness < 0 || match.greenness > 1 ||
+							match.pinkness < 0 || match.pinkness > 1)
+						std::cout << match.orangeness << " " << match.yellowness << " " << match.blueness << " " << match.greenness << " " << match.pinkness << std::endl;
 				}
 
 				if(counterMap[0] > r.maxBlobs)
@@ -532,12 +540,34 @@ int main(int argc, char* argv[]) {
 					}
 				}
 
-				if(bestBot != nullptr) {
-					int botId = bestBot->botId();
-					if(!bestBotModels.contains(botId) || bestBotScore > bestBotModels[botId].first) {
-						bestBotModels[botId] = std::pair<float, BlobBot>(bestBotScore, *bestBot);
+				if(bestBot == nullptr)
+					continue;
+
+				int botId = bestBot->botId();
+				if(bestBotModels.contains(botId) && bestBotScore <= bestBotModels[botId].first)
+					continue;
+
+				bool isBestBot = true;
+				Eigen::Vector2f pos = bestBot->pos().head<2>();
+				for(const auto& other : bestBotModels) {
+					if(other.second.first >= bestBotScore && (other.second.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius()) {
+						isBestBot = false;
+						break;
 					}
 				}
+				if(!isBestBot)
+					continue;
+
+				for (auto it = bestBotModels.cbegin(); it != bestBotModels.cend(); ) {
+					const auto& other = *it;
+					if(it->second.first < bestBotScore && (it->second.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius()) {
+						it = bestBotModels.erase(it);
+					} else {
+						it++;
+					}
+				}
+
+				bestBotModels[botId] = std::pair<float, BlobBot>(bestBotScore, *bestBot);
 			}
 
 			//TODO add score to each blob -> only use best scored model
@@ -575,6 +605,8 @@ int main(int argc, char* argv[]) {
 				bot->set_pixel_x(imgPos.x());
 				bot->set_pixel_y(imgPos.y());
 			}
+
+			//TODO best ball
 
 			if(r.debugImages) {
 				Image bgr = img->toBGR();
@@ -651,7 +683,20 @@ int main(int argc, char* argv[]) {
 			detection->set_t_sent(getTime());
 			r.socket->send(wrapper);
 			std::cout << "[main] time " << (getTime() - startTime) * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
-			r.rtpStreamer->sendFrame(circ);
+			switch(((long)(startTime/15.0) % 4)) {
+				case 0:
+					r.rtpStreamer->sendFrame(clImg);
+					break;
+				case 1:
+					r.rtpStreamer->sendFrame(flat);
+					break;
+				case 2:
+					r.rtpStreamer->sendFrame(color);
+					break;
+				case 3:
+					r.rtpStreamer->sendFrame(circ);
+					break;
+			}
 		} else if(r.socket->getGeometryVersion()) {
 			geometryCalibration(r, *img);
 		} else {

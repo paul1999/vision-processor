@@ -90,17 +90,17 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 	uint4 color = s1 / n;
 
 	//https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
-	uchar rgbMin = min(min(color.x, color.y), color.z);
-	uchar rgbMax = max(max(color.x, color.y), color.z);
+	uint rgbMin = min(min(color.x, color.y), color.z);
+	uint rgbMax = max(max(color.x, color.y), color.z);
+	uint span = rgbMax - rgbMin;
 	uchar hue = 0;
-	uchar span = rgbMax - rgbMin;
 	if (rgbMax != 0 && span != 0) {
 		if (rgbMax == color.x)
-			hue = 0 + 43 * (color.y - color.z) / span;
+			hue = 0 + 43 * ((uchar)color.y - (uchar)color.z) / span;
 		else if (rgbMax == color.y)
-			hue = 85 + 43 * (color.z - color.x) / span;
+			hue = 85 + 43 * ((uchar)color.z - (uchar)color.x) / span;
 		else
-			hue = 171 + 43 * (color.x - color.y) / span;
+			hue = 171 + 43 * ((uchar)color.x - (uchar)color.y) / span;
 	}
 
 	//if(hsv.y < sThreshold || hsv.z < vThreshold)
@@ -116,9 +116,9 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 	match->color.r = color.x;
 	match->color.g = color.y;
 	match->color.b = color.z;
-	match->orangeness = fabs((float)(char)(hue - hues.orange)) / 128.0f;
-	match->yellowness = fabs((float)(char)(hue - hues.yellow)) / 128.0f;
-	match->blueness = fabs((float)(char)(hue - hues.blue)) / 128.0f;
-	match->greenness = fabs((float)(char)(hue - hues.green)) / 128.0f;
-	match->pinkness = fabs((float)(char)(hue - hues.pink)) / 128.0f;
+	match->orangeness = abs((char)hue - (char)hues.orange) / 128.0f;
+	match->yellowness = abs((char)hue - (char)hues.yellow) / 128.0f;
+	match->blueness = abs((char)hue - (char)hues.blue) / 128.0f;
+	match->greenness = abs((char)hue - (char)hues.green) / 128.0f;
+	match->pinkness = abs((char)hue - (char)hues.pink) / 128.0f;
 }
