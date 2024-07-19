@@ -21,7 +21,7 @@ const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK
 
 void kernel f2nv12(read_only image2d_t in, global uchar* out) {
 	int2 pos = (int2)(get_global_id(0), get_global_id(1));
-	const float v = read_imagef(in, sampler, pos).x;
 
-	out[pos.x + pos.y*get_global_size(0)] = convert_uchar_sat(v + 127);
+	out[pos.x + pos.y*get_global_size(0)] = convert_uchar_sat(read_imagef(in, sampler, pos).x + 127);
+	out[get_image_width(in)*get_image_height(in) + pos.x + (pos.y/2)*get_global_size(0)] = 127;
 }

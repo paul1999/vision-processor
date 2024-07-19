@@ -26,7 +26,7 @@ void kernel rgb2nv12(read_only image2d_t in, global uchar* out) {
 	out[pos.x + pos.y*get_global_size(0)] = convert_uchar_sat((66*v.r + 129*v.g + 25*v.b) / 256 + 16);
 
 	pos /= 2;
-	const int uvout = UV_OFFSET + pos.x*2 + pos.y*get_global_size(0);
+	const int uvout = get_image_width(in)*get_image_height(in) + pos.x*2 + pos.y*get_global_size(0);
 	out[uvout] = convert_uchar_sat((-38*(int)v.r + -74*(int)v.g + 112*(int)v.b) / 256 + 128);
     out[uvout+1] = convert_uchar_sat((112*(int)v.r + -94*(int)v.g + -18*(int)v.b) / 256 + 128);
 }

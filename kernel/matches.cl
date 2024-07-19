@@ -24,7 +24,7 @@ typedef struct __attribute__ ((packed)) {
 } RGB;
 
 typedef struct __attribute__ ((packed)) {
-	int x, y;
+	float x, y;
 	RGB color;
 	float orangeness;
 	float yellowness;
@@ -32,14 +32,6 @@ typedef struct __attribute__ ((packed)) {
 	float greenness;
 	float pinkness;
 } Match;
-
-typedef struct __attribute__ ((packed)) Hues {
-	uchar orange;
-	uchar yellow;
-	uchar blue;
-	uchar green;
-	uchar pink;
-} Hues;
 
 const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE;
 
@@ -53,18 +45,21 @@ inline float hue2score(const int hue1, const int hue2) {
 	return 1.0f - abs(diff) / 128.f;
 }
 
-kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Match* matches, global volatile int* counter, const float circThreshold, const float minScore, const int radius, const struct Hues hues, const int maxMatches) {
+kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Match* matches, global volatile int* counter, const float circThreshold, const float minScore, const int radius, const int maxMatches) {
 	const int2 pos = (int2)(get_global_id(0), get_global_id(1));
 	float circScore = read_imagef(circ, sampler, pos).x;
 	if(circScore < circThreshold)
 		return;
 
-	//TODO subpixel position
+	float circNegX = read_imagef(circ, sampler, (int2)(pos.x-1, pos.y)).x;
+	float circPosX = read_imagef(circ, sampler, (int2)(pos.x+1, pos.y)).x;
+	float circNegY = read_imagef(circ, sampler, (int2)(pos.x, pos.y-1)).x;
+	float circPosY = read_imagef(circ, sampler, (int2)(pos.x, pos.y+1)).x;
 	if(
-			read_imagef(circ, sampler, (int2)(pos.x-1, pos.y)).x > circScore ||
-			read_imagef(circ, sampler, (int2)(pos.x+1, pos.y)).x > circScore ||
-			read_imagef(circ, sampler, (int2)(pos.x, pos.y-1)).x > circScore ||
-			read_imagef(circ, sampler, (int2)(pos.x, pos.y+1)).x > circScore
+			circNegX > circScore ||
+			circPosX > circScore ||
+			circNegY > circScore ||
+			circPosY > circScore
 	) {
 		atomic_inc(counter+2);
 		return;
@@ -100,7 +95,7 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 	int4 color = convert_int4(s1 / n);
 
 	//https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
-	uint rgbMin = min(min(color.x, color.y), color.z);
+	/*uint rgbMin = min(min(color.x, color.y), color.z);
 	uint rgbMax = max(max(color.x, color.y), color.z);
 	uint span = rgbMax - rgbMin;
 	uchar hue = 0;
@@ -111,7 +106,7 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 			hue = 85 + 43 * ((uchar)color.z - (uchar)color.x) / span;
 		else
 			hue = 171 + 43 * ((uchar)color.x - (uchar)color.y) / span;
-	}
+	}*/
 
 	//if(hsv.y < sThreshold || hsv.z < vThreshold)
 	//	return;
@@ -121,8 +116,9 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 		return;
 
 	global Match* match = matches + i;
-	match->x = pos.x;
-	match->y = pos.y;
+	//https://ccrma.stanford.edu/~jos/sasp/Quadratic_Interpolation_Spectral_Peaks.html
+	match->x = pos.x + 0.5f * (circNegX - circPosX) / (circNegX - 2*circScore + circPosX);
+	match->y = pos.y + 0.5f * (circNegY - circPosY) / (circNegY - 2*circScore + circPosY);
 	match->color.r = color.x;
 	match->color.g = color.y;
 	match->color.b = color.z;
@@ -132,14 +128,7 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 	match->greenness = hue2score(hue, hues.green);
 	match->pinkness = hue2score(hue, hues.pink);*/
 
-	color -= 128;
-	//B4 105,126,149 196,100, 84 198, 99, 83 138,147, 95 195,100, 85
-	//B4 -23, -2, 21  68,-28,-44  70,-29,-45  10, 19,-33  67,-28,-43
-	//   Blue        Pink 		 Pink	     Green		 Pink
-	//Score          -96         -99         9           -95
-	//Classification Pink        Pink        Green       Pink
-	//Detected as D: 13
-	//	 Blue		 Green		 Pink        Pink		 Pink (correct orientation)
+	//color -= 128;
 
 	match->orangeness = (color.r - color.b) / 255.0f;
 	match->yellowness = (color.r - color.b) / 255.0f;

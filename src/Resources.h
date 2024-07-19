@@ -60,19 +60,11 @@ public:
 	double minScore;
 	int maxBlobs;
 
-	RGB orange = {255, 64, 0};
-	RGB yellow = {255, 255, 64};
-	//RGB yellow = {255, 192, 128};
-	//RGB yellow = {192, 128, 64};
-	RGB blue = {0, 0, 255};
-	RGB green = {64, 255, 64};
-	RGB pink = {255, 0, 255};
-
-	uint8_t orangeHue;
-	uint8_t yellowHue;
-	uint8_t blueHue;
-	uint8_t greenHue;
-	uint8_t pinkHue;
+	Eigen::Vector3i orange = {255, 128, 0};
+	Eigen::Vector3i yellow = {255, 128, 0};
+	Eigen::Vector3i blue = {0, 128, 255};
+	Eigen::Vector3i green = {0, 255, 128};
+	Eigen::Vector3i pink = {255, 0, 128};
 
 	int cameraAmount;
 	double cameraHeight; // Just for calibration, do not use elsewhere (0.0 as special value for automatic calibration)

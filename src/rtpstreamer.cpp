@@ -29,6 +29,8 @@ extern "C" {
 
 RTPStreamer::RTPStreamer(std::shared_ptr<OpenCL> openCl, std::string uri, int framerate): openCl(std::move(openCl)), uri(std::move(uri)), framerate(framerate), frametime_us(1000000 / framerate) {
 	encoder = std::thread(&RTPStreamer::encoderRun, this);
+	rgb2nv12 = this->openCl->compile(kernel_rgb2nv12_cl, kernel_rgb2nv12_cl_end);
+	f2nv12 = this->openCl->compile(kernel_f2nv12_cl, kernel_f2nv12_cl_end);
 }
 
 RTPStreamer::~RTPStreamer() {
@@ -123,23 +125,6 @@ void RTPStreamer::allocResources() {
 	frame->linesize[1] = width;
 
 	pkt = av_packet_alloc();
-
-	int uvOffset = width*height;
-	std::string compilerFlags = "-D UV_OFFSET=" + std::to_string(uvOffset);
-	if(format == &PixelFormat::RGBA8) {
-		converter = openCl->compile(kernel_rgb2nv12_cl, kernel_rgb2nv12_cl_end, compilerFlags);
-	} else if(format == &PixelFormat::F32) {
-		converter = openCl->compile(kernel_f2nv12_cl, kernel_f2nv12_cl_end, compilerFlags);
-	} else {
-		std::cerr << "[RtpStreamer] Unsupported pixel format" << std::endl;
-		exit(1);
-	}
-
-	if(!this->format->color) {
-		CLMap<uint8_t> uv = buffer->write<uint8_t>();
-		for(int i = 0; i < width * (height/2); i++)
-			uv[uvOffset + i] = 127;
-	}
 }
 
 void RTPStreamer::freeResources() {
@@ -181,17 +166,23 @@ void RTPStreamer::encoderRun() {
 			queue = nullptr;
 		}
 
-		if(image->width != width || image->height != height || image->format != format) {
+		if(image->width != width || image->height != height) {
 			freeResources();
 			width = image->width;
 			height = image->height;
-			format = image->format;
 		}
 
 		allocResources();
 
 		auto startTime = std::chrono::high_resolution_clock::now();
-		OpenCL::await(converter, cl::EnqueueArgs(cl::NDRange(width, height)), image->image, buffer->buffer);
+		if(image->format == &PixelFormat::RGBA8) {
+			OpenCL::await(rgb2nv12, cl::EnqueueArgs(cl::NDRange(width, height)), image->image, buffer->buffer);
+		} else if(image->format == &PixelFormat::F32) {
+			OpenCL::await(f2nv12, cl::EnqueueArgs(cl::NDRange(width, height)), image->image, buffer->buffer);
+		} else {
+			std::cerr << "[RtpStreamer] Unsupported pixel format" << std::endl;
+			exit(1);
+		}
 		image = nullptr;
 
 		{

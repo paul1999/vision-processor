@@ -73,13 +73,6 @@ Resources::Resources(const YAML::Node& config) {
 	minScore = thresholds["score"].as<double>(64.0); // 32.0
 	maxBlobs = thresholds["blobs"].as<int>(2000);
 
-	YAML::Node hues = config["hues"].IsDefined() ? config["hues"] : YAML::Node();
-	orangeHue = readHue(hues["orange"], 30.0);
-	yellowHue = readHue(hues["yellow"], 60.0);
-	blueHue = readHue(hues["blue"], 210.0);
-	greenHue = readHue(hues["green"], 120.0);
-	pinkHue = readHue(hues["pink"], 300.0);
-
 	YAML::Node sizes = config["sizes"].IsDefined() ? config["sizes"] : YAML::Node();
 	sideBlobDistance = sizes["side_blob_distance"].as<double>(65.0);
 	centerBlobRadius = sizes["center_blob_radius"].as<double>(25.0);
