@@ -26,11 +26,8 @@ typedef struct __attribute__ ((packed)) {
 typedef struct __attribute__ ((packed)) {
 	float x, y;
 	RGB color;
-	float orangeness;
-	float yellowness;
-	float blueness;
-	float greenness;
-	float pinkness;
+	float circ;
+	float score;
 } Match;
 
 const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE;
@@ -122,15 +119,15 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 	match->color.r = color.x;
 	match->color.g = color.y;
 	match->color.b = color.z;
+	match->circ = circScore;
+	match->score = score;
 	/*match->orangeness = hue2score(hue, hues.orange);
 	match->yellowness = hue2score(hue, hues.yellow);
 	match->blueness = hue2score(hue, hues.blue);
 	match->greenness = hue2score(hue, hues.green);
 	match->pinkness = hue2score(hue, hues.pink);*/
 
-	//color -= 128;
-
-	match->orangeness = (color.r - color.b) / 255.0f;
+	/*match->orangeness = (color.r - color.b) / 255.0f;
 	match->yellowness = (color.r - color.b) / 255.0f;
-	match->greenness  = (color.g - color.r) / 255.0f;
+	match->greenness  = (color.g - color.r) / 255.0f;*/
 }
