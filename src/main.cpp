@@ -50,10 +50,21 @@ struct Match {
 	auto operator<=>(const Match&) const = default;
 };
 
-static float kMeans(std::initializer_list<Eigen::Vector3i> values, Eigen::Vector3i& c1, Eigen::Vector3i& c2) {
-	//TODO prevent c1 and c2 converging onto same value necessary?
+static void kMeans(const std::vector<Eigen::Vector3i>& values, Eigen::Vector3i& c1, Eigen::Vector3i& c2) {
+	//TODO different convergence measurement for values < 3
+	if(values.size() < 3)
+		return;
+	Eigen::Vector3i c1backup = c1;
+	Eigen::Vector3i c2backup = c2;
+	//https://reasonabledeviations.com/2019/10/02/k-means-in-cpp/
+	//https://www.analyticsvidhya.com/blog/2021/05/k-mean-getting-the-optimal-number-of-clusters/
 	c1 = *std::min_element(values.begin(), values.end(), [&](const Eigen::Vector3i& a, const Eigen::Vector3i& b) { return (a - c1).squaredNorm() < (b - c1).squaredNorm(); });
 	c2 = *std::min_element(values.begin(), values.end(), [&](const Eigen::Vector3i& a, const Eigen::Vector3i& b) { return (a - c2).squaredNorm() < (b - c2).squaredNorm(); });
+	if(c1 == c2) {
+		c1 = c1backup;
+		c2 = c2backup;
+		return;
+	}
 
 	Eigen::Vector3i oldC1 = c2;
 	Eigen::Vector3i oldC2 = c1;
@@ -94,7 +105,11 @@ static float kMeans(std::initializer_list<Eigen::Vector3i> values, Eigen::Vector
 		}
 	}
 
-	return std::max(s1/(float)n1, s2/(float)n2);
+	if(std::max(s1/(float)n1, s2/(float)n2) < 0.5f) { //TODO hardcoded value
+		std::cerr << "   Skipping Update for " << n1 << "|" << n2 << "   " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
+		c1 = c1backup;
+		c2 = c2backup;
+	}
 }
 
 
@@ -189,7 +204,7 @@ public:
 		blobSearchRadius = /* 0.5f * */ (float)r.maxBotAcceleration * timeDelta * timeDelta + r.perspective->field.max_robot_radius();
 	}
 
-	float score() const {
+	float score(const Resources& r) const {
 		int blobAmount = 0;
 		for(auto& blob : blobs)
 			if(blob != nullptr)
@@ -208,16 +223,19 @@ public:
 				continue;
 
 			Eigen::Vector2f offset = (blob->pos - (p.head<2>() + rotation * patternPos[i])) / 10.0f; // (10.0f) 1cm offset -> 0.5 score
-			float offsetScore = 1 / (1 + offset.squaredNorm());
+			float blobScore = 1 / (1 + offset.squaredNorm());
 
-			/*float colorScore = i == 0 ? blob->yellowness : blob->greenness;
-			if(!hasTrackedBot) {
-				colorScore = abs(colorScore);
-			} else if((i == 0 && trackedId > 16) || (((patterns[trackedId % 16] >> (4-i)) & 1) == 0)) {
-				colorScore = -colorScore;
-			}*/
+			if(hasTrackedBot) {
+				Eigen::Vector3i blobColor;
+				if(i == 0)
+					blobColor = trackedId > 16 ? r.blue : r.yellow;
+				else
+					blobColor = ((patterns[trackedId % 16] >> (4-i)) & 1) ? r.green : r.pink;
 
-			score = std::min(score, offsetScore/**	colorScore*/);
+				blobScore *= 1 - (float)(blob->color - blobColor).norm() / 443.4050f; // sqrt(3 * 256**2)
+			}
+
+			score = std::min(score, blobScore);
 		}
 
 		score *= blobAmount / 5.f;
@@ -241,11 +259,7 @@ public:
 
 		Eigen::Vector3i green = r.green;
 		Eigen::Vector3i pink = r.pink;
-		float silhouetteScore = kMeans({blobs[1]->color, blobs[2]->color, blobs[3]->color, blobs[4]->color}, green, pink);
-		if(silhouetteScore < 0.5f) { //TODO hardcoded value
-			green = r.green;
-			pink = r.pink;
-		}
+		kMeans({blobs[1]->color, blobs[2]->color, blobs[3]->color, blobs[4]->color}, green, pink);
 
 		return ((blobs[0]->color - r.blue).squaredNorm() < (blobs[0]->color - r.yellow).squaredNorm() ? 16 : 0) + patternLUT[
 				(((blobs[1]->color - green).squaredNorm() < (blobs[1]->color - pink).squaredNorm() ? 1 : 0) << 3) +
@@ -297,9 +311,9 @@ public:
 
 	float blobSearchRadius{};
 	Match* blobs[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+	bool hasTrackedBot = false;
 
 private:
-	bool hasTrackedBot = false;
 	int trackedId = 0;
 	Eigen::Vector3f trackedPosition;
 	float trackedConfidence = 0;
@@ -313,6 +327,40 @@ static void bgrDrawBlobs(const Resources& r, Image& bgr, const std::list<CLMatch
 		cv::drawMarker(*bgrMap, cv::Point(2*pos.x, 2*pos.y), CV_RGB(color.r, color.g, color.b), cv::MARKER_CROSS, 10);
 		//cv::putText(*bgrMap, std::to_string((int)(match.score*100)) + " h" + std::to_string((int)hsv.r) + "s" + std::to_string((int)hsv.g) + "v" + std::to_string((int)hsv.b), cv::Point(2*pos.x, 2*pos.y), cv::FONT_HERSHEY_SIMPLEX, 0.4, CV_RGB(color.r, color.g, color.b));
 	}
+}
+
+static void updateColors(Resources& r, const std::vector<std::pair<float, BlobBot>>& bestBotModels) {
+	std::vector<Eigen::Vector3i> centerBlobs;
+	Eigen::Vector3i pink(0, 0, 0);
+	int pinkN = 0;
+	Eigen::Vector3i green(0, 0, 0);
+	int greenN = 0;
+	for (const auto& model : bestBotModels) {
+		if(model.second.blobs[0] != nullptr)
+			centerBlobs.push_back(model.second.blobs[0]->color);
+
+		int botId = model.second.botId(r) % 16;
+		for(int i = 1; i < 5; i++) {
+			const Match* blob = model.second.blobs[i];
+			if(blob == nullptr)
+				continue;
+
+			if((patterns[botId] >> (4-i)) & 1) {
+				green += blob->color;
+				greenN++;
+			} else {
+				pink += blob->color;
+				pinkN++;
+			}
+		}
+	}
+	//TODO orange
+	kMeans(centerBlobs, r.yellow, r.blue);
+
+	if(pinkN > 0)
+		r.pink = pink / pinkN;
+	if(greenN > 0)
+		r.green = green / greenN;
 }
 
 int main(int argc, char* argv[]) {
@@ -402,7 +450,12 @@ int main(int argc, char* argv[]) {
 				blobs.insert(&matches[i]);
 			}
 
-			std::map<int, std::pair<float, BlobBot>> bestBotModels;
+			std::vector<std::pair<float, BlobBot>> bestBotModels;
+			/*for (const auto& camTracked : r.socket->getTrackedObjects()) {
+
+			}*/
+			//TODO robot history
+
 			std::vector<Match*> botBlobs;
 			for(int i = 0; i < blobs.getSize(); i++) {
 				Match& blob = matches[i];
@@ -431,7 +484,7 @@ int main(int argc, char* argv[]) {
 									continue;
 
 								botModel.blobs[4] = d;
-								float botScore = botModel.score();
+								float botScore = botModel.score(r);
 								if(botScore > bestBotScore) {
 									bestBot = std::make_unique<BlobBot>(botModel);
 									bestBotScore = botScore;
@@ -444,14 +497,14 @@ int main(int argc, char* argv[]) {
 				if(bestBot == nullptr)
 					continue;
 
-				int botId = bestBot->botId(r);
+				/*int botId = bestBot->botId(r);
 				if(bestBotModels.contains(botId) && bestBotScore <= bestBotModels[botId].first)
-					continue;
+					continue;*/
 
 				bool isBestBot = true;
 				Eigen::Vector2f pos = bestBot->pos().head<2>();
 				for(const auto& other : bestBotModels) {
-					if(other.second.first >= bestBotScore && (other.second.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius()) {
+					if(other.first >= bestBotScore && (other.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius()) {
 						isBestBot = false;
 						break;
 					}
@@ -461,19 +514,19 @@ int main(int argc, char* argv[]) {
 
 				for (auto it = bestBotModels.cbegin(); it != bestBotModels.cend(); ) {
 					const auto& other = *it;
-					if(it->second.first < bestBotScore && (it->second.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius()) {
+					if(it->first < bestBotScore && (it->second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius()) {
 						it = bestBotModels.erase(it);
 					} else {
 						it++;
 					}
 				}
 
-				bestBotModels[botId] = std::pair<float, BlobBot>(bestBotScore, *bestBot);
+				bestBotModels.emplace_back(bestBotScore, *bestBot);
 			}
 
-			//https://reasonabledeviations.com/2019/10/02/k-means-in-cpp/
-			//TODO do not filter bots according to bot id anymore (prior to color kmeans determination)
-			//https://www.analyticsvidhya.com/blog/2021/05/k-mean-getting-the-optimal-number-of-clusters/
+			//TODO filter bots according to color kmeans?
+			updateColors(r, bestBotModels);
+			std::cout << r.yellow.transpose() << "|" << r.blue.transpose() << "   " << r.green.transpose() << "|" << r.pink.transpose() << std::endl;
 
 			//TODO area around tracked ball with reduced or alternative minCircularity?
 
@@ -486,15 +539,15 @@ int main(int argc, char* argv[]) {
 			detection->set_camera_id(r.camId);
 
 			for (const auto& entry : bestBotModels) {
-				//TODO filter for duplicate blob usage
-				const BlobBot& botmodel = entry.second.second;
-				bool yellow = entry.first < 16;
+				const BlobBot& botmodel = entry.second;
+				int botId = botmodel.botId(r);
+				bool yellow = botId < 16;
 				const Eigen::Vector3f maxPos = botmodel.pos();
 				const Eigen::Vector2f imgPos = r.perspective->model.field2image({maxPos.x(), maxPos.y(), (float)r.gcSocket->maxBotHeight});
 				const Eigen::Vector3f pos = r.perspective->model.image2field(imgPos, yellow ? r.gcSocket->yellowBotHeight : r.gcSocket->blueBotHeight);
 				SSL_DetectionRobot* bot = yellow ? detection->add_robots_yellow() : detection->add_robots_blue();
-				bot->set_confidence(entry.second.first);
-				bot->set_robot_id(entry.first % 16);
+				bot->set_confidence(entry.first + (botmodel.hasTrackedBot ? 1.0f : 0.0f));
+				bot->set_robot_id(botId % 16);
 				bot->set_x(pos.x());
 				bot->set_y(pos.y());
 				bot->set_height(pos.z());
@@ -516,7 +569,7 @@ int main(int argc, char* argv[]) {
 
 				bool nextToBot = false;
 				for (const auto& entry : bestBotModels) {
-					if((blob.pos - entry.second.second.pos().head<2>()).norm() < r.perspective->field.max_robot_radius()) {
+					if((blob.pos - entry.second.pos().head<2>()).norm() < r.perspective->field.max_robot_radius()) {
 						nextToBot = true;
 						break;
 					}
@@ -576,7 +629,6 @@ int main(int argc, char* argv[]) {
 				case 3:
 					r.rtpStreamer->sendFrame(circ);
 					break;
-			}
 			}*/
 			r.rtpStreamer->sendFrame(clImg);
 		} else if(r.socket->getGeometryVersion()) {
