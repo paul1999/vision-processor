@@ -358,9 +358,9 @@ public:
 			float rotationOffset = (p.z() - trackedPosition.z()) / M_PI; //TODO issues with wraparound?
 			score *= 1 / (1 + ((p.head<2>() - trackedPosition.head<2>()) / 10.0f).squaredNorm() + rotationOffset*rotationOffset); // (10.0f) 1cm offset -> 0.5 score
 			score *= std::max(blobAmount / 5.f, trackedConfidence);
-		} else {
+		} /*else {
 			score *= 0.5f;
-		}
+		}*/
 
 		return std::max(0.f, score);
 	}
