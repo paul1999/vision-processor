@@ -231,24 +231,28 @@ public:
 
 			if(hasTrackedBot) {
 				Eigen::Vector3i blobColor;
-				if(i == 0)
-					blobColor = trackedId > 16 ? r.blue : r.yellow;
-				else
+				Eigen::Vector3i oppositeColor;
+				if(i == 0) {
+					blobColor = trackedId >= 16 ? r.blue : r.yellow;
+					oppositeColor = trackedId >= 16 ? r.yellow : r.blue;
+				} else {
 					blobColor = ((patterns[trackedId % 16] >> (4-i)) & 1) ? r.green : r.pink;
+					oppositeColor = ((patterns[trackedId % 16] >> (4-i)) & 1) ? r.pink : r.green;
+				}
 
-				blobScore *= 1 - (float)(blob->color - blobColor).norm() / 443.4050f; // sqrt(3 * 256**2)
+				//blobScore *= 1 - (float)(blob->color - blobColor).norm() / 443.4050f; // sqrt(3 * 256**2)
+				blobScore *= ((blob->color - oppositeColor).squaredNorm() - (blob->color - blobColor).squaredNorm() > 0 ? 1.0f : 0.0f);
 			}
 
 			score = std::min(score, blobScore);
 		}
 
-		score *= blobAmount / 5.f;
-		if(blobAmount < 5)
-			score *= trackedConfidence;
-
 		if(hasTrackedBot) {
 			float rotationOffset = (p.z() - trackedPosition.z()) * (float)M_PI; //TODO issues with wraparound?
 			score *= 1 / (1 + ((p.head<2>() - trackedPosition.head<2>()) / 10.0f).squaredNorm() + rotationOffset*rotationOffset); // (10.0f) 1cm offset -> 0.5 score
+			score *= std::max(blobAmount / 5.f, trackedConfidence);
+		} else {
+			score *= 0.5f;
 		}
 
 		return std::max(0.f, score);
@@ -509,7 +513,7 @@ int main(int argc, char* argv[]) {
 					bool isBestBot = true;
 					Eigen::Vector2f pos = bestBot->pos().head<2>();
 					for(const auto& other : bestBotModels) {
-						if(other.first >= bestBotScore && (other.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius()) {
+						if(other.first >= bestBotScore && (other.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * 1.75f) { //TODO hardcoded values
 							isBestBot = false;
 							break;
 						}
@@ -519,7 +523,7 @@ int main(int argc, char* argv[]) {
 
 					for (auto it = bestBotModels.cbegin(); it != bestBotModels.cend(); ) {
 						const auto& other = *it;
-						if(it->first < bestBotScore && (it->second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius()) {
+						if(it->first < bestBotScore && (it->second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * 1.75f) { //TODO hardcoded values
 							it = bestBotModels.erase(it);
 						} else {
 							it++;
@@ -578,7 +582,7 @@ int main(int argc, char* argv[]) {
 				bool isBestBot = true;
 				Eigen::Vector2f pos = bestBot->pos().head<2>();
 				for(const auto& other : bestBotModels) {
-					if(other.first >= bestBotScore && (other.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius()) {
+					if(other.first >= bestBotScore && (other.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * 1.75f) { //TODO hardcoded values
 						isBestBot = false;
 						break;
 					}
@@ -587,8 +591,7 @@ int main(int argc, char* argv[]) {
 					continue;
 
 				for (auto it = bestBotModels.cbegin(); it != bestBotModels.cend(); ) {
-					const auto& other = *it;
-					if(it->first < bestBotScore && (it->second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius()) {
+					if(it->first < bestBotScore && (it->second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * 1.75f) { //TODO hardcoded values
 						it = bestBotModels.erase(it);
 					} else {
 						it++;
@@ -620,7 +623,7 @@ int main(int argc, char* argv[]) {
 				const Eigen::Vector2f imgPos = r.perspective->model.field2image({maxPos.x(), maxPos.y(), (float)r.gcSocket->maxBotHeight});
 				const Eigen::Vector3f pos = r.perspective->model.image2field(imgPos, yellow ? r.gcSocket->yellowBotHeight : r.gcSocket->blueBotHeight);
 				SSL_DetectionRobot* bot = yellow ? detection->add_robots_yellow() : detection->add_robots_blue();
-				bot->set_confidence(entry.first + (botmodel.hasTrackedBot ? 1.0f : 0.0f));
+				bot->set_confidence(entry.first);
 				bot->set_robot_id(botId % 16);
 				bot->set_x(pos.x());
 				bot->set_y(pos.y());
@@ -716,7 +719,7 @@ int main(int argc, char* argv[]) {
 			detection->set_t_sent(getTime());
 			r.socket->send(wrapper);
 			std::cout << "[main] time " << (getTime() - startTime) * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
-			switch(((long)(startTime/15.0) % 5)) {
+			switch(((long)(startTime/15.0) % 4)) {
 				case 0:
 					r.rtpStreamer->sendFrame(clImg);
 					break;

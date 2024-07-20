@@ -18,15 +18,19 @@ field:
 calib:
 - camera_id: 0
   focal_length: 1456.1398
-  principal_point_x: 1976.71
-  principal_point_y: 940.07
+  #principal_point_x: 1976.71
+  #principal_point_y: 940.07
+  principal_point_x: 1224.0
+  principal_point_y: 1024.0
   distortion: -0.000076
   q0: -0.99999
   q1: 0.002610
   q2: -0.003698
   q3: 0.000015
-  tx: -3036.57
-  ty: 273.29
+  #tx: -3036.57
+  #ty: 273.29
+  tx: 65.0
+  ty: -70.0
   tz: 5996.0
   pixel_image_width: 2448.0
   pixel_image_height: 2048.0
