@@ -48,7 +48,7 @@ struct Match {
 	auto operator<=>(const Match&) const = default;
 };
 
-static void kMeans(const std::vector<Eigen::Vector3i>& values, Eigen::Vector3i& c1, Eigen::Vector3i& c2) {
+/*static void kMeans(const std::vector<Eigen::Vector3i>& values, Eigen::Vector3i& c1, Eigen::Vector3i& c2) {
 	//TODO different convergence measurement for values < 3
 	if(values.size() < 3)
 		return;
@@ -109,11 +109,117 @@ static void kMeans(const std::vector<Eigen::Vector3i>& values, Eigen::Vector3i& 
 		}
 	}
 
-	if(std::max(s1/(float)n1, s2/(float)n2) < 0.75f) { //TODO hardcoded value
+	//TODO circularity of samples: if roughly circular: one cluster?
+	//TODO if small sample size: combine multiple frames
+	if(std::max(s1/(float)n1, s2/(float)n2) < 1.0f) { //TODO not working	 //TODO hardcoded value
 		std::cerr << "   Skipping Update for " << n1 << "|" << n2 << "   " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
 		c1 = c1backup;
 		c2 = c2backup;
 	}
+}*/
+
+static void kMeans(const Eigen::Vector3i& different, const std::vector<Eigen::Vector3i>& values, Eigen::Vector3i& c1, Eigen::Vector3i& c2) {
+	if(values.size() < 2)
+		return;
+
+	float inGroupDiff = INFINITY;
+	float outGroupDiff = INFINITY;
+
+	for (int i = 0; i < values.size(); i++) {
+		const auto& value = values[i];
+		outGroupDiff = std::min(outGroupDiff, (float)(value - different).squaredNorm());
+
+		for (int j = i+1; j < values.size(); j++) {
+			inGroupDiff = std::min(inGroupDiff, (float)(values[j] - value).squaredNorm());
+		}
+	}
+
+	if(inGroupDiff > outGroupDiff) {
+		std::cerr << "   Ingroup bigger than outgroup" << std::endl;
+		return;
+	}
+
+	inGroupDiff = sqrtf(inGroupDiff);
+	outGroupDiff = sqrtf(outGroupDiff);
+
+	Eigen::Vector3i c1backup = c1;
+	Eigen::Vector3i c2backup = c2;
+
+	//https://reasonabledeviations.com/2019/10/02/k-means-in-cpp/
+	//https://www.analyticsvidhya.com/blog/2021/05/k-mean-getting-the-optimal-number-of-clusters/
+	c1 = *std::min_element(values.begin(), values.end(), [&](const Eigen::Vector3i& a, const Eigen::Vector3i& b) { return (a - c1).squaredNorm() < (b - c1).squaredNorm(); });
+	c2 = *std::min_element(values.begin(), values.end(), [&](const Eigen::Vector3i& a, const Eigen::Vector3i& b) { return (a - c2).squaredNorm() < (b - c2).squaredNorm(); });
+	if(c1 == c2) {
+		c1 = c1backup;
+		c2 = c2backup;
+		return;
+	}
+
+	Eigen::Vector3i oldC1 = c2;
+	Eigen::Vector3i oldC2 = c1;
+	int n1 = 0;
+	int n2 = 0;
+	while(oldC1 != c1 && oldC2 != c2) {
+		Eigen::Vector3i sum1 = {0, 0, 0};
+		Eigen::Vector3i sum2 = {0, 0, 0};
+		n1 = 0;
+		n2 = 0;
+		for (const auto& value : values) {
+			if((value - c1).squaredNorm() < (value - c2).squaredNorm()) {
+				sum1 += value;
+				n1++;
+			} else {
+				sum2 += value;
+				n2++;
+			}
+		}
+
+		if(n1 == 0 || n2 == 0) {
+			std::cerr << "   N0 " << n1 << "|" << n2 << "   " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
+			c1 = c1backup;
+			c2 = c2backup;
+			return;
+		}
+
+		oldC1 = c1;
+		oldC2 = c2;
+		c1 = sum1 / n1;
+		c2 = sum2 / n2;
+	}
+
+	float mergeRange = (outGroupDiff - inGroupDiff) / 2.0f;
+	if((float)(c1 - c2).norm() < mergeRange) {
+		std::cerr << "   Skipping Update for " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
+		c1 = c1backup;
+		c2 = c2backup;
+	}
+
+	/*if((c1 - c2).dot(c1backup - c2backup) <= 0) { //TODO did never trigger
+		std::cerr << "   Attempted color direction inversion" << std::endl;
+		c1 = c1backup;
+		c2 = c2backup;
+	}*/
+
+	// https://en.wikipedia.org/wiki/Silhouette_(clustering)#Simplified_Silhouette_and_Medoid_Silhouette
+	/*float s1 = 0.0;
+	float s2 = 0.0;
+	for (const auto& value : values) {
+		float a = (float)(value - c1).norm();
+		float b = (float)(value - c2).norm();
+		if(a < b) {
+			s1 += (b - a) / b;
+		} else {
+			s2 += (a - b) / a;
+		}
+	}
+
+	//TODO circularity of samples: if roughly circular: one cluster?
+	//TODO if small sample size: combine multiple frames
+	if(std::max(s1/(float)n1, s2/(float)n2) < 1.0f) { //TODO not working	 //TODO hardcoded value
+		std::cerr << "   Skipping Update for " << n1 << "|" << n2 << "   " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
+		c1 = c1backup;
+		c2 = c2backup;
+	}*/
 }
 
 
@@ -205,6 +311,7 @@ public:
 		trackedPosition = Eigen::Vector3f(reprojectedPosition.x(), reprojectedPosition.y(), tracked.w) + Eigen::Vector3f(tracked.vx, tracked.vy, tracked.vz) * timeDelta;
 		trackedConfidence = tracked.confidence;
 		//Double acceleration due to velocity determination from two frame difference
+		timeDelta = std::min(timeDelta, 0.020f); //TODO hardcoded value
 		blobSearchRadius = /* 0.5f * */ (float)r.maxBotAcceleration * timeDelta * timeDelta + r.perspective->field.max_robot_radius();
 	}
 
@@ -214,7 +321,7 @@ public:
 			if(blob != nullptr)
 				blobAmount++;
 
-		if(blobAmount == 0)
+		if(blobAmount < 2)
 			return 0.0f;
 
 		Eigen::Vector3f p = pos();
@@ -241,14 +348,14 @@ public:
 				}
 
 				//blobScore *= 1 - (float)(blob->color - blobColor).norm() / 443.4050f; // sqrt(3 * 256**2)
-				blobScore *= ((blob->color - oppositeColor).squaredNorm() - (blob->color - blobColor).squaredNorm() > 0 ? 1.0f : 0.0f);
+				blobScore *= ((blob->color - oppositeColor).squaredNorm() - (blob->color - blobColor).squaredNorm() > 0 ? 1.0f : 0.1f);
 			}
 
 			score = std::min(score, blobScore);
 		}
 
 		if(hasTrackedBot) {
-			float rotationOffset = (p.z() - trackedPosition.z()) * (float)M_PI; //TODO issues with wraparound?
+			float rotationOffset = (p.z() - trackedPosition.z()) / M_PI; //TODO issues with wraparound?
 			score *= 1 / (1 + ((p.head<2>() - trackedPosition.head<2>()) / 10.0f).squaredNorm() + rotationOffset*rotationOffset); // (10.0f) 1cm offset -> 0.5 score
 			score *= std::max(blobAmount / 5.f, trackedConfidence);
 		} else {
@@ -267,7 +374,13 @@ public:
 
 		Eigen::Vector3i green = r.green;
 		Eigen::Vector3i pink = r.pink;
-		kMeans({blobs[1]->color, blobs[2]->color, blobs[3]->color, blobs[4]->color}, green, pink);
+		kMeans(blobs[0]->color, {blobs[1]->color, blobs[2]->color, blobs[3]->color, blobs[4]->color}, green, pink);
+
+		/*std::cout
+		<< std::min({(blobs[1]->color - blobs[2]->color).norm(), (blobs[1]->color - blobs[3]->color).norm(), (blobs[1]->color - blobs[4]->color).norm(), (blobs[2]->color - blobs[3]->color).norm(), (blobs[2]->color - blobs[4]->color).norm(), (blobs[3]->color - blobs[4]->color).norm()})
+		<< " "
+		<< std::min({(blobs[0]->color - blobs[1]->color).norm(), (blobs[0]->color - blobs[2]->color).norm(), (blobs[0]->color - blobs[3]->color).norm(), (blobs[0]->color - blobs[4]->color).norm()})
+		<< std::endl;*/
 
 		return ((blobs[0]->color - r.blue).squaredNorm() < (blobs[0]->color - r.yellow).squaredNorm() ? 16 : 0) + patternLUT[
 				(((blobs[1]->color - green).squaredNorm() < (blobs[1]->color - pink).squaredNorm() ? 1 : 0) << 3) +
@@ -338,7 +451,7 @@ static void bgrDrawBlobs(const Resources& r, Image& bgr, const std::list<CLMatch
 	}
 }
 
-static void updateColors(Resources& r, const std::vector<std::pair<float, BlobBot>>& bestBotModels) {
+static void updateColors(Resources& r, const std::vector<std::pair<float, BlobBot>>& bestBotModels, const std::vector<Match>& ballCandidates) {
 	std::vector<Eigen::Vector3i> centerBlobs;
 	Eigen::Vector3i pink(0, 0, 0);
 	int pinkN = 0;
@@ -363,13 +476,28 @@ static void updateColors(Resources& r, const std::vector<std::pair<float, BlobBo
 			}
 		}
 	}
-	//TODO orange
-	kMeans(centerBlobs, r.yellow, r.blue);
 
 	if(pinkN > 0)
 		r.pink = pink / pinkN;
 	if(greenN > 0)
 		r.green = green / greenN;
+
+	kMeans(r.pink, centerBlobs, r.yellow, r.blue);
+
+	std::vector<Eigen::Vector3i> ballBlobs;
+	for (const auto& ball : ballCandidates)
+		ballBlobs.push_back(ball.color);
+
+	Eigen::Vector3i oldFalseOrange = r.falseOrange;
+	kMeans(r.blue, ballBlobs, r.orange, r.falseOrange);
+
+	// Constant force to original colors
+	r.falseOrange = (r.falseOrangeReference + 2*r.falseOrange + 7*oldFalseOrange) / 10;
+	r.orange = (r.orangeReference + 9*r.orange) / 10;
+	r.pink = (r.pinkReference + 9*r.pink) / 10;
+	r.green = (r.greenReference + 9*r.green) / 10;
+	r.yellow = (r.yellowReference + 9*r.yellow) / 10;
+	r.blue = (r.blueReference + 9*r.blue) / 10;
 }
 
 int main(int argc, char* argv[]) {
@@ -533,7 +661,6 @@ int main(int argc, char* argv[]) {
 					bestBotModels.emplace_back(bestBotScore, *bestBot);
 				}
 			}
-			//TODO robot history
 
 			for(int i = 0; i < blobs.getSize(); i++) {
 				Match& blob = matches[i];
@@ -601,8 +728,33 @@ int main(int argc, char* argv[]) {
 				bestBotModels.emplace_back(bestBotScore, *bestBot);
 			}
 
+			float botCirc = 0.0f;
+			int botCircN = 0;
+			std::vector<Match> ballCandidates;
+			for(const auto& ball : matches) {
+				bool nextToBot = false;
+				for (const auto& entry : bestBotModels) {
+					if((ball.pos - entry.second.pos().head<2>()).norm() < r.perspective->field.max_robot_radius() * 0.8f) {
+						botCirc += ball.circ;
+						botCircN++;
+						nextToBot = true;
+						break;
+					}
+				}
+				if(nextToBot)
+					continue;
+
+				ballCandidates.push_back({
+					.pos = r.perspective->model.image2field(r.perspective->model.field2image({ball.pos.x(), ball.pos.y(), (float)r.gcSocket->maxBotHeight}), (float)r.ballRadius).head<2>(),
+					.color = ball.color,
+					.circ = ball.circ,
+					.score = ball.score
+				});
+			}
+			botCirc /= (float)botCircN;
+
 			//TODO filter bots according to color kmeans?
-			updateColors(r, bestBotModels);
+			updateColors(r, bestBotModels, ballCandidates);
 			//std::cout << r.yellow.transpose() << "|" << r.blue.transpose() << "   " << r.green.transpose() << "|" << r.pink.transpose() << std::endl;
 
 			//TODO area around tracked ball with reduced or alternative minCircularity?
@@ -639,36 +791,22 @@ int main(int argc, char* argv[]) {
 				std::cout << std::endl;*/
 			}
 
-			//TODO ball filtering
-			Match topBall = {
-					.circ = -INFINITY,
-					.score = -INFINITY
-			};
-			for(const auto& ball : matches) {
-				if(ball.circ < topBall.circ)
+			botCirc /= (float)botCircN;
+			for (const auto& ballCandidate : ballCandidates) {
+				//TODO circ score
+				//TODO more than one ball on field line unrealistic
+				/*if(ballCandidate.circ < botCirc)
+					continue;*/
+				if((ballCandidate.color - r.falseOrange).squaredNorm() < (ballCandidate.color - r.orange).squaredNorm())
 					continue;
 
-				bool nextToBot = false;
-				for (const auto& entry : bestBotModels) {
-					if((ball.pos - entry.second.pos().head<2>()).norm() < r.perspective->field.max_robot_radius()) {
-						nextToBot = true;
-						break;
-					}
-				}
-				if(nextToBot)
-					continue;
-
-				topBall = ball;
-			}
-			if(topBall.circ != -INFINITY) {
-				const Eigen::Vector2f imgPos = r.perspective->model.field2image({topBall.pos.x(), topBall.pos.y(), (float)r.gcSocket->maxBotHeight});
-				const Eigen::Vector3f pos = r.perspective->model.image2field(imgPos, (float)r.ballRadius);
+				const Eigen::Vector2f imgPos = r.perspective->model.field2image({ballCandidate.pos.x(), ballCandidate.pos.y(), (float)r.ballRadius});
 				//std::cout << pos.transpose() << " " << orangeness << " " << blob.circ << " " << blob.score << " " << (blob.circ/blob.score) << std::endl;
 				SSL_DetectionBall* ball = detection->add_balls();
-				ball->set_confidence(topBall.circ);
+				ball->set_confidence(ballCandidate.circ);
 				//ball->set_area(0);
-				ball->set_x(pos.x());
-				ball->set_y(pos.y());
+				ball->set_x(ballCandidate.pos.x());
+				ball->set_y(ballCandidate.pos.y());
 				//ball->set_z(0.0f);
 				ball->set_pixel_x(imgPos.x());
 				ball->set_pixel_y(imgPos.y());

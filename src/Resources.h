@@ -60,11 +60,18 @@ public:
 	double minScore;
 	int maxBlobs;
 
-	Eigen::Vector3i orange = {255, 128, 0};
-	Eigen::Vector3i yellow = {255, 128, 0};
-	Eigen::Vector3i blue = {0, 128, 255};
-	Eigen::Vector3i green = {0, 255, 128};
-	Eigen::Vector3i pink = {255, 0, 128};
+	Eigen::Vector3i falseOrangeReference = {128, 128, 128};
+	Eigen::Vector3i orangeReference = {255, 128, 0};
+	Eigen::Vector3i yellowReference = {255, 128, 0};
+	Eigen::Vector3i blueReference = {0, 128, 255};
+	Eigen::Vector3i greenReference = {0, 255, 128};
+	Eigen::Vector3i pinkReference = {255, 0, 128};
+	Eigen::Vector3i falseOrange = falseOrangeReference;
+	Eigen::Vector3i orange = orangeReference;
+	Eigen::Vector3i yellow = yellowReference;
+	Eigen::Vector3i blue = blueReference;
+	Eigen::Vector3i green = greenReference;
+	Eigen::Vector3i pink = pinkReference;
 
 	int cameraAmount;
 	double cameraHeight; // Just for calibration, do not use elsewhere (0.0 as special value for automatic calibration)
