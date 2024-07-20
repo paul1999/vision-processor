@@ -189,7 +189,7 @@ static void kMeans(const Eigen::Vector3i& different, const std::vector<Eigen::Ve
 
 	float mergeRange = (outGroupDiff - inGroupDiff) / 2.0f;
 	if((float)(c1 - c2).norm() < mergeRange) {
-		std::cerr << "   Skipping Update for " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
+		//std::cerr << "   Skipping Update for " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
 		c1 = c1backup;
 		c2 = c2backup;
 	}
@@ -452,6 +452,13 @@ static void bgrDrawBlobs(const Resources& r, Image& bgr, const std::list<CLMatch
 }
 
 static void updateColors(Resources& r, const std::vector<std::pair<float, BlobBot>>& bestBotModels, const std::vector<Match>& ballCandidates) {
+	Eigen::Vector3i oldFalseOrange = r.falseOrange;
+	Eigen::Vector3i oldOrange = r.orange;
+	Eigen::Vector3i oldYellow = r.yellow;
+	Eigen::Vector3i oldBlue = r.blue;
+	Eigen::Vector3i oldGreen = r.green;
+	Eigen::Vector3i oldPink = r.pink;
+
 	std::vector<Eigen::Vector3i> centerBlobs;
 	Eigen::Vector3i pink(0, 0, 0);
 	int pinkN = 0;
@@ -488,16 +495,15 @@ static void updateColors(Resources& r, const std::vector<std::pair<float, BlobBo
 	for (const auto& ball : ballCandidates)
 		ballBlobs.push_back(ball.color);
 
-	Eigen::Vector3i oldFalseOrange = r.falseOrange;
 	kMeans(r.blue, ballBlobs, r.orange, r.falseOrange);
 
 	// Constant force to original colors
-	r.falseOrange = (r.falseOrangeReference + 2*r.falseOrange + 7*oldFalseOrange) / 10;
-	r.orange = (r.orangeReference + 9*r.orange) / 10;
-	r.pink = (r.pinkReference + 9*r.pink) / 10;
-	r.green = (r.greenReference + 9*r.green) / 10;
-	r.yellow = (r.yellowReference + 9*r.yellow) / 10;
-	r.blue = (r.blueReference + 9*r.blue) / 10;
+	r.falseOrange = (10*r.falseOrangeReference + 20*r.falseOrange + 70*oldFalseOrange) / 100;
+	r.orange = (10*r.orangeReference + 20*r.orange + 70*oldOrange) / 100;
+	r.pink = (10*r.pinkReference + 20*r.pink + 70*oldPink) / 100;
+	r.green = (10*r.greenReference + 20*r.green + 70*oldGreen) / 100;
+	r.yellow = (10*r.yellowReference + 20*r.yellow + 70*oldYellow) / 100;
+	r.blue = (10*r.blueReference + 20*r.blue + 70*oldBlue) / 100;
 }
 
 int main(int argc, char* argv[]) {
