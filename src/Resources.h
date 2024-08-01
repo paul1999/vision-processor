@@ -25,8 +25,6 @@
 #include "Perspective.h"
 #include "opencl.h"
 
-double getTime();
-
 
 typedef struct __attribute__ ((packed)) RGB {
 	cl_uchar r;

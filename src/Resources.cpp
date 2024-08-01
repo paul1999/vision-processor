@@ -21,10 +21,6 @@
 #include "driver/cameradriver.h"
 #include "driver/opencvdriver.h"
 
-double getTime() {
-	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
-}
-
 static YAML::Node getOptional(const YAML::Node& node) {
 	return node.IsDefined() ? node : YAML::Node();
 }

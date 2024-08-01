@@ -37,6 +37,15 @@ public:
 		return image;
 	}
 
+	double getTime() override {
+		double pos = capture.get(cv::CAP_PROP_POS_FRAMES);
+
+		if(pos == 0.0) // Not a video file, use real time
+			return CameraDriver::getTime();
+
+		return pos / capture.get(cv::CAP_PROP_FPS);
+	}
+
 private:
 	cv::VideoCapture capture;
 	std::shared_ptr<Image> image = nullptr;

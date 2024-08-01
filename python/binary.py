@@ -15,6 +15,7 @@
 import argparse
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -63,13 +64,22 @@ def run_processor(binary: Path, recorder: VisionRecorder, dataset: Dataset, imag
     if geometry is None:
         geometry = dataset.reference_geometry
 
+    send_geometry = True
+    def geometry_sender():
+        while send_geometry:
+            recorder.send(geometry)
+            time.sleep(0.1)
+
     with recorder:
         with subprocess.Popen([str(binary), str(dataset.processor_config)], stdout=subprocess.PIPE) as vision:
-            time.sleep(2.0)  # TODO better solution
-            recorder.send(geometry)
+            geometry_thread = threading.Thread(target=geometry_sender)
+            geometry_thread.start()
 
             while vision.poll() is None:
                 stdoutconsumer(vision.stdout.readline().decode('utf-8'))
+
+            send_geometry = False
+            geometry_thread.join()
 
             if vision.returncode != 0:
                 print(f'Nonzero return code: {vision.returncode}', file=sys.stderr)

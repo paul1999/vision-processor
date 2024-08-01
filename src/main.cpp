@@ -178,7 +178,7 @@ static void kMeans(const Eigen::Vector3i& different, const std::vector<Eigen::Ve
 		}
 
 		if(n1 == 0 || n2 == 0) {
-			std::cerr << "   N0 " << n1 << "|" << n2 << "   " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
+			//std::cerr << "   N0 " << n1 << "|" << n2 << "   " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
 			c1 = c1backup;
 			c2 = c2backup;
 			return;
@@ -540,7 +540,7 @@ int main(int argc, char* argv[]) {
 		if(img == nullptr)
 			break;
 
-		double startTime = getTime();
+		double startTime = r.camera->getTime();
 		r.socket->geometryCheck();
 		r.perspective->geometryCheck(r.cameraAmount, img->width, img->height, r.gcSocket->maxBotHeight);
 
@@ -587,7 +587,7 @@ int main(int argc, char* argv[]) {
 			{
 				CLMap<int> counterMap = counter.read<int>();
 				CLMap<CLMatch> matchMap = matchArray.read<CLMatch>();
-				//std::cout << (flat->width*flat->height - (counterMap[2] + counterMap[1])) << " " << counterMap[2] << " " << counterMap[1] << std::endl;
+				//std::cerr << (flat->width*flat->height - (counterMap[2] + counterMap[1] + counterMap[0])) << "circScore " << counterMap[2] << "circPeak " << counterMap[1] << "score " << counterMap[0] << std::endl;
 				const int matchAmount = std::min(r.maxBlobs, counterMap[0]);
 				matches.reserve(matchAmount);
 
@@ -625,6 +625,7 @@ int main(int argc, char* argv[]) {
 					botBlobs.clear();
 					botBlobs.push_back(nullptr);
 					blobs.rangeSearch(botBlobs, botModel.trackedPosition.head<2>(), botModel.blobSearchRadius);
+					//TODO instead of this use mintrackingradius on each old blob
 					for(Match* const& a : botBlobs) {
 						botModel.blobs[0] = a;
 						for(Match* const& b : botBlobs) {
@@ -859,10 +860,10 @@ int main(int argc, char* argv[]) {
 				bgr.save(".detections.png");
 			}
 
-			detection->set_t_sent(getTime());
+			detection->set_t_sent(r.camera->getTime());
 			r.socket->send(wrapper);
-			std::cout << "[main] time " << (getTime() - startTime) * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
 			switch(((long)(startTime/15.0) % 4)) {
+			std::cout << "[main] time " << (r.camera->getTime() - startTime) * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
 				case 0:
 					r.rtpStreamer->sendFrame(clImg);
 					break;
