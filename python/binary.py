@@ -55,8 +55,8 @@ def run_ssl_vision(binary: Path, recorder: VisionRecorder, dataset: Dataset, ima
 
 def run_processor(binary: Path, recorder: VisionRecorder, dataset: Dataset, image: Path, geometry: SSL_WrapperPacket = None, ground_truth: Path = None, stdoutconsumer=lambda line: None):
     dataset.update_processor_config(
-        opencv_path=str(image),
-        benchmark={'wait_for_geometry': True, 'ground_truth': str(image.with_suffix('.vision.yml') if ground_truth is None else ground_truth)},
+        camera={'path': str(image)},
+        debug={'wait_for_geometry': True, 'ground_truth': str(image.with_suffix('.vision.yml') if ground_truth is None else ground_truth)},
         network={'vision_ip': recorder.address[0], 'vision_port': recorder.address[1]}
     )
 

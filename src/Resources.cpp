@@ -15,51 +15,52 @@
  */
 #include <yaml-cpp/yaml.h>
 
-#include <utility>
 #include "Resources.h"
-
-#include "source/spinnakersource.h"
-#include "source/mvimpactsource.h"
-#include "source/videosource.h"
-#include "source/opencvsource.h"
-
-static uint8_t readHue(const YAML::Node& node, double fallback) {
-	return node.as<double>(fallback) * 256.0 / 360.0;
-}
+#include "driver/spinnakerdriver.h"
+#include "driver/mvimpactdriver.h"
+#include "driver/cameradriver.h"
+#include "driver/opencvdriver.h"
 
 double getTime() {
 	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
 }
 
+static YAML::Node getOptional(const YAML::Node& node) {
+	return node.IsDefined() ? node : YAML::Node();
+}
+
 Resources::Resources(const YAML::Node& config) {
 	openCl = std::make_shared<OpenCL>();
 
-	auto source = config["source"].as<std::string>("SPINNAKER");
-	int source_id = config["source_id"].as<int>(0);
+	YAML::Node cam = getOptional(config["camera"]);
+
+	auto driver = cam["driver"].as<std::string>("SPINNAKER");
+	int driver_id = cam["id"].as<int>(0);
+	auto exposure = cam["exposure"].as<double>(0.0);
+	auto gain = cam["gain"].as<double>(0.0);
+
+	YAML::Node wbNode = cam["white_balance"];
+	WhiteBalanceType wbType = WhiteBalanceType_Manual;
+	std::vector<double> wbValues;
+	if(wbNode.IsSequence()) {
+		wbValues = wbNode.as<std::vector<double>>();
+	} else {
+		auto wbTypeString = wbNode.as<std::string>("OUTDOOR");
+		wbType = wbTypeString == "OUTDOOR" ? WhiteBalanceType_AutoOutdoor : WhiteBalanceType_AutoIndoor;
+	}
 
 #ifdef SPINNAKER
-	if(source == "SPINNAKER")
-		camera = std::make_unique<SpinnakerSource>(source_id);
+	if(driver == "SPINNAKER")
+		camera = std::make_unique<SpinnakerDriver>(driver_id, exposure, gain, wbType, wbValues);
 #endif
 
 #ifdef MVIMPACT
-	if(source == "MVIMPACT")
-		camera = std::make_unique<MVImpactSource>(source_id);
+	if(driver == "MVIMPACT")
+		camera = std::make_unique<MVImpactDriver>(driver_id);
 #endif
 
-	if(source == "OPENCV")
-		camera = std::make_unique<OpenCVSource>(config["opencv_path"].as<std::string>("/dev/video" + std::to_string(source_id)));
-
-	if(source == "IMAGES") {
-		auto paths = config["images"].as<std::vector<std::string>>();
-
-		if(paths.empty()) {
-			std::cerr << "[Resources] Source IMAGES needs at least one image." << std::endl;
-			exit(1);
-		}
-
-		camera = std::make_unique<ImageSource>(paths);
-	}
+	if(driver == "OPENCV")
+		camera = std::make_unique<OpenCVDriver>(cam["path"].as<std::string>("/dev/video" + std::to_string(driver_id)));
 
 	if(camera == nullptr) {
 		std::cerr << "[Resources] No camera/image source defined." << std::endl;
@@ -68,25 +69,24 @@ Resources::Resources(const YAML::Node& config) {
 
 	camId = config["cam_id"].as<int>(0);
 
-	YAML::Node thresholds = config["thresholds"].IsDefined() ? config["thresholds"] : YAML::Node();
-	minCircularity = thresholds["circularity"].as<double>(10.0);
-	minScore = thresholds["score"].as<double>(64.0); // 32.0
+	YAML::Node thresholds = getOptional(config["thresholds"]);
+	minCircularity = thresholds["circularity"].as<double>(25.0); // 10.0
+	minScore = thresholds["score"].as<double>(0.0); // 8.0
 	maxBlobs = thresholds["blobs"].as<int>(2000);
 
-	YAML::Node sizes = config["sizes"].IsDefined() ? config["sizes"] : YAML::Node();
+	YAML::Node sizes = getOptional(config["sizes"]);
 	sideBlobDistance = sizes["side_blob_distance"].as<double>(65.0);
 	centerBlobRadius = sizes["center_blob_radius"].as<double>(25.0);
 	sideBlobRadius = sizes["side_blob_radius"].as<double>(20.0);
-	ballRadius = sizes["ball_radius"].as<double>(21.5);
-	minBlobRadius = std::min({centerBlobRadius, sideBlobRadius, ballRadius});
-	maxBlobRadius = std::max({centerBlobRadius, sideBlobRadius, ballRadius});
+	minBlobRadius = std::min({centerBlobRadius, sideBlobRadius, 21.5}); //TODO
+	maxBlobRadius = std::max({centerBlobRadius, sideBlobRadius, 21.5}); //TODO
 
-	YAML::Node tracking = config["tracking"].IsDefined() ? config["tracking"] : YAML::Node();
-	minTrackingRadius = tracking["min_tracking_radius"].as<double>(30.0);
+	YAML::Node tracking = getOptional(config["tracking"]);
+	minTrackingRadius = tracking["min_tracking_radius"].as<double>(20.0);
 	maxBallVelocity = 1000*tracking["max_ball_velocity"].as<double>(8.0);
 	maxBotAcceleration = 1000*tracking["max_bot_acceleration"].as<double>(6.5);
 
-	YAML::Node geometry = config["geometry"].IsDefined() ? config["geometry"] : YAML::Node();
+	YAML::Node geometry = getOptional(config["geometry"]);
 	cameraAmount = geometry["camera_amount"].as<int>(1);
 	cameraHeight = geometry["camera_height"].as<double>(0.0);
 	fieldLineThreshold = geometry["field_line_threshold"].as<int>(5);
@@ -96,14 +96,14 @@ Resources::Resources(const YAML::Node& config) {
 	maxLineSegmentOffset = geometry["max_line_segment_offset"].as<double>(10.0);
 	maxLineSegmentAngle = geometry["max_line_segment_angle"].as<double>(3.0) * M_PI/180.0;
 
-	YAML::Node benchmark = config["benchmark"].IsDefined() ? config["benchmark"] : YAML::Node();
+	YAML::Node benchmark = getOptional(config["debug"]);
 	groundTruth = benchmark["ground_truth"].as<std::string>("gt.yml");
 	waitForGeometry = benchmark["wait_for_geometry"].as<bool>(false);
 	debugImages = benchmark["debug_images"].as<bool>(false);
 
-	YAML::Node network = config["network"].IsDefined() ? config["network"] : YAML::Node();
+	YAML::Node network = getOptional(config["network"]);
 	gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(sizes["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());
-	socket = std::make_shared<VisionSocket>(network["vision_ip"].as<std::string>("224.5.23.2"), network["vision_port"].as<int>(10006), gcSocket->defaultBotHeight, ballRadius);
+	socket = std::make_shared<VisionSocket>(network["vision_ip"].as<std::string>("224.5.23.2"), network["vision_port"].as<int>(10006), gcSocket->defaultBotHeight, 21.5); //TODO
 	perspective = std::make_shared<Perspective>(socket, camId);
 	rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + network["stream_ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(network["stream_ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(network["stream_port"].as<int>(10100)));
 }

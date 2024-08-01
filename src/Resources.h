@@ -19,7 +19,7 @@
 #include <string>
 #include <memory>
 #include <yaml-cpp/node/node.h>
-#include "source/imagesource.h"
+#include "driver/cameradriver.h"
 #include "rtpstreamer.h"
 #include "udpsocket.h"
 #include "Perspective.h"
@@ -41,14 +41,13 @@ class Resources {
 public:
 	explicit Resources(const YAML::Node& config);
 
-	std::unique_ptr<VideoSource> camera = nullptr;
+	std::unique_ptr<CameraDriver> camera = nullptr;
 
 	int camId;
 
 	double sideBlobDistance;
 	double centerBlobRadius;
 	double sideBlobRadius;
-	double ballRadius;
 	double minBlobRadius;
 	double maxBlobRadius;
 

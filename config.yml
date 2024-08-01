@@ -1,25 +1,32 @@
 # VisionProcessor configuration
 
-# Camera ID handled by this VisionProcessor instance.
+# Vision camera ID handled by this VisionProcessor instance.
 #cam_id: 0
 
-# Camera source type. Availability depending on libraries installed.
-# SPINNAKER, MVIMPACT, IMAGES, OPENCV
-#source: SPINNAKER
-
-# Spinnaker, mvIMPACT or OpenCV(V4L) camera id
-#source_id: 0
-
-#OpenCV camera device or video file path
-#opencv_path: /dev/video0
-
-# List of image file system paths for IMAGES source.
-#images: []
+camera:
+  # Camera driver type. Availability depending on libraries installed.
+  # Existing: SPINNAKER (FLIR cameras), MVIMPACT (Bluefox3 cameras), OPENCV(files, v4l2 cameras)
+  #driver: SPINNAKER
+  # Spinnaker, mvIMPACT or OpenCV(v4l2) camera id
+  #id: 0
+  # OpenCV camera device, image or video file path (if not set id is used instead)
+  #path: /dev/video0
+  # Spinnaker camera exposure time in ms to adjust brightness. Higher values lead to more motion blur.
+  # Camera framerate will drop if set equal to or higher than the frametime (1 / fps_cam).
+  # 0.0 = automatic exposure
+  #exposure: 0.0
+  # Spinnaker camera gain to adjust brightness. Higher values lead to more noise.
+  # 0.0 = automatic gain
+  #gain: 0.0
+  # Spinnaker camera white balance. OUTDOOR or INDOOR for auto white balance with green or gray carpet respectively.
+  # [Blue white balance, Red white balance] for manual white balance.
+  #white_balance: OUTDOOR
 
 geometry:
   # Total camera amount over the field
   #camera_amount: 1
-  # Camera height above field in mm (if 0.0 automated camera height calibration is done, this does not work if the camera looks perpendicular to the field)
+  # Camera height above field in mm
+  # 0.0 = automated camera height calibration, this does not work if the camera looks perpendicular to the field
   #camera_height: 0.0
   # Minimum brightness difference to surrounding pixels for the classification as field line pixel (0 - 255)
   #field_line_threshold: 5
@@ -35,20 +42,13 @@ geometry:
   #max_intersection_distance: 0.2
 
 thresholds:
-  # Minimum mean cosine similarity of the blob border gradient (0 - 1) TODO
+  # Minimum mean cosine similarity (not normalized) of the blob border gradient (0 - 195075.0)
   #circularity: 10.0
   # Minimum circularity/(3*stddev) blob score
-  #score: 64.0
-  # Max blobs
-  #blobs: 2000
+  #score: 8.0
 
-# Hues of the colors used to classify the blobs in ° (0 - 359°)
-hues:
-  #orange: 30.0
-  #yellow: 60.0
-  #blue: 210.0
-  #green: 120.0
-  #pink: 300.0
+  # Max blobs
+  #blobs: 2000  
 
 sizes:
   # Team bot heights yml file (heights in mm)
@@ -59,12 +59,10 @@ sizes:
   #center_blob_radius: 25.0
   # Side blob radius in mm
   #side_blob_radius: 20.0
-  # Ball radius in mm
-  #ball_radius: 21.5
 
 tracking:
   # Min tracking radius in mm
-  #min_tracking_radius: 30.0
+  #min_tracking_radius: 20.0
 
   # Max tracked ball velocity in m/s
   #max_ball_velocity: 8.0
@@ -90,7 +88,7 @@ network:
   # Camera stream port
   #stream_port: 10100
 
-benchmark:
+debug:
   # Ground truth file
   #ground_truth: gt.yml
   # Wait for geometry prior to processing frames

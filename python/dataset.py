@@ -33,6 +33,14 @@ def parser_test_data(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
     return parser
 
 
+def _merge_dict(d1, d2):
+    for key, value in d2.items():
+        if key in d1 and type(value) is dict and type(d1[key]) is dict:
+            _merge_dict(d1[key], value)
+        else:
+            d1[key] = value
+
+
 class Dataset:
 
     def __init__(self, folder: Path):
@@ -74,12 +82,14 @@ class Dataset:
 
     def update_processor_config(self, **options):
         config = yaml_load(self.processor_config, default={})
-        config['cam_id'] = self.cam_id
-        config['source'] = 'OPENCV'
 
-        for key, value in options.items():
-            #TODO overrides dicts
-            config[key] = value
+        _merge_dict(config, options)
+
+        if 'camera' not in config:
+            config['camera'] = {}
+
+        config['cam_id'] = self.cam_id
+        config['camera']['driver'] = 'OPENCV'
 
         with self.processor_config.open('w') as file:
             yaml.dump(config, file)

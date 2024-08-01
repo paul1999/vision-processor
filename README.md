@@ -1,5 +1,6 @@
 # Vision Processor
 A replacement for the aging (ssl-vision)[https://github.com/RoboCup-SSL/ssl-vision].
+The aim is no color calibration, better geometry calibration and support for uneven lighting situations (both in time and space).
 
 
 ## Compiling

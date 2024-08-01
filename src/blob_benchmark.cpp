@@ -20,6 +20,7 @@
 #include "pattern.h"
 #include "cl_kernels.h"
 #include <fstream>
+#include <opencv2/imgproc.hpp>
 
 enum BlobColor {
 	ORANGE,
@@ -51,7 +52,7 @@ static void bot2blobs(const Resources& r, const SSL_DetectionRobot& bot, const B
 
 	int pattern = patterns[bot.robot_id()];
 	for(int i = 0; i < 4; i++) {
-		float orientation = bot.orientation() + (float)patternAngles[i];
+		float orientation = bot.orientation() + (float)patternAnglesb2b[5 + 5*i];
 		Eigen::Vector3f field(bot.x() + (float)r.sideBlobDistance * cosf(orientation), bot.y() + (float)r.sideBlobDistance * sinf(orientation), bot.height());
 		blobs.push_back({
 			.field = field,
@@ -62,7 +63,6 @@ static void bot2blobs(const Resources& r, const SSL_DetectionRobot& bot, const B
 	}
 }
 
-#define DRAW_DEBUG_IMAGES false
 #define WARN_INVISIBLE_BLOBS false
 
 int main(int argc, char* argv[]) {
@@ -163,7 +163,7 @@ int main(int argc, char* argv[]) {
 			blobs.push_back({
 				.field = field,
 				.flat = field2flat(r, field),
-				.radius = (float) r.ballRadius / r.perspective->fieldScale,
+				.radius = r.perspective->field.ball_radius() / r.perspective->fieldScale,
 				.color = ORANGE
 			});
 		}
@@ -199,7 +199,7 @@ int main(int argc, char* argv[]) {
 				continue;
 			}
 
-			if(DRAW_DEBUG_IMAGES && frameId == 1) {
+			if(r.debugImages && frameId == 1) {
 				cv::drawMarker(flat->readWrite<RGBA>().cv, {maxPos.x(), maxPos.y()}, CV_RGB(0, 0, 255));
 				cv::drawMarker(flat->readWrite<RGBA>().cv, {(int)blob.flat.x(), (int)blob.flat.y()}, CV_RGB(255, 0, 0));
 			}
@@ -253,7 +253,7 @@ int main(int argc, char* argv[]) {
 		//TODO max in blob area (location offset) worst blob to best blob ratio, worst blob -> how many detections
 		analysisTime += getTime() - startTime;
 
-		if(DRAW_DEBUG_IMAGES && frameId == 1)  {
+		if(r.debugImages && frameId == 1)  {
 			flat->save(".flat.png");
 			color->save(".color.png", 0.0625f, 128.f);
 			circ->save(".circ.png", 2.0f);

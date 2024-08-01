@@ -16,13 +16,13 @@
 #pragma once
 #ifdef SPINNAKER
 
-#include "videosource.h"
+#include "cameradriver.h"
 #include "Spinnaker.h"
 
-class SpinnakerSource : public VideoSource {
+class SpinnakerDriver : public CameraDriver {
 public:
-	explicit SpinnakerSource(int id);
-	~SpinnakerSource() override;
+	explicit SpinnakerDriver(int id, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double>& wbValues);
+	~SpinnakerDriver() override;
 
 	std::shared_ptr<Image> readImage() override;
 

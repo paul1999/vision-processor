@@ -17,16 +17,15 @@
 
 #include <opencv2/videoio.hpp>
 
-#include "videosource.h"
+#include "cameradriver.h"
 
-class OpenCVSource : public VideoSource {
+class OpenCVDriver : public CameraDriver {
 public:
-	explicit OpenCVSource(const std::string& path): capture(path, cv::CAP_ANY, {cv::CAP_PROP_HW_ACCELERATION, cv::VIDEO_ACCELERATION_ANY}), name(path) {
+	explicit OpenCVDriver(const std::string& path): capture(path, cv::CAP_ANY, {cv::CAP_PROP_HW_ACCELERATION, cv::VIDEO_ACCELERATION_ANY}), name(path) {
 		std::replace(name.begin(), name.end(), '/', '_');
 	}
 
 	std::shared_ptr<Image> readImage() override {
-		//TODO better image pooling
 		if(image == nullptr || !image.unique())
 			image = std::make_shared<Image>(&PixelFormat::BGR888, capture.get(cv::CAP_PROP_FRAME_WIDTH), capture.get(cv::CAP_PROP_FRAME_HEIGHT), name);
 

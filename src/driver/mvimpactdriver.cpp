@@ -15,7 +15,7 @@
  */
 #ifdef MVIMPACT
 
-#include "mvimpactsource.h"
+#include "mvimpactdriver.h"
 #include <mvIMPACT_CPP/mvIMPACT_acquire_GenICam.h>
 
 
@@ -28,7 +28,7 @@ private:
 };
 
 
-MVImpactSource::MVImpactSource(const int id): devMgr(mvIMPACT::acquire::DeviceManager()) {
+MVImpactDriver::MVImpactDriver(const int id): devMgr(mvIMPACT::acquire::DeviceManager()) {
 	while(devMgr.deviceCount() <= id) {
 		std::cerr << "[mvIMPACT] Waiting for cam: " << devMgr.deviceCount() << "/" << (id+1) << std::endl;
 		devMgr.updateDeviceList();
@@ -60,13 +60,13 @@ MVImpactSource::MVImpactSource(const int id): devMgr(mvIMPACT::acquire::DeviceMa
 	provider->acquisitionStart();
 }
 
-MVImpactSource::~MVImpactSource() {
+MVImpactDriver::~MVImpactDriver() {
 	//delete fi;
 	provider->acquisitionStop();
 	device->close();
 }
 
-std::shared_ptr<Image> MVImpactSource::readImage() {
+std::shared_ptr<Image> MVImpactDriver::readImage() {
 	std::shared_ptr<Request> request = provider->waitForNextRequest();
 
 	//Get only newest frame

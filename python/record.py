@@ -49,7 +49,7 @@ if __name__ == '__main__':
     def consumer(dataset):
         recorder = VisionRecorder(vision_ip=thread_local_ip())
 
-        for video, _ in zip(dataset.images(), range(args.scenes_per_field)):
+        for video, _ in zip(dataset.images(), range(args.scenes_per_field if args.scenes_per_field else 1000000)):
             print(f"Recording {video}")
 
             if video.suffix == '.mp4':

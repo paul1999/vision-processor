@@ -36,7 +36,7 @@ kernel void robust_invariant(read_only image2d_t in, write_only image2d_t out, i
 	/*float value = pxx.x + pxx.y + pxx.z;
 	write_imagef(out, pos, fabs(value) > 64.0f ? (value > 0.0f ? 2048.0f : -2048.0f) : 0.0f);*/
 	/*write_imagef(out, pos, (pxx.y + pxx.z) * 16.0f);*/
-	write_imagef(out, pos, (pxx.x + pxx.y + pxx.z) * 4.0f);
+	write_imagef(out, pos, pxx.x + pxx.y + pxx.z);
 	//write_imagef(out, pos, (pxx.y + pxx.z) * 4.0f); // u and v channels only
 }
 

@@ -15,14 +15,13 @@
  */
 #ifdef SPINNAKER
 
-#include "spinnakersource.h"
+#include "spinnakerdriver.h"
 
 
 class SpinnakerImage : public Image {
 public:
-	// Image size halfed (RGB resolution)
-	// TODO timestamp unusable due to bad resolution: pImage->GetTimeStamp() / 1e9
-	SpinnakerImage(SpinnakerSource& source, const Spinnaker::ImagePtr& pImage): Image(*source.borrow(pImage)), source(source), pImage(pImage) {}
+	// TODO investigate unusable timestamp due to bad time resolution: pImage->GetTimeStamp() / 1e9
+	SpinnakerImage(SpinnakerDriver& source, const Spinnaker::ImagePtr& pImage): Image(*source.borrow(pImage)), source(source), pImage(pImage) {}
 
 	~SpinnakerImage() override {
 		pImage->Release();
@@ -30,11 +29,11 @@ public:
 	}
 
 private:
-	SpinnakerSource& source;
+	SpinnakerDriver& source;
 	const Spinnaker::ImagePtr pImage;
 };
 
-SpinnakerSource::SpinnakerSource(int id) {
+SpinnakerDriver::SpinnakerDriver(int id, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double>& wbValues) {
 	pSystem = Spinnaker::System::GetInstance();
 
 	while(true) {
@@ -55,33 +54,51 @@ SpinnakerSource::SpinnakerSource(int id) {
 
 	pCam->TriggerMode.SetValue(Spinnaker::TriggerMode_Off);
 	pCam->AcquisitionMode.SetValue(Spinnaker::AcquisitionMode_Continuous);
-	//pCam->PixelFormat.SetValue(Spinnaker::PixelFormat_BayerRG8);
-	//pCam->BlackLevelAutoBalance.SetValue(Spinnaker::BlackLevelAutoBalance_Continuous);
-	pCam->AutoExposureMeteringMode.SetValue(Spinnaker::AutoExposureMeteringMode_Average);
-	pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Off);
-	pCam->ExposureTime.SetValue(8000.0);
+	pCam->PixelFormat.SetValue(Spinnaker::PixelFormat_BayerRG8);
 	pCam->GammaEnable.SetValue(false);
+	pCam->AcquisitionFrameRateEnable.SetValue(false);
 	/*pCam->GammaEnable.SetValue(true);
 	pCam->Gamma.SetValue(0.45);*/
-	pCam->BalanceWhiteAutoProfile.SetValue(Spinnaker::BalanceWhiteAutoProfile_Outdoor); // Much better for green carpet
-	pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Continuous);
-	/*pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Off);
-	pCam->BalanceRatioSelector.SetValue(Spinnaker::BalanceRatioSelector_Blue);
-	pCam->BalanceRatio.SetValue(2.5); //3.0
-	pCam->BalanceRatioSelector.SetValue(Spinnaker::BalanceRatioSelector_Red);
-	pCam->BalanceRatio.SetValue(1.25); //1.4*/
 
-	pCam->GainAuto.SetValue(Spinnaker::GainAuto_Continuous);
-	/*pCam->GainAuto.SetValue(Spinnaker::GainAuto_Off);
-	pCam->Gain.SetValue(9.0);*/
+	if(exposure == 0.0) {
+		pCam->AutoExposureControlPriority.SetValue(Spinnaker::AutoExposureControlPriority_Gain);
+		pCam->AutoExposureMeteringMode.SetValue(Spinnaker::AutoExposureMeteringMode_Average);
+		pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Continuous);
+	} else {
+		pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Off);
+		pCam->ExposureTime.SetValue(exposure / 1000.0);
+	}
+
+	//TODO smarter autogain and autoexposure through feedback from blob brightness
+	if(gain == 0.0) {
+		pCam->GainAuto.SetValue(Spinnaker::GainAuto_Continuous);
+	} else {
+		pCam->GainAuto.SetValue(Spinnaker::GainAuto_Off);
+		pCam->Gain.SetValue(gain);
+	}
+
+	if(wbType != WhiteBalanceType_Manual) {
+		pCam->BalanceWhiteAutoProfile.SetValue(
+				wbType == WhiteBalanceType_AutoOutdoor
+				? Spinnaker::BalanceWhiteAutoProfile_Outdoor
+				: Spinnaker::BalanceWhiteAutoProfile_Indoor
+		);
+		pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Continuous);
+	} else {
+		pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Off);
+		pCam->BalanceRatioSelector.SetValue(Spinnaker::BalanceRatioSelector_Blue);
+		pCam->BalanceRatio.SetValue(wbValues[0]);
+		pCam->BalanceRatioSelector.SetValue(Spinnaker::BalanceRatioSelector_Red);
+		pCam->BalanceRatio.SetValue(wbValues[1]);
+	}
 
 	pCam->TLStream.StreamBufferHandlingMode.SetValue(Spinnaker::StreamBufferHandlingMode_NewestOnly);
 	pCam->TLStream.StreamBufferCountManual.SetValue(pCam->TLStream.StreamBufferCountManual.GetMin());
-	pCam->AcquisitionResultingFrameRate.GetValue(); //TODO
 
+	// Provide image buffers to achieve faster mapping with OpenCL
 	int width = pCam->WidthMax.GetValue();
 	int height = pCam->HeightMax.GetValue();
-	for(int i = 0; i < 5; i++) { // 3 minimum + 2 for longer holded frames (e.g. RTPStream)
+	for(int i = 0; i < pCam->TLStream.StreamBufferCountManual.GetMin(); i++) {
 		std::shared_ptr<Image> buffer = std::make_shared<Image>(&PixelFormat::RGGB8, width/2, height/2, "spinnaker");
 		buffers[buffer] = std::make_unique<CLMap<uint8_t>>(buffer->write<uint8_t>());
 	}
@@ -93,22 +110,23 @@ SpinnakerSource::SpinnakerSource(int id) {
 	pCam->SetBufferOwnership(Spinnaker::SPINNAKER_BUFFER_OWNERSHIP_USER);
 	pCam->SetUserBuffers(bufferPtrs.data(), buffers.size(), width*height);
 
-	/*if (IsWritable(pCam->GevSCPSPacketSize)) {
+	/* TODO Advisable with Ethernet cameras on special interfaces
+	 if (IsWritable(pCam->GevSCPSPacketSize)) {
 		pCam->GevSCPSPacketSize.SetValue(9000);
 	}*/
 
 	pCam->BeginAcquisition();
 }
 
-std::shared_ptr<Image> SpinnakerSource::readImage() {
+std::shared_ptr<Image> SpinnakerDriver::readImage() {
 	return std::make_shared<SpinnakerImage>(*this, pCam->GetNextImage());
 }
 
-SpinnakerSource::~SpinnakerSource() {
+SpinnakerDriver::~SpinnakerDriver() {
 	pCam->EndAcquisition();
 }
 
-std::shared_ptr<Image> SpinnakerSource::borrow(const Spinnaker::ImagePtr& pImage) {
+std::shared_ptr<Image> SpinnakerDriver::borrow(const Spinnaker::ImagePtr& pImage) {
 	void* data = pImage->GetData();
 	for (auto& item : buffers) {
 		if(item.second != nullptr && **item.second == data) {
@@ -123,7 +141,7 @@ std::shared_ptr<Image> SpinnakerSource::borrow(const Spinnaker::ImagePtr& pImage
 	return image;
 }
 
-void SpinnakerSource::restore(const Image& image) {
+void SpinnakerDriver::restore(const Image& image) {
 	for (auto& item : buffers) {
 		if(item.first->buffer == image.buffer) {
 			item.second = std::make_unique<CLMap<uint8_t>>(item.first->write<uint8_t>());

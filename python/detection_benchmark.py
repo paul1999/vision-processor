@@ -46,7 +46,7 @@ if __name__ == '__main__':
             local_detection_rates = defaultdict(lambda: defaultdict(lambda: 0))
             for binary, detection_list in detections.items():
                 for frame in detection_list:
-                    if 'balls' in frame:
+                    if 'balls' in frame and len(frame['balls']) == 1:
                         local_detection_rates[binary]['ball'] += 1
                     if 'robots_yellow' in frame:
                         for bot in frame['robots_yellow']:
@@ -92,6 +92,14 @@ if __name__ == '__main__':
             if rate < min_rate[1]:
                 min_rate = dataset, rate
         print(f"Worst dataset {min_rate[0]} {min_rate[1]}")
+
+        min_video = None, None, 1.0
+        for dataset in detection_rates[binary].keys():
+            for video in detection_rates[binary][dataset].keys():
+                rate = dictsum(detection_rates, binary_filter=binary, dataset_filter=dataset, video_filter=video) / dictsum(frames, binary_filter=binary, dataset_filter=dataset, video_filter=video)
+                if rate < min_video[2]:
+                    min_video = dataset, video, rate
+        print(f"Worst video {min_video[0]} {min_video[1]} {min_video[2]}")
 
         min_type = None, 1.0
         for t in {t for d1 in detection_rates[binary].values() for d2 in d1.values() for t in d2.keys()}:

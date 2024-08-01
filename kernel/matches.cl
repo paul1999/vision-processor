@@ -26,6 +26,7 @@ typedef struct __attribute__ ((packed)) {
 typedef struct __attribute__ ((packed)) {
 	float x, y;
 	RGB color;
+	RGB center;
 	float circ;
 	float score;
 } Match;
@@ -89,6 +90,7 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 		return;
 	}
 
+	uint4 center = read_imageui(img, sampler, pos);
 	int4 color = convert_int4(s1 / n);
 
 	//https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
@@ -119,6 +121,9 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, global Ma
 	match->color.r = color.x;
 	match->color.g = color.y;
 	match->color.b = color.z;
+	match->center.r = center.r;
+	match->center.g = center.g;
+	match->center.b = center.b;
 	match->circ = circScore;
 	match->score = score;
 	/*match->orangeness = hue2score(hue, hues.orange);

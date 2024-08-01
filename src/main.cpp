@@ -13,6 +13,7 @@
      See the License for the specific language governing permissions and
      limitations under the License.
  */
+#include <csignal>
 #include <iostream>
 #include <iomanip>
 #include <opencv2/bgsegm.hpp>
@@ -33,6 +34,7 @@
 struct __attribute__ ((packed)) CLMatch {
 	float x, y;
 	RGB color;
+	RGB center;
 	float circ;
 	float score;
 
@@ -42,6 +44,7 @@ struct __attribute__ ((packed)) CLMatch {
 struct Match {
 	Eigen::Vector2f pos;
 	Eigen::Vector3i color;
+	Eigen::Vector3i center;
 	float circ;
 	float score;
 
@@ -506,7 +509,14 @@ static void updateColors(Resources& r, const std::vector<std::pair<float, BlobBo
 	r.blue = (10*r.blueReference + 20*r.blue + 70*oldBlue) / 100;
 }
 
+static volatile bool noSigterm = true;
+void sig_stop(int sig_num) {
+	noSigterm = false;
+}
+
 int main(int argc, char* argv[]) {
+	signal(SIGTERM, sig_stop);
+	signal(SIGINT, sig_stop);
 	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
 
 	cl::Kernel rggb2img = r.openCl->compile(kernel_rggb2img_cl, kernel_rggb2img_cl_end);
@@ -524,7 +534,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	uint32_t frameId = 0;
-	while(true) {
+	while(noSigterm) {
 		frameId++;
 		std::shared_ptr<Image> img = r.camera->readImage();
 		if(img == nullptr)
@@ -554,7 +564,7 @@ int main(int argc, char* argv[]) {
 			std::shared_ptr<CLImage> colorSat = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 			OpenCL::await(satVerticalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0])), colorHor->image, colorSat->image);
 			std::shared_ptr<CLImage> circ = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)floor(r.minBlobRadius/r.perspective->fieldScale), (int)ceil(r.maxBlobRadius/r.perspective->fieldScale));
+			OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)ceil(r.maxBlobRadius/r.perspective->fieldScale)); //TODO testing at robocup with MINBLOBRADIUS? COMPARE! , (int)floor(r.minBlobRadius/r.perspective->fieldScale)
 
 			if(r.debugImages) {
 				flat->save(".perspective.png");
@@ -563,8 +573,14 @@ int main(int argc, char* argv[]) {
 			}
 
 			CLArray counter(sizeof(cl_int)*3);
+			{
+				CLMap<int> counterMap = counter.write<int>();
+				counterMap[0] = 0;
+				counterMap[1] = 0;
+				counterMap[2] = 0;
+			}
 			CLArray matchArray(sizeof(CLMatch) * r.maxBlobs);
-			OpenCL::await(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, r.minScore, (int)floor(r.minBlobRadius/r.perspective->fieldScale), r.maxBlobs);
+			OpenCL::await(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, (float)r.minScore, (int)floor(r.minBlobRadius/r.perspective->fieldScale), r.maxBlobs); //TODO borked minScore and radius at robocup?
 			//std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 
 			std::vector<Match> matches; //Same lifetime as KDTree required
@@ -580,6 +596,7 @@ int main(int argc, char* argv[]) {
 					matches.push_back({
 						.pos = r.perspective->flat2field({match.x, match.y}),
 						.color = {match.color.r, match.color.g, match.color.b},
+						.center = {match.center.r, match.center.g, match.center.b},
 						.circ = match.circ,
 						.score = match.score
 					});
@@ -751,8 +768,8 @@ int main(int argc, char* argv[]) {
 					continue;
 
 				ballCandidates.push_back({
-					.pos = r.perspective->model.image2field(r.perspective->model.field2image({ball.pos.x(), ball.pos.y(), (float)r.gcSocket->maxBotHeight}), (float)r.ballRadius).head<2>(),
-					.color = ball.color,
+					.pos = r.perspective->model.image2field(r.perspective->model.field2image({ball.pos.x(), ball.pos.y(), (float)r.gcSocket->maxBotHeight}), r.perspective->field.ball_radius()).head<2>(),
+					.color = ball.center,
 					.circ = ball.circ,
 					.score = ball.score
 				});
@@ -806,7 +823,7 @@ int main(int argc, char* argv[]) {
 				if((ballCandidate.color - r.falseOrange).squaredNorm() < (ballCandidate.color - r.orange).squaredNorm())
 					continue;
 
-				const Eigen::Vector2f imgPos = r.perspective->model.field2image({ballCandidate.pos.x(), ballCandidate.pos.y(), (float)r.ballRadius});
+				const Eigen::Vector2f imgPos = r.perspective->model.field2image({ballCandidate.pos.x(), ballCandidate.pos.y(), r.perspective->field.ball_radius()});
 				//std::cout << pos.transpose() << " " << orangeness << " " << blob.circ << " " << blob.score << " " << (blob.circ/blob.score) << std::endl;
 				SSL_DetectionBall* ball = detection->add_balls();
 				ball->set_confidence(ballCandidate.circ);
@@ -817,24 +834,6 @@ int main(int argc, char* argv[]) {
 				ball->set_pixel_x(imgPos.x());
 				ball->set_pixel_y(imgPos.y());
 			}
-
-			/*for(const auto& blob : matches) {
-				float orangeness = 1.0f - (r.orange - blob.color).norm() / 443.4050f; // sqrt(3 * 256**2)
-				if(orangeness <= 0.5f)
-					continue;
-
-				const Eigen::Vector2f imgPos = r.perspective->model.field2image({blob.pos.x(), blob.pos.y(), (float)r.gcSocket->maxBotHeight});
-				const Eigen::Vector3f pos = r.perspective->model.image2field(imgPos, (float)r.ballRadius);
-				std::cout << pos.transpose() << " " << orangeness << " " << blob.circ << " " << blob.score << " " << (blob.circ/blob.score) << std::endl;
-				SSL_DetectionBall* ball = detection->add_balls();
-				ball->set_confidence(orangeness);
-				//ball->set_area(0);
-				ball->set_x(pos.x());
-				ball->set_y(pos.y());
-				//ball->set_z(0.0f);
-				ball->set_pixel_x(imgPos.x());
-				ball->set_pixel_y(imgPos.y());
-			}*/
 
 			if(r.debugImages) {
 				Image bgr = img->toBGR();
@@ -884,5 +883,6 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	std::cout << "Stopping vision_processor" << std::endl;
 	return 0;
 }
