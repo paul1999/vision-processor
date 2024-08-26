@@ -20,7 +20,7 @@ import math
 from collections import defaultdict
 from pathlib import Path
 
-import yaml
+import json
 
 from binary import parser_binary, run_binary
 from dataset import parser_test_data, iterate_field, Dataset
@@ -36,7 +36,7 @@ def double_files(a: Path, b: Path, glob: str) -> set[str]:
 
 def is_video(path: Path) -> bool:
     with path.open('r') as file:
-        return len(yaml.load(file, yaml.CLoader)) > 1
+        return len(json.load(file)) > 1
 
 
 def reproject(args: argparse.Namespace, recorder: VisionRecorder, dataset: Dataset, geometryname: str, detectionsname: str) -> tuple[list[SSL_DetectionBall], list[SSL_DetectionRobot], list[SSL_DetectionRobot]]:
@@ -75,7 +75,7 @@ if __name__ == '__main__':
         print(f"Processing {field}")
         for a, b in itertools.combinations(datasets, 2):
             geometries = double_files(a.folder, b.folder, 'geometry*.yml')
-            for detectionsname in double_files(a.folder, b.folder, f'*.{args.suffix}.yml') - {f'geometry.{args.suffix}.yml'}:
+            for detectionsname in double_files(a.folder, b.folder, f'*.{args.suffix}.json') - {f'geometry.{args.suffix}.json'}:
                 if is_video(a.folder / detectionsname) or is_video(b.folder / detectionsname):
                     continue
 
@@ -135,5 +135,7 @@ if __name__ == '__main__':
                         total_bot_fields[geometryname] += 1
 
     for geometryname in total_bot_error:
+        #TODO geometric mean
+        #TODO length of the systematic offset for each overlap -> if near 0 -> angular change!
         print(f"Total error: {total_bot_error[geometryname] / total_bot_fields[geometryname]} mm for {total_bot_fields[geometryname]} combinations with {geometryname}")
         print(f"Total error: {total_ball_error[geometryname] / total_ball_fields[geometryname]} mm for {total_ball_fields[geometryname]} combinations with {geometryname}")

@@ -138,7 +138,7 @@ static void kMeans(const Eigen::Vector3i& different, const std::vector<Eigen::Ve
 	}
 
 	if(inGroupDiff > outGroupDiff) {
-		std::cerr << "   Ingroup bigger than outgroup" << std::endl;
+		//std::cerr << "   Ingroup bigger than outgroup" << std::endl;
 		return;
 	}
 
@@ -665,7 +665,7 @@ int main(int argc, char* argv[]) {
 					bool isBestBot = true;
 					Eigen::Vector2f pos = bestBot->pos().head<2>();
 					for(const auto& other : bestBotModels) {
-						if(other.first >= bestBotScore && (other.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * 1.75f) { //TODO hardcoded values
+						if(other.first >= bestBotScore && (other.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * r.minRobotDistance) {
 							isBestBot = false;
 							break;
 						}
@@ -675,7 +675,7 @@ int main(int argc, char* argv[]) {
 
 					for (auto it = bestBotModels.cbegin(); it != bestBotModels.cend(); ) {
 						const auto& other = *it;
-						if(it->first < bestBotScore && (it->second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * 1.75f) { //TODO hardcoded values
+						if(it->first < bestBotScore && (it->second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * r.minRobotDistance) {
 							it = bestBotModels.erase(it);
 						} else {
 							it++;
@@ -733,7 +733,7 @@ int main(int argc, char* argv[]) {
 				bool isBestBot = true;
 				Eigen::Vector2f pos = bestBot->pos().head<2>();
 				for(const auto& other : bestBotModels) {
-					if(other.first >= bestBotScore && (other.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * 1.75f) { //TODO hardcoded values
+					if(other.first >= bestBotScore && (other.second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * r.minRobotDistance) {
 						isBestBot = false;
 						break;
 					}
@@ -742,7 +742,7 @@ int main(int argc, char* argv[]) {
 					continue;
 
 				for (auto it = bestBotModels.cbegin(); it != bestBotModels.cend(); ) {
-					if(it->first < bestBotScore && (it->second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * 1.75f) { //TODO hardcoded values
+					if(it->first < bestBotScore && (it->second.pos().head<2>() - pos).norm() < r.perspective->field.max_robot_radius() * r.minRobotDistance) {
 						it = bestBotModels.erase(it);
 					} else {
 						it++;
@@ -755,10 +755,10 @@ int main(int argc, char* argv[]) {
 			float botCirc = 0.0f;
 			int botCircN = 0;
 			std::vector<Match> ballCandidates;
-			for(const auto& ball : matches) {
+			for(const auto& ball : matches) { //TODO better filter architecture
 				bool nextToBot = false;
 				for (const auto& entry : bestBotModels) {
-					if((ball.pos - entry.second.pos().head<2>()).norm() < r.perspective->field.max_robot_radius() * 0.8f) {
+					if((ball.pos - entry.second.pos().head<2>()).norm() < r.perspective->field.max_robot_radius() * r.minBallDistance) { //TODO use computed values instead
 						botCirc += ball.circ;
 						botCircN++;
 						nextToBot = true;
@@ -862,8 +862,8 @@ int main(int argc, char* argv[]) {
 
 			detection->set_t_sent(r.camera->getTime());
 			r.socket->send(wrapper);
-			switch(((long)(startTime/15.0) % 4)) {
 			std::cout << "[main] time " << (r.camera->getTime() - startTime) * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
+			/*switch(((long)(startTime/15.0) % 4)) {
 				case 0:
 					r.rtpStreamer->sendFrame(clImg);
 					break;
@@ -876,7 +876,8 @@ int main(int argc, char* argv[]) {
 				case 3:
 					r.rtpStreamer->sendFrame(circ);
 					break;
-			}
+			}*/
+			//r.rtpStreamer->sendFrame(clImg);
 		} else if(r.socket->getGeometryVersion()) {
 			geometryCalibration(r, *img);
 		} else {

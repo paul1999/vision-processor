@@ -29,11 +29,11 @@ def parser_binary(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
-def run_ssl_vision(binary: Path, recorder: VisionRecorder, dataset: Dataset, image: Path):
-    #TODO replace , with . in ssl vision config files
+def run_ssl_vision(binary: Path, recorder: VisionRecorder, dataset: Dataset, image: Path, upscale: bool = False):
     config = dataset.read_ssl_config()
     config.find(".//Var[@name='camera index']").text = str(dataset.cam_id)
     config.find(".//Var[@name='Video']/Var[@name='file']").text = str(image.relative_to(dataset.config_dir, walk_up=True))
+    config.find(".//Var[@name='Video']/Var[@name='upscale']").text = str(upscale).lower()
     for addr in config.findall(".//Var[@name='Multicast Address']"):
         addr.text = recorder.address[0]
     config.find(".//Var[@name='Multicast Port']").text = str(recorder.address[1])
@@ -57,7 +57,7 @@ def run_ssl_vision(binary: Path, recorder: VisionRecorder, dataset: Dataset, ima
 def run_processor(binary: Path, recorder: VisionRecorder, dataset: Dataset, image: Path, geometry: SSL_WrapperPacket = None, ground_truth: Path = None, stdoutconsumer=lambda line: None):
     dataset.update_processor_config(
         camera={'path': str(image)},
-        debug={'wait_for_geometry': True, 'ground_truth': str(image.with_suffix('.vision.yml') if ground_truth is None else ground_truth)},
+        debug={'wait_for_geometry': True, 'ground_truth': str(image.with_suffix('.vision.json') if ground_truth is None else ground_truth)},
         network={'vision_ip': recorder.address[0], 'vision_port': recorder.address[1]}
     )
 
@@ -85,8 +85,8 @@ def run_processor(binary: Path, recorder: VisionRecorder, dataset: Dataset, imag
                 print(f'Nonzero return code: {vision.returncode}', file=sys.stderr)
 
 
-def run_binary(binary: Path, recorder: VisionRecorder, dataset: Dataset, image: Path, geometry: SSL_WrapperPacket = None, ground_truth: Path = None, stdoutconsumer=lambda line: None):
+def run_binary(binary: Path, recorder: VisionRecorder, dataset: Dataset, image: Path, upscale: bool = False, geometry: SSL_WrapperPacket = None, ground_truth: Path = None, stdoutconsumer=lambda line: None):
     if binary.name == 'vision':
-        run_ssl_vision(binary, recorder, dataset, image)
+        run_ssl_vision(binary, recorder, dataset, image, upscale=upscale)
     else:
         run_processor(binary, recorder, dataset, image, geometry=geometry, ground_truth=ground_truth, stdoutconsumer=stdoutconsumer)

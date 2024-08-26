@@ -43,18 +43,20 @@ geometry:
 
 thresholds:
   # Minimum mean cosine similarity (not normalized) of the blob border gradient (0 - 195075.0)
-  #circularity: 10.0
+  #circularity: 25.0
   # Minimum circularity/(3*stddev) blob score
-  #score: 8.0
+  #score: 0.0
 
   # Max blobs
-  #blobs: 2000  
+  #blobs: 2000
+
+  # Minimum distance between two robots in robot radii
+  #min_robot_distance: 1.75
+  #min_ball_distance: 0.8
 
 sizes:
   # Team bot heights yml file (heights in mm)
   #bot_heights_file: robot-heights.yml
-  # Side blob distance in mm
-  #side_blob_distance: 65.0
   # Center blob radius in mm
   #center_blob_radius: 25.0
   # Side blob radius in mm

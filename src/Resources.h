@@ -43,7 +43,6 @@ public:
 
 	int camId;
 
-	double sideBlobDistance;
 	double centerBlobRadius;
 	double sideBlobRadius;
 	double minBlobRadius;
@@ -56,6 +55,8 @@ public:
 	double minCircularity;
 	double minScore;
 	int maxBlobs;
+	float minRobotDistance;
+	float minBallDistance;
 
 	Eigen::Vector3i falseOrangeReference = {128, 128, 128};
 	Eigen::Vector3i orangeReference = {255, 128, 0};

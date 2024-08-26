@@ -120,7 +120,10 @@ def iterate_fields(fields: Path, field_filter='*') -> Iterable[Dataset]:
 
 def threaded_field_iter(fields: Path, consumer, workers=None, field_filter='*'):
     if workers == 1:
-        pool = builtins
+        for field in iterate_fields(fields, field_filter):
+            consumer(field)
+
+        return
     else:
         if workers is None:
             workers = multiprocessing.cpu_count()

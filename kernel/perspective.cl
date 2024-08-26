@@ -70,6 +70,10 @@ kernel void perspective(read_only image2d_t in, write_only image2d_t out, const 
 	write_imagef(out, (int2)(get_global_id(0), get_global_id(1)), dcolor);*/
 
 	uint4 color = read_imageui(in, sampler, field2image(perspective, (float3)(get_global_id(0)*fieldScale + fieldOffsetX, get_global_id(1)*fieldScale + fieldOffsetY, maxRobotHeight)));
+	//write_imageui(out, (int2)(get_global_id(0), get_global_id(1)), color);
+	//color.r = 0.1f*pow(color.r, 1.41f); // 21 * x^0.45
+	//color.g = 0.1f*pow(color.g, 1.41f); // 0.10 * x^1.41
+	//color.b = 0.1f*pow(color.b, 1.41f);
 	write_imageui(out, (int2)(get_global_id(0), get_global_id(1)), (uint4)(
 			(2*color.r - color.g - color.b + 510) / 4,
 			(2*color.g - color.r - color.b + 510) / 4,

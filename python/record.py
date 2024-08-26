@@ -15,6 +15,7 @@
 #    limitations under the License.
 
 import argparse
+import json
 import sys
 import threading
 
@@ -56,22 +57,22 @@ if __name__ == '__main__':
                 # https://stackoverflow.com/questions/25359288/how-to-know-total-number-of-frame-in-a-file-with-cv2-in-python
                 capture = cv2.VideoCapture(str(video))
                 frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+                upscale = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) == 1224
             else:
                 frames = 1
+                upscale = False
 
             detections = []
 
             while len(detections) != frames:
-                run_binary(args.binary, recorder, dataset, video)
+                run_binary(args.binary, recorder, dataset, video, upscale=upscale)
 
                 detections = recorder.dict_subfield('detection')
 
                 if len(detections) != frames:
                     print(f"{video}: Detection size mismatch: Expected {frames} Vision {len(detections)}, repeating", file=sys.stderr)
 
-            with video.with_suffix('.' + args.binary.name + '.yml').open('w') as file:
-                # Fix incorrect NaN style emitted by yaml
-                file.write(yaml.dump(detections, Dumper=yaml.CDumper).replace('NaN', '.nan'))
-                #yaml.dump(detections, file, Dumper=yaml.CDumper)
+            with video.with_suffix('.' + args.binary.name + '.json').open('w') as file:
+                json.dump(detections, file)
 
     threaded_field_iter(args.data_folder, consumer, field_filter=args.field)

@@ -17,12 +17,10 @@
 
 #include <yaml-cpp/yaml.h>
 
-#include "proto/ssl_vision_wrapper.pb.h"
-
 
 namespace YAML {
-	template<> struct convert<SSL_DetectionBall> {
-		static bool decode(const Node& node, SSL_DetectionBall& ball) {
+	template<> struct [[maybe_unused]] convert<SSL_DetectionBall> {
+		[[maybe_unused]] static bool decode(const Node& node, SSL_DetectionBall& ball) {
 			ball.set_confidence(node["confidence"].as<float>());
 			if(node["area"].IsDefined())
 				ball.set_area(node["area"].as<int>());
@@ -38,8 +36,8 @@ namespace YAML {
 		}
 	};
 
-	template<> struct convert<SSL_DetectionRobot> {
-		static bool decode(const Node& node, SSL_DetectionRobot& robot) {
+	template<> struct [[maybe_unused]] convert<SSL_DetectionRobot> {
+		[[maybe_unused]] static bool decode(const Node& node, SSL_DetectionRobot& robot) {
 			robot.set_confidence(node["confidence"].as<float>());
 			if(node["robot_id"].IsDefined())
 				robot.set_robot_id(node["robot_id"].as<int>());
@@ -58,8 +56,8 @@ namespace YAML {
 		}
 	};
 
-	template<> struct convert<SSL_DetectionFrame> {
-		static bool decode(const Node& node, SSL_DetectionFrame& detection) {
+	template<> struct [[maybe_unused]] convert<SSL_DetectionFrame> {
+		[[maybe_unused]] static bool decode(const Node& node, SSL_DetectionFrame& detection) {
 			detection.set_camera_id(node["camera_id"].as<int>());
 			detection.set_frame_number(node["frame_number"].as<int>());
 			detection.set_t_capture(node["t_capture"].as<double>());

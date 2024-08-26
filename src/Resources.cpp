@@ -66,12 +66,13 @@ Resources::Resources(const YAML::Node& config) {
 	camId = config["cam_id"].as<int>(0);
 
 	YAML::Node thresholds = getOptional(config["thresholds"]);
-	minCircularity = thresholds["circularity"].as<double>(25.0); // 10.0
-	minScore = thresholds["score"].as<double>(0.0); // 8.0
+	minCircularity = thresholds["circularity"].as<double>(25.0);
+	minScore = thresholds["score"].as<double>(0.0);
 	maxBlobs = thresholds["blobs"].as<int>(2000);
+	minRobotDistance = thresholds["min_robot_distance"].as<float>(1.75f);
+	minBallDistance = thresholds["min_ball_distance"].as<float>(0.8f);
 
 	YAML::Node sizes = getOptional(config["sizes"]);
-	sideBlobDistance = sizes["side_blob_distance"].as<double>(65.0);
 	centerBlobRadius = sizes["center_blob_radius"].as<double>(25.0);
 	sideBlobRadius = sizes["side_blob_radius"].as<double>(20.0);
 	minBlobRadius = std::min({centerBlobRadius, sideBlobRadius, 21.5}); //TODO
