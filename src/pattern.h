@@ -51,3 +51,7 @@ const Eigen::Vector2f patternPos[5] = {
 		{-54.772f, -35.f   },
 		{ 35.f   , -54.772f}
 };
+
+const float MIN_ROBOT_RADIUS = 85.0f;
+const float MIN_ROBOT_FRONT_DISTANCE = 55.0f;
+const float MIN_ROBOT_OPENING_ANGLE = 0.86708f;  // 49.68°

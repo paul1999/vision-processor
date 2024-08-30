@@ -50,9 +50,14 @@ thresholds:
   # Max blobs
   #blobs: 2000
 
-  # Minimum distance between two robots in robot radii
-  #min_robot_distance: 1.75
-  #min_ball_distance: 0.8
+  # Minimum bot confidence (0.0 - 1.0)
+  #min_bot_confidence: 0.1
+
+color:
+  # Strength of the reference color during color updates (0.0 - 0.5-history_force/2)
+  #reference_force: 0.1
+  # Strength of the previous color during color updates (0.0 - 1.0-reference_force)
+  #history_force: 0.7
 
 sizes:
   # Team bot heights yml file (heights in mm)
@@ -95,5 +100,7 @@ debug:
   #ground_truth: gt.yml
   # Wait for geometry prior to processing frames
   #wait_for_geometry: false
-  # Print code debug images
+  # Only stream raw camera footage. Useful for recordings.
+  #raw_feed: false
+  # Save debug images in img/. Do not use while influencing robots (massive performance impact).
   #debug_images: false

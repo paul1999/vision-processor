@@ -49,15 +49,16 @@ public:
 	double maxBlobRadius;
 
 	double minTrackingRadius;
-	double maxBallVelocity;
-	double maxBotAcceleration;
+	double maxBallVelocity; // mm/s
+	double maxBotAcceleration; // mm/s²
 
 	double minCircularity;
 	double minScore;
 	int maxBlobs;
-	float minRobotDistance;
-	float minBallDistance;
+	float minBotConfidence;
 
+	float referenceForce;
+	float historyForce;
 	Eigen::Vector3i falseOrangeReference = {128, 128, 128};
 	Eigen::Vector3i orangeReference = {255, 128, 0};
 	Eigen::Vector3i yellowReference = {255, 128, 0};
@@ -83,6 +84,7 @@ public:
 	std::string groundTruth;
 	bool waitForGeometry;
 	bool debugImages;
+	bool rawFeed;
 
 	std::shared_ptr<GCSocket> gcSocket;
 	std::shared_ptr<VisionSocket> socket;

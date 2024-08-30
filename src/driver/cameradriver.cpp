@@ -13,27 +13,12 @@
      See the License for the specific language governing permissions and
      limitations under the License.
  */
-#pragma once
+#include "cameradriver.h"
 
-#include <memory>
-#include "image.h"
+double getRealTime() {
+	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
+}
 
-double getRealTime();
-
-
-enum WhiteBalanceType {
-	WhiteBalanceType_Manual,
-	WhiteBalanceType_AutoOutdoor,
-	WhiteBalanceType_AutoIndoor
-};
-
-
-class CameraDriver {
-public:
-	virtual ~CameraDriver() = default;
-
-	virtual std::shared_ptr<Image> readImage() = 0;
-
-	// Bound to the driver for reproducibility during testing with files.
-	virtual double getTime();
-};
+double CameraDriver::getTime() {
+	return getRealTime();
+}

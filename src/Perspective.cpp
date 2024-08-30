@@ -51,26 +51,27 @@ void Perspective::geometryCheck(const int camAmount, const int width, const int 
 	field = socket->getGeometry().field();
 
 	//calculate optimal fieldScale
-	Eigen::Vector2f extentMin, extentMax;
-	visibleFieldExtentEstimation(camId, camAmount, socket->getGeometry().field(), true, extentMin, extentMax);
-	Eigen::Vector2f extentSize = extentMax - extentMin;
-	Eigen::Vector2f minmin = model.field2image({extentMin.x(), extentMin.y(), (float)maxBotHeight});
-	Eigen::Vector2f minmax = model.field2image({extentMin.x(), extentMax.y(), (float)maxBotHeight});
-	Eigen::Vector2f maxmax = model.field2image({extentMax.x(), extentMax.y(), (float)maxBotHeight});
-	Eigen::Vector2f maxmin = model.field2image({extentMax.x(), extentMin.y(), (float)maxBotHeight});
-	float xSides[4]{abs(minmax.x() - minmin.x()), abs(maxmin.x() - minmin.x()), abs(maxmax.x() - minmax.x()), abs(maxmax.x() - maxmin.x())};
-	float ySides[4]{abs(minmax.y() - minmin.y()), abs(maxmin.y() - minmin.y()), abs(maxmax.y() - minmax.y()), abs(maxmax.y() - maxmin.y())};
-	std::sort(xSides, xSides+4);
-	std::sort(ySides, ySides+4);
-	//TODO option for best possible scale
-	Eigen::Vector2f imageSize = {std::max(xSides[3], xSides[2]), std::max(ySides[3], ySides[2])}; //Max image side
-	fieldScale = std::max(extentSize.maxCoeff() / imageSize.maxCoeff(), extentSize.minCoeff() / imageSize.minCoeff()); //Assume large extent side oriented along large image side
+	float minFieldScale = MAXFLOAT;
+	float maxFieldScale = 0;
+	float fieldScaleSum = 0; //TODO currently from the perspective of the image -> better from field perspective?
+	int n = 0;
+	for(int y = 0; y < height-1; y++) {
+		for(int x = 0; x < width-1; x++) {
+			Eigen::Vector2f pos = model.image2field({x, y}, (float)maxBotHeight).head<2>();
+			if(abs(pos.x()) < (float)field.field_length()/2.f + (float)field.boundary_width() && abs(pos.y()) < (float)field.field_width()/2.f + (float)field.boundary_width()) {
+				float dx = (model.image2field({x+1, y}, (float)maxBotHeight).head<2>() - pos).norm();
+				float dy = (model.image2field({x, y+1}, (float)maxBotHeight).head<2>() - pos).norm();
 
-	std::cout << "[Perspective] Best field scale: " << fieldScale << std::endl;
-	imageSize = {(xSides[3] + xSides[2]) / 2, (ySides[3] + ySides[2]) / 2}; //Average out both image sides (largest two)
-	std::cout << "[Perspective] Avg. field scale: " << (extentSize.maxCoeff() / imageSize.maxCoeff() + extentSize.minCoeff() / imageSize.minCoeff()) / 2 << std::endl;
-	imageSize = {std::min(xSides[3], xSides[2]), std::min(ySides[3], ySides[2])};
-	std::cout << "[Perspective] Worst field scale: " << std::min(extentSize.maxCoeff() / imageSize.maxCoeff(), extentSize.minCoeff() / imageSize.minCoeff()) << std::endl;
+				minFieldScale = std::min(minFieldScale, std::min(dx, dy));
+				maxFieldScale = std::max(maxFieldScale, std::max(dx, dy));
+				fieldScaleSum += dx + dy;
+				n += 2;
+			}
+		}
+	}
+	//TODO option for best possible scale
+	fieldScale = fieldScaleSum / (float)n;
+	std::cout << "[Perspective] Field scale: " << minFieldScale << "mm/px < " << fieldScale << "mm/px < " << maxFieldScale << "mm/px" << std::endl;
 
 	//update visibleFieldExtent
 	Eigen::Vector2f center = model.image2field({0.0f, 0.0f}, (float)maxBotHeight).head<2>();

@@ -26,10 +26,6 @@ static void moveRobot(const Resources& r, SSL_DetectionRobot& robot) {
 	robot.set_y(pos.y());
 }
 
-static double getTime() {
-	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
-}
-
 static void geometryBenchmark(Resources& r, const uint32_t frameId) {
 	std::vector<SSL_DetectionFrame> groundTruth = parseGroundTruth(r.groundTruth);
 
@@ -49,8 +45,8 @@ static void geometryBenchmark(Resources& r, const uint32_t frameId) {
 	}
 
 	detection->set_camera_id(r.camId);
-	detection->set_t_capture(getTime());
-	detection->set_t_sent(getTime());
+	detection->set_t_capture(getRealTime());
+	detection->set_t_sent(getRealTime());
 	r.socket->send(wrapper);
 }
 

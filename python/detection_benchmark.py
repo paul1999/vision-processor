@@ -51,6 +51,7 @@ if __name__ == '__main__':
                     detections[binary] = json.load(file)
 
             with_manual = 'manual' in detections.keys()
+            video_frames = max(len(detection_list) for detection_list in detections.values())
 
             local_detection_rates = defaultdict(lambda: defaultdict(lambda: 0))
             for binary, detection_list in detections.items():
@@ -67,7 +68,6 @@ if __name__ == '__main__':
                             if confidence(bot) > 0.1:
                                 binary_detection_rates['b' + str(bot['robot_id'])] += 1
 
-            video_frames = max(len(detection_list) for detection_list in detections.values())
             objects = {t for binary in local_detection_rates.keys() for t in local_detection_rates[binary].keys()}
             if with_manual:
                 correct_objects = {t for t in local_detection_rates['manual'].keys()}

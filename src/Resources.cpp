@@ -69,8 +69,7 @@ Resources::Resources(const YAML::Node& config) {
 	minCircularity = thresholds["circularity"].as<double>(25.0);
 	minScore = thresholds["score"].as<double>(0.0);
 	maxBlobs = thresholds["blobs"].as<int>(2000);
-	minRobotDistance = thresholds["min_robot_distance"].as<float>(1.75f);
-	minBallDistance = thresholds["min_ball_distance"].as<float>(0.8f);
+	minBotConfidence = thresholds["min_bot_confidence"].as<float>(0.1f);
 
 	YAML::Node sizes = getOptional(config["sizes"]);
 	centerBlobRadius = sizes["center_blob_radius"].as<double>(25.0);
@@ -80,8 +79,8 @@ Resources::Resources(const YAML::Node& config) {
 
 	YAML::Node tracking = getOptional(config["tracking"]);
 	minTrackingRadius = tracking["min_tracking_radius"].as<double>(20.0);
-	maxBallVelocity = 1000*tracking["max_ball_velocity"].as<double>(8.0);
-	maxBotAcceleration = 1000*tracking["max_bot_acceleration"].as<double>(6.5);
+	maxBallVelocity = 1000 * tracking["max_ball_velocity"].as<double>(8.0);
+	maxBotAcceleration = 1000 * tracking["max_bot_acceleration"].as<double>(6.5);
 
 	YAML::Node geometry = getOptional(config["geometry"]);
 	cameraAmount = geometry["camera_amount"].as<int>(1);
@@ -93,10 +92,15 @@ Resources::Resources(const YAML::Node& config) {
 	maxLineSegmentOffset = geometry["max_line_segment_offset"].as<double>(10.0);
 	maxLineSegmentAngle = geometry["max_line_segment_angle"].as<double>(3.0) * M_PI/180.0;
 
-	YAML::Node benchmark = getOptional(config["debug"]);
-	groundTruth = benchmark["ground_truth"].as<std::string>("gt.yml");
-	waitForGeometry = benchmark["wait_for_geometry"].as<bool>(false);
-	debugImages = benchmark["debug_images"].as<bool>(false);
+	YAML::Node color = getOptional(config["color"]);
+	referenceForce = color["reference_force"].as<float>(0.1f);
+	historyForce = color["history_force"].as<float>(0.7f);
+
+	YAML::Node debug = getOptional(config["debug"]);
+	groundTruth = debug["ground_truth"].as<std::string>("gt.yml");
+	waitForGeometry = debug["wait_for_geometry"].as<bool>(false);
+	debugImages = debug["debug_images"].as<bool>(false);
+	rawFeed = debug["raw_feed"].as<bool>(false);
 
 	YAML::Node network = getOptional(config["network"]);
 	gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(sizes["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());

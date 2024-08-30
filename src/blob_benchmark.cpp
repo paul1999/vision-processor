@@ -56,9 +56,6 @@ static void bot2blobs(const Resources& r, const SSL_DetectionRobot& bot, const B
 	}
 }
 
-static double getTime() {
-	return (double)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() / 1e6;
-}
 
 #define WARN_INVISIBLE_BLOBS false
 
@@ -98,13 +95,13 @@ int main(int argc, char* argv[]) {
 	positionOffset[BlobColor::PINK] = {0.f, 0.f};
 
 	while(true) {
-		double startTime = getTime();
+		double startTime = getRealTime();
 		std::shared_ptr<Image> img = r.camera->readImage();
 		if(img == nullptr)
 			break;
 
-		imageTime += getTime() - startTime;
-		startTime = getTime();
+		imageTime += getRealTime() - startTime;
+		startTime = getRealTime();
 
 		r.perspective->geometryCheck(r.cameraAmount, img->width, img->height, r.gcSocket->maxBotHeight); //TODO check resolution calculation
 
@@ -126,8 +123,8 @@ int main(int argc, char* argv[]) {
 		OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)floor(r.minBlobRadius/r.perspective->fieldScale), (int)ceil(r.maxBlobRadius/r.perspective->fieldScale));
 		//OpenCL::await(scoreKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, score->image, (float)r.minCircularity, (int)floor(r.minBlobRadius/r.perspective->fieldScale));
 
-		processingTime += getTime() - startTime;
-		startTime = getTime();
+		processingTime += getRealTime() - startTime;
+		startTime = getRealTime();
 
 		const SSL_DetectionFrame& detection = getCorrespondingFrame(groundTruth, ++frameId);
 		std::vector<Blob> blobs;
@@ -155,6 +152,7 @@ int main(int argc, char* argv[]) {
 			Eigen::Vector2f maxPos;
 			float maxScore = -INFINITY;
 			for(int y = std::max(0, (int)floorf(blob.flat.y() - blob.radius)); y < std::min(r.perspective->reprojectedFieldSize[1], (int)ceilf(blob.flat.y() + blob.radius)); y++) {
+				//TODO square search -> round search sqrt(blob.radius^2 - y offset^2)! c^2 = a^2 + b^2 -> b^2 = c^2 - a^2
 				for(int x = std::max(0, (int)floorf(blob.flat.x() - blob.radius)); x < std::min(r.perspective->reprojectedFieldSize[0], (int)ceilf(blob.flat.x() + blob.radius)); x++) {
 					float s = scoreMap(x, y);
 					if(s > maxScore) {
@@ -210,7 +208,7 @@ int main(int argc, char* argv[]) {
 			}
 		}
 		scoreHits -= blobs.size();
-		analysisTime += getTime() - startTime;
+		analysisTime += getRealTime() - startTime;
 
 		if(r.debugImages && frameId == 1)  {
 			flat->save(".flat.png");
@@ -220,7 +218,7 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	//TODO handle blob color	 not present
+	//TODO handle blob color not present
 	std::cout << "[Blob benchmark] Avg additional score hits " << ((double)scoreHits / frameId) << std::endl;
 	double totalOffset = 0.0;
 	int totalAmount = 0;
