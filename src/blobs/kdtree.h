@@ -14,26 +14,27 @@
      limitations under the License.
  */
 #pragma once
-#ifdef MVIMPACT
 
-#include "cameradriver.h"
-#include <mvIMPACT_CPP/mvIMPACT_acquire.h>
-#include <apps/Common/exampleHelper.h> //Necessary header for compilation of <mvIMPACT_acquire_helper.h> without -fpermissive
-#include <mvIMPACT_CPP/mvIMPACT_acquire_helper.h>
+#include <memory>
+#include "match.h"
 
-class MVImpactDriver : public CameraDriver {
+class KDTree {
 public:
-	explicit MVImpactDriver(int id);
-	~MVImpactDriver() override;
+	KDTree(): size(0), data(nullptr) {}
+	explicit KDTree(Match* data): data(data) {}
+	KDTree(int dim, Match* data): dim(dim), data(data) {}
 
-	std::shared_ptr<Image> readImage() override;
+	void insert(Match* iData);
 
-	double expectedFrametime() override;
+	void rangeSearch(std::vector<Match*>& values, const Eigen::Vector2f& point, float radius) const;
+
+	[[nodiscard]] inline int getSize() const { return size; }
 
 private:
-	mvIMPACT::acquire::DeviceManager devMgr;
-	mvIMPACT::acquire::Device* device;
-	std::unique_ptr<mvIMPACT::acquire::helper::RequestProvider> provider;
-};
+	std::unique_ptr<KDTree> left = nullptr;
+	std::unique_ptr<KDTree> right = nullptr;
+	Match* data;
 
-#endif
+	int dim = 0;
+	int size = 1;
+};

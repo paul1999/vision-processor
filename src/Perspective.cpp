@@ -14,6 +14,7 @@
      limitations under the License.
  */
 #include "Perspective.h"
+#include "pattern.h"
 
 #include <cmath>
 
@@ -49,6 +50,9 @@ void Perspective::geometryCheck(const int camAmount, const int width, const int 
 	model.ensureSize(size);
 	geometryVersion = socket->getGeometryVersion();
 	field = socket->getGeometry().field();
+
+	minBlobRadius = std::min({CENTER_BLOB_RADIUS, SIDE_BLOB_RADIUS, field.ball_radius()});
+	maxBlobRadius = std::max({CENTER_BLOB_RADIUS, SIDE_BLOB_RADIUS, field.ball_radius()});
 
 	//calculate optimal fieldScale
 	float minFieldScale = MAXFLOAT;

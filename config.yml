@@ -59,20 +59,23 @@ color:
   # Strength of the previous color during color updates (0.0 - 1.0-reference_force)
   #history_force: 0.7
 
+  # Reference colors used for ball determination
+  #orange: [255, 128, 0]
+  #field: [128, 128, 128]
+  # Reference colors used for center blob determination
+  #yellow: [255, 128, 0]
+  #blue: [0, 128, 255]
+  # Reference colors used for side blob determination
+  #green: [0, 255, 128]
+  #pink: [255, 0, 128]
+
 sizes:
   # Team bot heights yml file (heights in mm)
   #bot_heights_file: robot-heights.yml
-  # Center blob radius in mm
-  #center_blob_radius: 25.0
-  # Side blob radius in mm
-  #side_blob_radius: 20.0
 
 tracking:
   # Min tracking radius in mm
   #min_tracking_radius: 20.0
-
-  # Max tracked ball velocity in m/s
-  #max_ball_velocity: 8.0
 
   # Max tracked bot acceleration in m/s^2
   #max_bot_acceleration: 6.5
@@ -96,7 +99,7 @@ network:
   #stream_port: 10100
 
 debug:
-  # Ground truth file
+  # Ground truth file. Only used by blob and geometry benchmark.
   #ground_truth: gt.yml
   # Wait for geometry prior to processing frames
   #wait_for_geometry: false

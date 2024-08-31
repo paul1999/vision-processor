@@ -26,6 +26,8 @@ public:
 
 	std::shared_ptr<Image> readImage() override;
 
+	double expectedFrametime() override;
+
 	std::shared_ptr<Image> borrow(const Spinnaker::ImagePtr& pImage);
 	void restore(const Image& image);
 

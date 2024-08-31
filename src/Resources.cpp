@@ -21,6 +21,28 @@
 #include "driver/cameradriver.h"
 #include "driver/opencvdriver.h"
 
+template<>
+struct YAML::convert<Eigen::Vector3i> {
+	static YAML::Node encode(const Eigen::Vector3i& rhs) {
+		YAML::Node node;
+		node.push_back(rhs.x());
+		node.push_back(rhs.y());
+		node.push_back(rhs.z());
+		return node;
+	}
+
+	static bool decode(const YAML::Node& node, Eigen::Vector3i& rhs) {
+		if(!node.IsSequence() || node.size() != 3) {
+			return false;
+		}
+
+		rhs.x() = node[0].as<int>();
+		rhs.y() = node[1].as<int>();
+		rhs.z() = node[2].as<int>();
+		return true;
+	}
+};
+
 static YAML::Node getOptional(const YAML::Node& node) {
 	return node.IsDefined() ? node : YAML::Node();
 }
@@ -71,15 +93,8 @@ Resources::Resources(const YAML::Node& config) {
 	maxBlobs = thresholds["blobs"].as<int>(2000);
 	minBotConfidence = thresholds["min_bot_confidence"].as<float>(0.1f);
 
-	YAML::Node sizes = getOptional(config["sizes"]);
-	centerBlobRadius = sizes["center_blob_radius"].as<double>(25.0);
-	sideBlobRadius = sizes["side_blob_radius"].as<double>(20.0);
-	minBlobRadius = std::min({centerBlobRadius, sideBlobRadius, 21.5}); //TODO
-	maxBlobRadius = std::max({centerBlobRadius, sideBlobRadius, 21.5}); //TODO
-
 	YAML::Node tracking = getOptional(config["tracking"]);
 	minTrackingRadius = tracking["min_tracking_radius"].as<double>(20.0);
-	maxBallVelocity = 1000 * tracking["max_ball_velocity"].as<double>(8.0);
 	maxBotAcceleration = 1000 * tracking["max_bot_acceleration"].as<double>(6.5);
 
 	YAML::Node geometry = getOptional(config["geometry"]);
@@ -95,6 +110,18 @@ Resources::Resources(const YAML::Node& config) {
 	YAML::Node color = getOptional(config["color"]);
 	referenceForce = color["reference_force"].as<float>(0.1f);
 	historyForce = color["history_force"].as<float>(0.7f);
+	orangeReference = color["orange"].as<Eigen::Vector3i>(Eigen::Vector3i{255, 128, 0});
+	fieldReference = color["field"].as<Eigen::Vector3i>(Eigen::Vector3i{128, 128, 128});
+	yellowReference = color["yellow"].as<Eigen::Vector3i>(Eigen::Vector3i{255, 128, 0});
+	blueReference = color["blue"].as<Eigen::Vector3i>(Eigen::Vector3i{0, 128, 255});
+	greenReference = color["green"].as<Eigen::Vector3i>(Eigen::Vector3i{0, 255, 128});
+	pinkReference = color["pink"].as<Eigen::Vector3i>(Eigen::Vector3i{255, 0, 128});
+	orange = orangeReference;
+	field = fieldReference;
+	yellow = yellowReference;
+	blue = blueReference;
+	green = greenReference;
+	pink = pinkReference;
 
 	YAML::Node debug = getOptional(config["debug"]);
 	groundTruth = debug["ground_truth"].as<std::string>("gt.yml");
@@ -102,6 +129,7 @@ Resources::Resources(const YAML::Node& config) {
 	debugImages = debug["debug_images"].as<bool>(false);
 	rawFeed = debug["raw_feed"].as<bool>(false);
 
+	YAML::Node sizes = getOptional(config["sizes"]);
 	YAML::Node network = getOptional(config["network"]);
 	gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(sizes["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());
 	socket = std::make_shared<VisionSocket>(network["vision_ip"].as<std::string>("224.5.23.2"), network["vision_port"].as<int>(10006), gcSocket->defaultBotHeight, 21.5); //TODO

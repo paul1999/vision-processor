@@ -43,13 +43,7 @@ public:
 
 	int camId;
 
-	double centerBlobRadius;
-	double sideBlobRadius;
-	double minBlobRadius;
-	double maxBlobRadius;
-
 	double minTrackingRadius;
-	double maxBallVelocity; // mm/s
 	double maxBotAcceleration; // mm/s²
 
 	double minCircularity;
@@ -59,18 +53,18 @@ public:
 
 	float referenceForce;
 	float historyForce;
-	Eigen::Vector3i falseOrangeReference = {128, 128, 128};
-	Eigen::Vector3i orangeReference = {255, 128, 0};
-	Eigen::Vector3i yellowReference = {255, 128, 0};
-	Eigen::Vector3i blueReference = {0, 128, 255};
-	Eigen::Vector3i greenReference = {0, 255, 128};
-	Eigen::Vector3i pinkReference = {255, 0, 128};
-	Eigen::Vector3i falseOrange = falseOrangeReference;
-	Eigen::Vector3i orange = orangeReference;
-	Eigen::Vector3i yellow = yellowReference;
-	Eigen::Vector3i blue = blueReference;
-	Eigen::Vector3i green = greenReference;
-	Eigen::Vector3i pink = pinkReference;
+	Eigen::Vector3i orangeReference;
+	Eigen::Vector3i fieldReference;
+	Eigen::Vector3i yellowReference;
+	Eigen::Vector3i blueReference;
+	Eigen::Vector3i greenReference;
+	Eigen::Vector3i pinkReference;
+	Eigen::Vector3i orange;
+	Eigen::Vector3i field;
+	Eigen::Vector3i yellow;
+	Eigen::Vector3i blue;
+	Eigen::Vector3i green;
+	Eigen::Vector3i pink;
 
 	int cameraAmount;
 	double cameraHeight; // Just for calibration, do not use elsewhere (0.0 as special value for automatic calibration)

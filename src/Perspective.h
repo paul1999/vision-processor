@@ -60,6 +60,9 @@ public:
 	float fieldScale = 5.f; // [mm/px]
 	Eigen::Vector2i reprojectedFieldSize = Eigen::Vector2i(0, 0);
 
+	float minBlobRadius = 20.0f;
+	float maxBlobRadius = 25.0f;
+
 	int geometryVersion = 0;
 
 private:

@@ -122,6 +122,10 @@ std::shared_ptr<Image> SpinnakerDriver::readImage() {
 	return std::make_shared<SpinnakerImage>(*this, pCam->GetNextImage());
 }
 
+double SpinnakerDriver::expectedFrametime() {
+	return 1 / pCam->AcquisitionResultingFrameRate.GetValue();
+}
+
 SpinnakerDriver::~SpinnakerDriver() {
 	pCam->EndAcquisition();
 }

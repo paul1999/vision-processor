@@ -82,5 +82,9 @@ std::shared_ptr<Image> MVImpactDriver::readImage() {
 	return std::make_shared<MVImpactImage>(request);
 }
 
+double MVImpactDriver::expectedFrametime() {
+	return 1 / GenICam::AcquisitionControl(device).mvResultingFrameRate.read();
+}
+
 #endif
 

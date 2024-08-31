@@ -37,6 +37,11 @@ public:
 		return image;
 	}
 
+	double expectedFrametime() override {
+		//TODO might fail with cameras
+		return 1 / capture.get(cv::CAP_PROP_FPS);
+	}
+
 	double getTime() override {
 		double pos = capture.get(cv::CAP_PROP_POS_FRAMES);
 

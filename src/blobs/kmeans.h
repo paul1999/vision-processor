@@ -15,27 +15,7 @@
  */
 #pragma once
 
-#include <memory>
-#include "image.h"
+#include <vector>
+#include <eigen3/Eigen/Core>
 
-double getRealTime();
-
-
-enum WhiteBalanceType {
-	WhiteBalanceType_Manual,
-	WhiteBalanceType_AutoOutdoor,
-	WhiteBalanceType_AutoIndoor
-};
-
-
-class CameraDriver {
-public:
-	virtual ~CameraDriver() = default;
-
-	virtual std::shared_ptr<Image> readImage() = 0;
-
-	virtual double expectedFrametime() = 0;
-
-	// Bound to the driver for reproducibility during testing with files.
-	virtual double getTime();
-};
+bool kMeans(const Eigen::Vector3i& contrast, const std::vector<Eigen::Vector3i>& values, Eigen::Vector3i& c1, Eigen::Vector3i& c2);

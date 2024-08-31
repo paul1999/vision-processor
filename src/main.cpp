@@ -25,8 +25,10 @@
 #include "calib/GeomModel.h"
 #include "pattern.h"
 #include "cl_kernels.h"
+#include "blobs/hypothesis.h"
+#include "blobs/kmeans.h"
+#include "blobs/kdtree.h"
 #include <opencv2/video/background_segm.hpp>
-#include "KDTree.h"
 
 struct __attribute__ ((packed)) CLMatch {
 	float x, y;
@@ -38,402 +40,6 @@ struct __attribute__ ((packed)) CLMatch {
 	auto operator<=>(const CLMatch&) const = default;
 };
 
-struct Match {
-	Eigen::Vector2f pos;
-	Eigen::Vector3i color;
-	Eigen::Vector3i center;
-	float circ;
-	float score;
-
-	auto operator<=>(const Match&) const = default;
-};
-
-static bool kMeans(const Eigen::Vector3i& different, const std::vector<Eigen::Vector3i>& values, Eigen::Vector3i& c1, Eigen::Vector3i& c2) {
-	if(values.size() < 2)
-		return false;
-
-	float inGroupDiff = INFINITY;
-	float outGroupDiff = INFINITY;
-
-	for (int i = 0; i < values.size(); i++) {
-		const auto& value = values[i];
-		outGroupDiff = std::min(outGroupDiff, (float)(value - different).squaredNorm());
-
-		for (int j = i+1; j < values.size(); j++) {
-			inGroupDiff = std::min(inGroupDiff, (float)(values[j] - value).squaredNorm());
-		}
-	}
-
-	if(inGroupDiff > outGroupDiff) {
-		//std::cerr << "   Ingroup bigger than outgroup" << std::endl;
-		return false;
-	}
-
-	inGroupDiff = sqrtf(inGroupDiff);
-	outGroupDiff = sqrtf(outGroupDiff);
-
-	Eigen::Vector3i c1backup = c1;
-	Eigen::Vector3i c2backup = c2;
-
-	//https://reasonabledeviations.com/2019/10/02/k-means-in-cpp/
-	//https://www.analyticsvidhya.com/blog/2021/05/k-mean-getting-the-optimal-number-of-clusters/
-	c1 = *std::min_element(values.begin(), values.end(), [&](const Eigen::Vector3i& a, const Eigen::Vector3i& b) { return (a - c1).squaredNorm() < (b - c1).squaredNorm(); });
-	c2 = *std::min_element(values.begin(), values.end(), [&](const Eigen::Vector3i& a, const Eigen::Vector3i& b) { return (a - c2).squaredNorm() < (b - c2).squaredNorm(); });
-	if(c1 == c2) {
-		c1 = c1backup;
-		c2 = c2backup;
-		return false;
-	}
-
-	Eigen::Vector3i oldC1 = c2;
-	Eigen::Vector3i oldC2 = c1;
-	int n1 = 0;
-	int n2 = 0;
-	while(oldC1 != c1 && oldC2 != c2) {
-		Eigen::Vector3i sum1 = {0, 0, 0};
-		Eigen::Vector3i sum2 = {0, 0, 0};
-		n1 = 0;
-		n2 = 0;
-		for (const auto& value : values) {
-			if((value - c1).squaredNorm() < (value - c2).squaredNorm()) {
-				sum1 += value;
-				n1++;
-			} else {
-				sum2 += value;
-				n2++;
-			}
-		}
-
-		if(n1 == 0 || n2 == 0) {
-			//std::cerr << "   N0 " << n1 << "|" << n2 << "   " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
-			c1 = c1backup;
-			c2 = c2backup;
-			return false;
-		}
-
-		oldC1 = c1;
-		oldC2 = c2;
-		c1 = sum1 / n1;
-		c2 = sum2 / n2;
-	}
-
-	float mergeRange = (outGroupDiff - inGroupDiff) / 2.0f;
-	if((float)(c1 - c2).norm() < mergeRange) {
-		//std::cerr << "   Skipping Update for " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
-		c1 = c1backup;
-		c2 = c2backup;
-		return false;
-	}
-
-	/*if((c1 - c2).dot(c1backup - c2backup) <= 0) { //TODO did never trigger
-		std::cerr << "   Attempted color direction inversion" << std::endl;
-		c1 = c1backup;
-		c2 = c2backup;
-	}*/
-
-	// https://en.wikipedia.org/wiki/Silhouette_(clustering)#Simplified_Silhouette_and_Medoid_Silhouette
-	/*float s1 = 0.0;
-	float s2 = 0.0;
-	for (const auto& value : values) {
-		float a = (float)(value - c1).norm();
-		float b = (float)(value - c2).norm();
-		if(a < b) {
-			s1 += (b - a) / b;
-		} else {
-			s2 += (a - b) / a;
-		}
-	}
-
-	//TODO circularity of samples: if roughly circular: one cluster?
-	//TODO if small sample size: combine multiple frames
-	if(std::max(s1/(float)n1, s2/(float)n2) < 1.0f) { //TODO not working	 //TODO hardcoded value
-		std::cerr << "   Skipping Update for " << n1 << "|" << n2 << "   " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
-		c1 = c1backup;
-		c2 = c2backup;
-	}*/
-
-	return true;
-}
-
-
-class KDTree {
-public:
-	KDTree(): size(0), data(nullptr) {}
-	KDTree(Match* data): data(data) {}
-	KDTree(int dim, Match* data): dim(dim), data(data) {}
-
-	void insert(Match* iData) {
-		size++;
-		std::unique_ptr<KDTree>& side = iData->pos[dim] < data->pos[dim] ? left : right;
-		if(side != nullptr) {
-			side->insert(iData);
-			return;
-		}
-
-		side = std::make_unique<KDTree>((dim+1) % 2, iData);
-	}
-
-	void rangeSearch(std::vector<Match*>& values, const Eigen::Vector2f& point, const float radius) {
-		if((data->pos - point).norm() <= radius)
-			values.push_back(data);
-
-		if(left != nullptr && point[dim] <= data->pos[dim] + radius)
-			left->rangeSearch(values, point, radius);
-		if(right != nullptr && point[dim] >= data->pos[dim] - radius)
-			right->rangeSearch(values, point, radius);
-	}
-
-	inline int getSize() const { return size; }
-
-	std::unique_ptr<KDTree> left = nullptr;
-	std::unique_ptr<KDTree> right = nullptr;
-	Match* data;
-private:
-	int dim = 0;
-	int size = 1;
-};
-
-class BallHypothesis {
-public:
-	BallHypothesis(const Resources& r, const Match* blob): blob(blob), pos(blob->pos) {
-		calcColorScore(r);
-	}
-
-	void recalcPostColorCalib(const Resources& r) {
-		score = 1.0f;
-		calcColorScore(r);
-	}
-
-	void addToDetectionFrame(const Resources& r, SSL_DetectionFrame* detection) {
-		const Eigen::Vector2f imgPos = r.perspective->model.field2image({pos.x(), pos.y(), (float)r.gcSocket->maxBotHeight});
-		const Eigen::Vector3f ballPos = r.perspective->model.image2field(imgPos, r.perspective->field.ball_radius());
-		SSL_DetectionBall* ball = detection->add_balls();
-		ball->set_confidence(score);
-		//ball->set_area(0);
-		ball->set_x(ballPos.x());
-		ball->set_y(ballPos.y());
-		//ball->set_z(0.0f);
-		ball->set_pixel_x(imgPos.x());
-		ball->set_pixel_y(imgPos.y());
-	}
-
-	const Match* blob;
-	Eigen::Vector2f pos = {0, 0};
-	float score = 1.0f;
-
-private:
-	void calcColorScore(const Resources& r) {
-		//TODO test center vs color (updateColors as well)
-		int falseOrange = (blob->center - r.falseOrange).squaredNorm();
-		int orange = (blob->center - r.orange).squaredNorm();
-
-		if (falseOrange <= orange) {
-			score = 0;
-			return;
-		}
-
-		score *= 1 - (float)orange / (float)falseOrange;
-	}
-};
-
-class BotHypothesis {
-public:
-	BotHypothesis(const Match* a, const Match* b, const Match* c, const Match* d, const Match* e): blobs{a, b, c, d, e} {
-		for(auto& blob : blobs)
-			if(blob != nullptr)
-				blobAmount++;
-
-		calcPos();
-		calcOffsetScore();
-	}
-
-	[[nodiscard]] bool isClipping(const BotHypothesis& other) const {
-		Eigen::Vector2f diff = other.pos - pos;
-		float sqDistance = diff.squaredNorm();
-		if(sqDistance >= (2*MIN_ROBOT_RADIUS)*(2*MIN_ROBOT_RADIUS)) //Early rejection for faster calculation (simple circle - circle clipping)
-			return false;
-
-		float diffAngle = atan2f(diff.y(), diff.x());
-		float selfAngle = remainderf(diffAngle - orientation, 2.0f * M_PI);
-		float otherAngle = remainderf(diffAngle - other.orientation, 2.0f * M_PI);
-
-		float minDistance =
-				(abs(selfAngle) < MIN_ROBOT_OPENING_ANGLE ? MIN_ROBOT_FRONT_DISTANCE/cosf(selfAngle) : MIN_ROBOT_RADIUS) +
-				(abs(otherAngle) < MIN_ROBOT_OPENING_ANGLE ? MIN_ROBOT_FRONT_DISTANCE/cosf(otherAngle) : MIN_ROBOT_RADIUS);
-
-		return sqDistance < minDistance*minDistance;
-	}
-
-	[[nodiscard]] bool isClipping(const Resources& r, const BallHypothesis& ball) const {
-		const float clippedBallRadius = 0.48837 * r.perspective->field.ball_radius(); // a ball may clip up to 20% of the top-view area into the robot
-		Eigen::Vector2f diff = ball.pos - pos;
-		float sqDistance = diff.squaredNorm();
-		float minDistance = MIN_ROBOT_RADIUS + clippedBallRadius;
-		if(sqDistance >= minDistance*minDistance)
-			return false;
-
-		float angle = remainderf(atan2f(diff.y(), diff.x()) - orientation, 2.0f * M_PI);
-		if(abs(angle) >= MIN_ROBOT_OPENING_ANGLE)
-			return true;
-
-		minDistance = (MIN_ROBOT_FRONT_DISTANCE + clippedBallRadius) / cosf(angle);
-
-		return sqDistance < minDistance*minDistance;
-	}
-
-	void addToDetectionFrame(const Resources& r, SSL_DetectionFrame* detection) {
-		bool yellow = botId < 16;
-		const Eigen::Vector2f imgPos = r.perspective->model.field2image({pos.x(), pos.y(), (float)r.gcSocket->maxBotHeight});
-		const Eigen::Vector3f botPos = r.perspective->model.image2field(imgPos, (float)(yellow ? r.gcSocket->yellowBotHeight : r.gcSocket->blueBotHeight));
-		SSL_DetectionRobot* bot = yellow ? detection->add_robots_yellow() : detection->add_robots_blue();
-		bot->set_confidence(score);
-		bot->set_robot_id(botId % 16);
-		bot->set_x(botPos.x());
-		bot->set_y(botPos.y());
-		bot->set_height(botPos.z());
-		bot->set_orientation(orientation);
-		bot->set_pixel_x(imgPos.x());
-		bot->set_pixel_y(imgPos.y());
-	}
-
-	virtual void recalcPostColorCalib(const Resources& r) = 0;
-
-	const Match* blobs[5];
-	Eigen::Vector2f pos = {0, 0};
-	float orientation = 0;
-	float score = 1.0f;
-	float offsetScore = 1.0f;
-	int botId = -1;
-	int blobAmount = 0;
-
-private:
-	inline void calcPos() {
-		//https://www.themathdoctors.org/averaging-angles/
-		float oSin = 0;
-		float oCos = 0;
-		for(int a = 0; a < 5; a++) {
-			if(blobs[a] == nullptr)
-				continue;
-
-			for(int b = a+1; b < 5; b++) {
-				if(blobs[b] == nullptr)
-					continue;
-
-				Eigen::Vector2f diff = blobs[b]->pos - blobs[a]->pos;
-				float angleDelta = atan2f(diff.y(), diff.x()) - patternAnglesb2b[b*5 + a];
-				oSin += sinf(angleDelta);
-				oCos += cosf(angleDelta);
-			}
-		}
-		if(blobAmount < 1)
-			return;
-
-		if(blobAmount > 1)
-			orientation = atan2f(oSin, oCos);
-
-		Eigen::Rotation2Df rotation(orientation);
-		pos.x() = 0;
-		pos.y() = 0;
-		for(int i = 0; i < 5; i++) {
-			if(blobs[i] == nullptr)
-				continue;
-
-			pos += blobs[i]->pos - rotation * patternPos[i];
-		}
-
-		pos /= (float)blobAmount;
-	}
-
-	inline void calcOffsetScore() {
-		Eigen::Rotation2Df rotation(orientation);
-		for(int i = 0; i < 5; i++) {
-			const Match* const& blob = blobs[i];
-			if(blob == nullptr)
-				continue;
-
-			Eigen::Vector2f offset = (blob->pos - (pos + rotation * patternPos[i])) / 10.0f; // (10.0f) 1cm offset -> 0.5 score
-			offsetScore = std::min(offsetScore, 1 / (1 + offset.squaredNorm()));
-		}
-
-		score = offsetScore;
-	}
-};
-
-class DetectionBotHypothesis: public BotHypothesis {
-public:
-	DetectionBotHypothesis(const Resources& r, const Match* a, const Match* b, const Match* c, const Match* d, const Match* e): BotHypothesis(a, b, c, d, e) {
-		calcBotId(r);
-	}
-
-	void recalcPostColorCalib(const Resources &r) override {
-		calcBotId(r);
-	}
-
-private:
-	inline void calcBotId(const Resources& r) {
-		Eigen::Vector3i green = r.green;
-		Eigen::Vector3i pink = r.pink;
-		kMeans(blobs[0]->color, {blobs[1]->color, blobs[2]->color, blobs[3]->color, blobs[4]->color}, green, pink);
-
-		botId = ((blobs[0]->color - r.blue).squaredNorm() < (blobs[0]->color - r.yellow).squaredNorm() ? 16 : 0) + patternLUT[
-				(((blobs[1]->color - green).squaredNorm() < (blobs[1]->color - pink).squaredNorm() ? 1 : 0) << 3) +
-				(((blobs[2]->color - green).squaredNorm() < (blobs[2]->color - pink).squaredNorm()? 1 : 0) << 2) +
-				(((blobs[3]->color - green).squaredNorm() < (blobs[3]->color - pink).squaredNorm() ? 1 : 0) << 1) +
-				((blobs[4]->color - green).squaredNorm() < (blobs[4]->color - pink).squaredNorm() ? 1 : 0)
-		];
-	}
-};
-
-class TrackedBotHypothesis: public BotHypothesis {
-public:
-	TrackedBotHypothesis(const Resources& r, const TrackingState& tracked, const Eigen::Vector3f& trackedPosition, const Match* a, const Match* b, const Match* c, const Match* d, const Match* e): BotHypothesis(a, b, c, d, e), trackedScore(tracked.confidence), trackedPosition(trackedPosition) {
-		botId = tracked.id;
-
-		float rotationOffset = remainderf(orientation - trackedPosition.z(), 2.0f * M_PI) / (float)M_PI;
-		offsetScore *= 1 / (1 + ((pos - trackedPosition.head<2>()) / 10.0f).squaredNorm() + rotationOffset*rotationOffset); // (10.0f) 1cm offset -> 0.5 score
-		offsetScore *= std::max((float)blobAmount / 5.f, trackedScore);
-
-		TrackedBotHypothesis::recalcPostColorCalib(r);
-	}
-
-	void recalcPostColorCalib(const Resources &r) override {
-		score = offsetScore;
-		calcTrackingScore(r);
-	}
-
-private:
-	inline void calcTrackingScore(const Resources& r) {
-		if(blobAmount < 2) {
-			score = 0.0f;
-			return;
-		}
-
-		float blobScore = 1.0f;
-		for(int i = 0; i < 5; i++) {
-			const Match* const& blob = blobs[i];
-			if(blob == nullptr)
-				continue;
-
-			Eigen::Vector3i blobColor;
-			Eigen::Vector3i oppositeColor;
-			if(i == 0) {
-				blobColor = botId >= 16 ? r.blue : r.yellow;
-				oppositeColor = botId >= 16 ? r.yellow : r.blue;
-			} else {
-				blobColor = ((patterns[botId % 16] >> (4-i)) & 1) ? r.green : r.pink;
-				oppositeColor = ((patterns[botId % 16] >> (4-i)) & 1) ? r.pink : r.green;
-			}
-
-			//blobScore *= 1 - (float)(blob->color - blobColor).norm() / 443.4050f; // sqrt(3 * 256**2)
-			blobScore = std::min(blobScore, ((blob->color - oppositeColor).squaredNorm() - (blob->color - blobColor).squaredNorm() > 0 ? 1.0f : 0.1f));
-		}
-
-		score = std::max(0.f, score * blobScore);
-	}
-
-	const float trackedScore;
-	const Eigen::Vector3f trackedPosition;
-};
 
 void generateCartesianTrackedBotHypotheses(const Resources& r, std::list<std::unique_ptr<BotHypothesis>>& bots, std::vector<Match>& matches, KDTree& blobs, const double currentTimestamp) {
 	std::vector<Match*> botBlobs;
@@ -709,7 +315,7 @@ static inline void updateColor(const Resources& r, const Eigen::Vector3i& refere
 }
 
 static void updateColors(Resources& r, const std::list<std::unique_ptr<BotHypothesis>>& bestBotModels, const std::list<std::unique_ptr<BallHypothesis>>& ballCandidates) {
-	Eigen::Vector3i oldFalseOrange = r.falseOrange;
+	Eigen::Vector3i oldField = r.field;
 	Eigen::Vector3i oldOrange = r.orange;
 	Eigen::Vector3i oldYellow = r.yellow;
 	Eigen::Vector3i oldBlue = r.blue;
@@ -759,11 +365,13 @@ static void updateColors(Resources& r, const std::list<std::unique_ptr<BotHypoth
 	for (const auto& ball : ballCandidates)
 		ballBlobs.push_back(ball->blob->center);
 
-	if(kMeans(r.blue, ballBlobs, r.orange, r.falseOrange)) {
+	if(kMeans(r.blue, ballBlobs, r.orange, r.field)) {
 		updateColor(r, r.orangeReference, oldOrange, r.orange);
-		updateColor(r, r.falseOrangeReference, oldFalseOrange, r.falseOrange);
+		updateColor(r, r.fieldReference, oldField, r.field);
 	}
 }
+
+#define BENCHMARK false
 
 static volatile bool noSigterm = true;
 void sig_stop(int sig_num) {
@@ -815,13 +423,13 @@ int main(int argc, char* argv[]) {
 			OpenCL::await(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg->image, flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]);
 			//cv::GaussianBlur(flat.read<RGBA>().cv, blurred.write<RGBA>().cv, {5, 5}, 0, 0, cv::BORDER_REPLICATE);
 			std::shared_ptr<CLImage> color = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image, (int)ceil(r.maxBlobRadius/r.perspective->fieldScale)/3);
+			OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale)/3);
 			std::shared_ptr<CLImage> colorHor = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 			OpenCL::await(satHorizontalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[1])), color->image, colorHor->image);
 			std::shared_ptr<CLImage> colorSat = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 			OpenCL::await(satVerticalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0])), colorHor->image, colorSat->image);
 			std::shared_ptr<CLImage> circ = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)ceil(r.maxBlobRadius/r.perspective->fieldScale)); //TODO testing at robocup with MINBLOBRADIUS? COMPARE! , (int)floor(r.minBlobRadius/r.perspective->fieldScale)
+			OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale)); //TODO testing at robocup with MINBLOBRADIUS? COMPARE! , (int)floor(r.minBlobRadius/r.perspective->fieldScale)
 
 			if(r.debugImages) {
 				flat->save(".perspective." + std::to_string(frameId) + ".png");
@@ -837,7 +445,7 @@ int main(int argc, char* argv[]) {
 				counterMap[2] = 0;
 			}
 			CLArray matchArray(sizeof(CLMatch) * r.maxBlobs);
-			OpenCL::await(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, (float)r.minScore, (int)floor(r.minBlobRadius/r.perspective->fieldScale), r.maxBlobs); //TODO borked minScore and radius at robocup?
+			OpenCL::await(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, (float)r.minScore, (int)floor(r.perspective->minBlobRadius/r.perspective->fieldScale), r.maxBlobs); //TODO borked minScore and radius at robocup?
 			//std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 
 			std::vector<Match> matches; //Same lifetime as KDTree required
@@ -904,8 +512,14 @@ int main(int argc, char* argv[]) {
 
 			detection->set_t_sent(r.camera->getTime());
 			r.socket->send(wrapper);
-			std::cout << "[main] time " << (getRealTime() - realStartTime) * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
 
+			double processingTime = getRealTime() - realStartTime;
+			if(processingTime > r.camera->expectedFrametime())
+				std::cout << "[main] frame time overrun: " << processingTime * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
+
+#if BENCHMARK
+			std::cout << "[main] time " << processingTime * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
+#else
 			if(r.rawFeed) {
 				r.rtpStreamer->sendFrame(clImg);
 			} else {
@@ -921,6 +535,7 @@ int main(int argc, char* argv[]) {
 						break;
 				}
 			}
+#endif
 		} else if(r.socket->getGeometryVersion()) {
 			geometryCalibration(r, *img);
 		} else {
