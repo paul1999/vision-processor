@@ -26,19 +26,34 @@ from dataset import parser_test_data, threaded_field_iter, Dataset
 if __name__ == '__main__':
     args = parser_test_data(argparse.ArgumentParser(prog='Vision recorder')).parse_args()
 
-    # [binary][dataset][cam][video][type]
-    frames = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))))
-    truepositive_rates = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))))
+    types = {'ball'}
+    for i in range(16):
+        types.add('y' + str(i))
+        types.add('b' + str(i))
 
-    def confidence(object):
-        confidence = object['confidence']
-        if type(confidence) is float:
-            return confidence
-        else:
-            return float(confidence.replace('.nan', '1.0'))
+    # [binary][dataset][cam][video][type]
+    truepositive_rates = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))))
+    falsepositive_rates = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))))
+    falsenegative_rates = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))))
 
     def consumer(dataset: Dataset):
-        global frames, truepositive_rates
+        global types, truepositive_rates, falsepositive_rates, falsenegative_rates
+
+        def get_detections(frame, as_set=True):
+            objects = []
+
+            if 'balls' in frame:
+                objects.append('ball')
+            if 'robots_yellow' in frame:
+                for bot in frame['robots_yellow']:
+                    objects.append('y' + str(bot['robot_id']))
+            if 'robots_blue' in frame:
+                for bot in frame['robots_blue']:
+                    objects.append('b' + str(bot['robot_id']))
+
+            if as_set:
+                return set(objects)
+            return objects
 
         for video in dataset.images():
             video: Path = video
@@ -52,42 +67,57 @@ if __name__ == '__main__':
 
             with_manual = 'manual' in detections.keys()
             video_frames = max(len(detection_list) for detection_list in detections.values())
+            binaries = {binary for binary in detections.keys()}
 
-            local_detection_rates = defaultdict(lambda: defaultdict(lambda: 0))
-            for binary, detection_list in detections.items():
-                binary_detection_rates = local_detection_rates[binary]
-                for frame in detection_list:
-                    if 'balls' in frame and (with_manual or (len(frame['balls']) == 1 and confidence(frame['balls'][0]) > 0.1)):
-                        binary_detection_rates['ball'] += len(frame['balls'])
-                    if 'robots_yellow' in frame:
-                        for bot in frame['robots_yellow']:
-                            if confidence(bot) > 0.1:
-                                binary_detection_rates['y' + str(bot['robot_id'])] += 1
-                    if 'robots_blue' in frame:
-                        for bot in frame['robots_blue']:
-                            if confidence(bot) > 0.1:
-                                binary_detection_rates['b' + str(bot['robot_id'])] += 1
+            # Binary, Type
+            truepositive = defaultdict(lambda: defaultdict(lambda: 0))
+            falsepositive = defaultdict(lambda: defaultdict(lambda: 0))
+            falsenegative = defaultdict(lambda: defaultdict(lambda: 0))
 
-            objects = {t for binary in local_detection_rates.keys() for t in local_detection_rates[binary].keys()}
             if with_manual:
-                correct_objects = {t for t in local_detection_rates['manual'].keys()}
-            else:
-                correct_objects = {t for t in objects if max(detection_rate[t] for detection_rate in local_detection_rates.values()) / video_frames >= 0.2}  # At least 20% occurance from one of the binaries
-            for binary in local_detection_rates.keys():
-                for t in correct_objects:
-                    if with_manual:
-                        reference = local_detection_rates['manual'][t]
-                        # Detect and punish too many detections.
-                        truepositive_rates[binary][dataset.folder.parent][dataset.folder.name][video][t] = max(min(local_detection_rates[binary][t], 2 * reference - local_detection_rates[binary][t]), 0)
-                        frames[binary][dataset.folder.parent][dataset.folder.name][video][t] = reference
-                    else:
-                        truepositive_rates[binary][dataset.folder.parent][dataset.folder.name][video][t] = local_detection_rates[binary][t]
-                        frames[binary][dataset.folder.parent][dataset.folder.name][video][t] = video_frames
-                #for t in objects - correct_objects:
-                #    detection_rates[binary][dataset][video]['false'] += local_detection_rates[binary][t]
-                #    frames[binary][dataset][video]['false'] = video_frames
+                for i in range(video_frames):
+                    for binary in binaries:
+                        visible: list = get_detections(detections['manual'][i], as_set=False)
+                        detected: list = get_detections(detections[binary][i], as_set=False)
 
-            #TODO binary detection offset
+                        for type in detected:
+                            if type in visible:
+                                visible.remove(type)
+                                truepositive[binary][type] += 1
+                            else:
+                                falsepositive[binary][type] += 1
+
+                        for type in visible:
+                            falsenegative[binary][type] += 1
+            else:
+                visibility = defaultdict(lambda: 0)
+                for i in range(video_frames):
+                    visible: set = {key for key, value in visibility.items() if value > 0}
+                    detected: set = set()
+
+                    for binary in binaries:
+                        objects = get_detections(detections[binary][i])
+
+                        for type in visible & objects:
+                            truepositive[binary][type] += 1
+                        for type in visible - objects:
+                            falsenegative[binary][type] += 1
+                        for type in objects - visible:
+                            falsepositive[binary][type] += 1
+
+                        detected.update(objects)
+
+                    for type in types:
+                        visibility[type] = min(max(visibility[type] + (1 if type in detected else -1), -15), 15)
+
+            for binary in binaries:
+                for type in types:
+                    if truepositive[binary][type]:
+                        truepositive_rates[binary][dataset.folder.parent][dataset.folder.name][video][type] = truepositive[binary][type]
+                    if falsepositive[binary][type]:
+                        falsepositive_rates[binary][dataset.folder.parent][dataset.folder.name][video][type] = falsepositive[binary][type]
+                    if falsenegative[binary][type]:
+                        falsenegative_rates[binary][dataset.folder.parent][dataset.folder.name][video][type] = falsenegative[binary][type]
 
     try:
         threaded_field_iter(args.data_folder, consumer, 1, field_filter=args.field)
@@ -97,18 +127,24 @@ if __name__ == '__main__':
     def dsum(d: dict, generator=lambda x: x, filter=None) -> float:
         return sum(generator(value) for key, value in d.items() if filter is None or filter == key)
 
+    def nanmean(x):
+        x = [i for i in x if i is not math.nan]
+        if not x:
+            return math.nan
+        return fmean(x)
+
     def dictmean(d: dict, s: dict, dgenerator=lambda x, y: x / y, filter=None) -> float:
-        return fmean(
+        return nanmean(
             value
             for value in (
-                dgenerator(d[key], value)
-                for key, value in s.items()
+                dgenerator(d[key], s[key])
+                for key in {*s.keys(), *d.keys()}
                 if filter is None or filter == key
             )
             if value is not math.nan
         )
 
-    def detection_rate(binary, dataset_filter=None, video_filter=None, object_filter=None):
+    def detection_rate(s2, binary, dataset_filter=None, video_filter=None, object_filter=None):
         def camsum(cams):
             return dsum(
                 cams,
@@ -122,61 +158,59 @@ if __name__ == '__main__':
                 )
             )
 
-        def cammean(x, y):
+        def camavg(x, y):
             try:
-                return camsum(x) / camsum(y)
+                return camsum(x) / (camsum(x) + camsum(y))
             except ZeroDivisionError:
                 return math.nan
 
 
         return dictmean(
-            truepositive_rates[binary], frames[binary],
-            cammean,
+            truepositive_rates[binary], s2[binary],
+            camavg,
             dataset_filter
         )
 
     for binary in truepositive_rates.keys():
         print(f"--- {binary} ---")
-        print(f"Total {detection_rate(binary)}")
+        print(f"Total Recall {detection_rate(falsenegative_rates, binary): .4f} Precision {detection_rate(falsepositive_rates, binary): .4f}")
 
-        min_rate = None, 1.0
-        img_rate = []
-        video_rate = []
+        img_recall = []
+        img_precision = []
+        video_recall = []
+        video_precision = []
         for dataset in truepositive_rates[binary].keys():
-            rate = detection_rate(binary, dataset)
+            recall = detection_rate(falsenegative_rates, binary, dataset)
+            precision = detection_rate(falsepositive_rates, binary, dataset)
             if len(list(dataset.glob('*/*.mp4'))) == 0:
-                img_rate.append(rate)
+                img_recall.append(recall)
+                img_precision.append(precision)
             else:
-                video_rate.append(rate)
+                video_recall.append(recall)
+                video_precision.append(precision)
 
-            print(f"  Dataset {dataset.name} {rate}")
-            if rate < min_rate[1]:
-                min_rate = dataset, rate
+            print(f"  Dataset {dataset.name: >11} Recall {recall: .4f} Precision {precision: .4f}")
 
-        if video_rate:
-            print(f"Video {fmean(video_rate)}")
-        if img_rate:
-            print(f"Image {fmean(img_rate)}")
-
-        print(f"Worst dataset {min_rate[0]} {min_rate[1]}")
+        print(f"Video Recall {nanmean(video_recall): .4f} Precision {nanmean(video_precision): .4f}")
+        print(f"Image Recall {nanmean(img_recall): .4f} Precision {nanmean(img_precision): .4f}")
 
         min_video = None, 1.0
         for dataset in truepositive_rates[binary].keys():
             for camera in truepositive_rates[binary][dataset].keys():
                 for video in truepositive_rates[binary][dataset][camera].keys():
-                    rate = detection_rate(binary, dataset, video)
+                    rate = detection_rate(falsenegative_rates, binary, dataset, video)
                     if rate < min_video[1]:
                         min_video = video, rate
-        print(f"Worst video {min_video[0]} {min_video[1]}")
+        print(f"Worst video {min_video[0]} Recall {min_video[1]: .4f}")
 
         # TODO unweighted average?
         min_type = None, 1.0
         for t in {t for cams in truepositive_rates[binary].values() for videos in cams.values() for types in videos.values() for t in types.keys()}:
             if t != 'false':
-                rate = detection_rate(binary, object_filter=t)
+                rate = detection_rate(falsenegative_rates, binary, object_filter=t)
                 if rate < min_type[1]:
                     min_type = t, rate
-        print(f"Worst type {min_type[0]} {min_type[1]}")
+        print(f"Worst type {min_type[0]} Recall {min_type[1]: .4f}")
 
         print()
 

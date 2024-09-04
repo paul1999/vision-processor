@@ -153,7 +153,7 @@ Eigen::Vector2f CameraModel::field2image(const Eigen::Vector3f& p) const {
 
 	//Apply distortion
 	Eigen::Vector2f original = normalized;
-	for(int i = 0; i < 10; i++) //TODO optimize
+	for(int i = 0; i < 10; i++)
 		normalized = original / (1 + distortionK2 * normalized.dot(normalized));
 
 	return focalLength * normalized + principalPoint;

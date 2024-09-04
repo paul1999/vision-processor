@@ -205,6 +205,7 @@ public:
 	T* operator-> () { return map; }
 	T& operator [] (int i) { return map[i]; }
 	T& operator()(int x, int y) { return map[x + y * rowPitch]; }
+	const T& operator()(int x, int y) const { return map[x + y * rowPitch]; }
 	const T* const& operator*() const { return map; }
 	const T* operator-> () const { return map; }
 	const T& operator [] (int i) const { return map[i]; }

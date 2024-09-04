@@ -45,7 +45,11 @@ def thread_local_ip():
 if __name__ == '__main__':
     parser = parser_test_data(parser_binary(argparse.ArgumentParser(prog='Vision recorder')))
     parser.add_argument('--scenes_per_field', default=None, type=int, help='Amount of scenes per field to process')
+    parser.add_argument('--out', default=None, help='Output name')
     args = parser.parse_args()
+
+    if not args.out:
+        args.out = args.binary.name
 
     def consumer(dataset):
         recorder = VisionRecorder(vision_ip=thread_local_ip())
@@ -72,7 +76,7 @@ if __name__ == '__main__':
                 if len(detections) != frames:
                     print(f"{video}: Detection size mismatch: Expected {frames} Vision {len(detections)}, repeating", file=sys.stderr)
 
-            with video.with_suffix('.' + args.binary.name + '.json').open('w') as file:
+            with video.with_suffix('.' + args.out + '.json').open('w') as file:
                 json.dump(detections, file)
 
     threaded_field_iter(args.data_folder, consumer, field_filter=args.field)

@@ -101,6 +101,9 @@ class Dataset:
             if image != self.field:
                 yield image
 
+    def is_image_dataset(self) -> bool:
+        return len(list(self.folder.glob('*.mp4'))) == 0
+
     def __str__(self):
         return str(self.folder)
 
