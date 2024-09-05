@@ -30,7 +30,7 @@ static void updateExtent(Eigen::Vector4f& visibleFieldExtent, const Eigen::Vecto
 		visibleFieldExtent[3] = point.y();
 }
 
-void Perspective::geometryCheck(const int camAmount, const int width, const int height, const double maxBotHeight) {
+void Perspective::geometryCheck(const int width, const int height, const double maxBotHeight) {
 	Eigen::Vector2i size(width, height);
 	if(socket->getGeometryVersion() == geometryVersion && model.size == size)
 		return;

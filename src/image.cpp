@@ -19,15 +19,15 @@
 #include "image.h"
 
 CVMap Image::cvRead() const {
-	return std::move(CVMap(*this, CL_MAP_READ));
+	return CVMap(*this, CL_MAP_READ);
 }
 
 CVMap Image::cvWrite() {
-	return std::move(CVMap(*this, CL_MAP_WRITE_INVALIDATE_REGION));
+	return CVMap(*this, CL_MAP_WRITE_INVALIDATE_REGION);
 }
 
 CVMap Image::cvReadWrite() {
-	return std::move(CVMap(*this, CL_MAP_WRITE));
+	return CVMap(*this, CL_MAP_WRITE);
 }
 
 Image Image::toGrayscale() const {
@@ -146,7 +146,7 @@ void Image::save(const std::string &suffix, float factor) const {
 	}
 }
 
-CVMap::CVMap(const Image& image, int clRWType): map(std::move(CLMap<uint8_t>(image.buffer, image.height*image.width*image.format->pixelSize(), clRWType))) {
+CVMap::CVMap(const Image& image, int clRWType): map(CLMap<uint8_t>(image.buffer, image.height*image.width*image.format->pixelSize(), clRWType)) {
 	if(image.format->cvType == CV_8UC1)
 		mat = cv::Mat(image.height*image.format->rowStride, image.width*image.format->stride, image.format->cvType, *map);
 	else

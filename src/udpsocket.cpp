@@ -141,7 +141,7 @@ static inline void trackBots(const double timestamp, const float defaultBotHeigh
 		double nextDistance = INFINITY;
 		const TrackingState* nextOldBot = nullptr;
 		for(const TrackingState& oldBot : previous) {
-			if(oldBot.id != bot.robot_id() + idOffset)
+			if(oldBot.id != (int)bot.robot_id() + idOffset)
 				continue;
 
 			float dX = bot.x() - oldBot.x;
@@ -225,7 +225,7 @@ void VisionSocket::detectionTracking(const SSL_DetectionFrame &detection) {
 }
 
 
-GCSocket::GCSocket(const std::string &ip, uint16_t port, const std::map<std::string, double>& botHeights): UDPSocket(ip, port), botHeights(botHeights), defaultBotHeight(0), maxBotHeight(0) {
+GCSocket::GCSocket(const std::string &ip, uint16_t port, const std::map<std::string, double>& botHeights): UDPSocket(ip, port), maxBotHeight(0), defaultBotHeight(0), botHeights(botHeights) {
 	for (const auto& entry : botHeights) {
 		if(entry.second > maxBotHeight)
 			maxBotHeight = entry.second;

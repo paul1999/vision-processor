@@ -136,9 +136,9 @@ public:
 	explicit CLArray(int size);
 	CLArray(void* data, int size);
 
-	template<typename T> CLMap<T> read() const { return std::move(CLMap<T>(buffer, size, CL_MAP_READ)); }
-	template<typename T> CLMap<T> write() { return std::move(CLMap<T>(buffer, size, CL_MAP_WRITE_INVALIDATE_REGION)); }
-	template<typename T> CLMap<T> readWrite() { return std::move(CLMap<T>(buffer, size, CL_MAP_WRITE)); }
+	template<typename T> CLMap<T> read() const { return CLMap<T>(buffer, size, CL_MAP_READ); }
+	template<typename T> CLMap<T> write() { return CLMap<T>(buffer, size, CL_MAP_WRITE_INVALIDATE_REGION); }
+	template<typename T> CLMap<T> readWrite() { return CLMap<T>(buffer, size, CL_MAP_WRITE); }
 
 	const cl::Buffer buffer;
 	const int size;
@@ -154,9 +154,9 @@ public:
 	explicit CLImage(const PixelFormat* format);
 	CLImage(const PixelFormat* format, int width, int height, std::string name);
 
-	template<typename T> CLImageMap<T> read() const { return std::move(CLImageMap<T>(*this, CL_MAP_READ)); }
-	template<typename T> CLImageMap<T> write() { return std::move(CLImageMap<T>(*this, CL_MAP_WRITE_INVALIDATE_REGION)); }
-	template<typename T> CLImageMap<T> readWrite() { return std::move(CLImageMap<T>(*this, CL_MAP_WRITE)); }
+	template<typename T> CLImageMap<T> read() const { return CLImageMap<T>(*this, CL_MAP_READ); }
+	template<typename T> CLImageMap<T> write() { return CLImageMap<T>(*this, CL_MAP_WRITE_INVALIDATE_REGION); }
+	template<typename T> CLImageMap<T> readWrite() { return CLImageMap<T>(*this, CL_MAP_WRITE); }
 
 	void save(const std::string& suffix, float factor = 1.0f, float offset = 0.0f) const;
 

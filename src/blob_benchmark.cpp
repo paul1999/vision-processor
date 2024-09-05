@@ -148,7 +148,7 @@ int main(int argc, char* argv[]) {
 		imageTime += getRealTime() - startTime;
 		startTime = getRealTime();
 
-		r.perspective->geometryCheck(r.cameraAmount, img->width, img->height, r.gcSocket->maxBotHeight);
+		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
 
 		std::shared_ptr<CLImage> clImg = r.openCl->acquire(&PixelFormat::RGBA8, img->width, img->height, img->name);
 		std::shared_ptr<CLImage> flat = r.openCl->acquire(&PixelFormat::RGBA8, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);

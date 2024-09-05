@@ -20,9 +20,9 @@
 
 class KDTree {
 public:
-	KDTree(): size(0), data(nullptr) {}
+	KDTree(): data(nullptr), size(0) {}
 	explicit KDTree(Match* data): data(data) {}
-	KDTree(int dim, Match* data): dim(dim), data(data) {}
+	KDTree(int dim, Match* data): data(data), dim(dim) {}
 
 	void insert(Match* iData);
 

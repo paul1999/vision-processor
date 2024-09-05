@@ -24,11 +24,11 @@ bool kMeans(const Eigen::Vector3i& contrast, const std::vector<Eigen::Vector3i>&
 	float inGroupDiff = INFINITY;
 	float outGroupDiff = INFINITY;
 
-	for (int i = 0; i < values.size(); i++) {
+	for (unsigned int i = 0; i < values.size(); i++) {
 		const auto& value = values[i];
 		outGroupDiff = std::min(outGroupDiff, (float)(value - contrast).squaredNorm());
 
-		for (int j = i+1; j < values.size(); j++) {
+		for (unsigned int j = i+1; j < values.size(); j++) {
 			inGroupDiff = std::min(inGroupDiff, (float)(values[j] - value).squaredNorm());
 		}
 	}

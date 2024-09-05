@@ -54,12 +54,12 @@ Resources::Resources(const YAML::Node& config) {
 
 	auto driver = cam["driver"].as<std::string>("SPINNAKER");
 	int driver_id = cam["id"].as<int>(0);
-	auto exposure = cam["exposure"].as<double>(0.0);
-	auto gain = cam["gain"].as<double>(0.0);
+	[[maybe_unused]] auto exposure = cam["exposure"].as<double>(0.0);
+	[[maybe_unused]] auto gain = cam["gain"].as<double>(0.0);
 
 	YAML::Node wbNode = cam["white_balance"];
-	WhiteBalanceType wbType = WhiteBalanceType_Manual;
-	std::vector<double> wbValues;
+	[[maybe_unused]] WhiteBalanceType wbType = WhiteBalanceType_Manual;
+	[[maybe_unused]] std::vector<double> wbValues;
 	if(wbNode.IsSequence()) {
 		wbValues = wbNode.as<std::vector<double>>();
 	} else {

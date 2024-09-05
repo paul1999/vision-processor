@@ -43,7 +43,7 @@ typedef struct __attribute__ ((packed)) {
 class Perspective {
 public:
 	Perspective(std::shared_ptr<VisionSocket> socket, int camId): socket(std::move(socket)), camId(camId) {}
-	void geometryCheck(int camAmount, int width, int height, double maxBotHeight);
+	void geometryCheck(int width, int height, double maxBotHeight);
 
 	V2 image2field(V2 pos, double height) const;
 	V2 field2image(V3 pos) const;
@@ -67,5 +67,5 @@ public:
 
 private:
 	const std::shared_ptr<VisionSocket> socket;
-	const int camId;
+	const unsigned int camId;
 };

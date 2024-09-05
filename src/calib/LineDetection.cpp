@@ -66,7 +66,7 @@ std::vector<CVLines> groupLineSegments(const Resources& r, CVLines& segments) {
 		compound.push_back(segments.front());
 		segments.erase(segments.cbegin());
 
-		for(int i = 0; i < compound.size(); i++) {
+		for(unsigned int i = 0; i < compound.size(); i++) {
 			const auto& root = compound[i];
 			cv::Vec2f v1 = root.second - root.first;
 
@@ -101,7 +101,7 @@ CVLines mergeLineSegments(const std::vector<CVLines>& compoundLines) {
 	for(const auto& compound : compoundLines) {
 		cv::Vec2f a = compound.front().first;
 		cv::Vec2f b = compound.front().second;
-		for(int i = 1; i < compound.size(); i++) {
+		for(unsigned int i = 1; i < compound.size(); i++) {
 			const auto& v = compound[i];
 
 			const cv::Vec2f& c = v.first;

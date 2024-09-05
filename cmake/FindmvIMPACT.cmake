@@ -12,23 +12,32 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-unset(mvIMPACT_INCLUDE_DIRS)
-unset(mvIMPACT_LIBS)
-
 if (WITH_MVIMPACT)
-find_path(mvIMPACT_INCLUDE_DIRS NAMES
-        mvIMPACT_CPP/mvIMPACT_acquire.h
-        HINTS
-        /opt/mvIMPACT_Acquire/)
 
-find_library(mvIMPACT_LIBS NAMES
-        mvDeviceManager
-        HINTS
-        /opt/mvIMPACT_Acquire/lib/x86_64)
+    find_path(mvIMPACT_INCLUDE_DIRS NAMES
+            mvIMPACT_CPP/mvIMPACT_acquire.h
+            HINTS
+            /opt/mvIMPACT_Acquire/
+    )
 
-if (mvIMPACT_LIBS AND mvIMPACT_INCLUDE_DIRS)
-    add_definitions( -DMVIMPACT )
-    message(STATUS "mvIMPACT found, activating mvIMPACT support.")
-endif (mvIMPACT_LIBS AND mvIMPACT_INCLUDE_DIRS)
+    find_library(mvIMPACT_LIBS NAMES
+            mvDeviceManager
+            HINTS
+            /opt/mvIMPACT_Acquire/lib/x86_64
+    )
 
+    if (NOT (
+            mvIMPACT_LIBS STREQUAL "mvIMPACT_LIBS-NOTFOUND" OR
+            mvIMPACT_INCLUDE_DIRS STREQUAL "mvIMPACT_INCLUDE_DIRS-NOTFOUND"
+    ))
+        add_definitions( -DMVIMPACT )
+        message(STATUS "mvIMPACT found, activating mvIMPACT support.")
+    else()
+        set(mvIMPACT_INCLUDE_DIRS "")
+        set(mvIMPACT_LIBS "")
+    endif ()
+
+else()
+    set(mvIMPACT_INCLUDE_DIRS "")
+    set(mvIMPACT_LIBS "")
 endif (WITH_MVIMPACT)

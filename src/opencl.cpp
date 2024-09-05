@@ -129,7 +129,7 @@ std::shared_ptr<CLImage> OpenCL::acquire(const PixelFormat* format, int width, i
 
 	auto array = std::make_shared<CLImage>(format, width, height, name);
 	formatPool.push_back(array);
-	return std::move(array);
+	return array;
 }
 
 static inline cl::Buffer clAlloc(cl_mem_flags type, cl::size_type size, void* data) {
@@ -139,11 +139,11 @@ static inline cl::Buffer clAlloc(cl_mem_flags type, cl::size_type size, void* da
 		std::cerr << "[OpenCL] Error during image allocation: " << error << std::endl;
 		exit(1);
 	}
-	return std::move(buffer);
+	return buffer;
 }
 
-CLArray::CLArray(int size): size(size), buffer(clAlloc((cl_mem_flags) CL_MEM_ALLOC_HOST_PTR, (cl::size_type) size, nullptr)) {}
-CLArray::CLArray(void* data, const int size) : size(size), buffer(clAlloc((cl_mem_flags) CL_MEM_COPY_HOST_PTR, (cl::size_type) size, data)) {}
+CLArray::CLArray(int size): buffer(clAlloc((cl_mem_flags) CL_MEM_ALLOC_HOST_PTR, (cl::size_type) size, nullptr)), size(size) {}
+CLArray::CLArray(void* data, const int size): buffer(clAlloc((cl_mem_flags) CL_MEM_COPY_HOST_PTR, (cl::size_type) size, data)), size(size) {}
 
 static inline cl::Image2D allocImage(int width, int height, const PixelFormat* format) {
 	//TODO embed into PixelFormat as value
@@ -163,7 +163,7 @@ static inline cl::Image2D allocImage(int width, int height, const PixelFormat* f
 		std::cerr << "bgr Image creation error: " << error << std::endl;
 		exit(1);
 	}
-	return std::move(image);
+	return image;
 }
 
 CLImage::CLImage(const PixelFormat* format): format(format), width(0), height(0) {}

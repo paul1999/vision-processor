@@ -407,7 +407,7 @@ int main(int argc, char* argv[]) {
 		double startTime = r.camera->getTime();
 		double realStartTime = getRealTime(); // Just for realtime performance measurements
 		r.socket->geometryCheck();
-		r.perspective->geometryCheck(r.cameraAmount, img->width, img->height, r.gcSocket->maxBotHeight);
+		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
 
 		std::shared_ptr<CLImage> clImg = r.openCl->acquire(&PixelFormat::RGBA8, img->width, img->height, img->name);
 		//TODO better type switching
@@ -472,7 +472,7 @@ int main(int argc, char* argv[]) {
 			}
 
 			KDTree blobs = matches.empty() ? KDTree() : KDTree(&matches[0]);
-			for(int i = 1; i < matches.size(); i++)
+			for(unsigned int i = 1; i < matches.size(); i++)
 				blobs.insert(&matches[i]);
 
 			std::list<std::unique_ptr<BotHypothesis>> botHypotheses;

@@ -193,7 +193,7 @@ std::vector<Eigen::Vector2f> getLinePixels(const Image& thresholded) {
 				linePixels.emplace_back(x, y);
 		}
 	}
-	return std::move(linePixels);
+	return linePixels;
 }
 
 int modelError(const Resources& r, const CameraModel& model, const std::vector<Eigen::Vector2f>& linePixels) {
@@ -330,7 +330,7 @@ void geometryCalibration(const Resources& r, const Image& img) {
 		for (int y = 0; y < thresholded.height; y++) {
 			for (int x = 0; x < thresholded.width; x++) {
 				if(data[x + y * thresholded.width]) {
-					for(int i = 0; i < compoundLines.size(); i++) {
+					for(unsigned int i = 0; i < compoundLines.size(); i++) {
 						for(const auto& segment : compoundLines[i]) {
 							if(sqPointLineSegmentDistance(std::make_pair(cv2eigen(segment.first), cv2eigen(segment.second)), {x, y}) <= sqHalfLineWidth) {
 								//TODO duplicate pixels at line segment border
