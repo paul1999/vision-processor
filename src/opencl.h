@@ -113,7 +113,7 @@ public:
 		}
 	}
 
-	CLMap (CLMap&& other) noexcept: buffer(std::move(other.buffer)), map(std::move(other.map)) {
+	CLMap (CLMap&& other) noexcept: buffer(other.buffer), map(std::move(other.map)) {
 		other.unmoved = false;
 	}
 	CLMap ( const CLMap & ) = delete;
@@ -196,7 +196,7 @@ public:
 		}
 	}
 
-	CLImageMap (CLImageMap&& other) noexcept: image(std::move(other.image)), map(std::move(other.map)), bytePitch(other.bytePitch), rowPitch(other.rowPitch), cv(other.cv) {
+	CLImageMap (CLImageMap&& other) noexcept: image(other.image), map(std::move(other.map)), bytePitch(other.bytePitch), rowPitch(other.rowPitch), cv(other.cv) {
 		other.unmoved = false;
 	}
 	CLImageMap ( const CLImageMap & ) = delete;

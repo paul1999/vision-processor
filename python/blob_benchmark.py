@@ -15,6 +15,7 @@
 #    limitations under the License.
 
 import argparse
+import math
 from collections import defaultdict
 
 from binary import parser_binary, run_binary
@@ -23,14 +24,16 @@ from record import thread_local_ip
 from visionsocket import VisionRecorder
 
 if __name__ == '__main__':
-    parser = parser_test_data(parser_binary(argparse.ArgumentParser(prog='Vision blob benchmark')))
+    parser = parser_test_data(parser_binary(argparse.ArgumentParser(prog='Vision blob benchmark'), default='blob_benchmark'))
     parser.add_argument('--scenes_per_field', default=None, type=int, help='Amount of scenes per field to process')
     args = parser.parse_args()
 
-    totalcirc = defaultdict(float)
-    hitcirc = defaultdict(float)
-    offset = defaultdict(float)
-    size = defaultdict(int)
+    frames = defaultdict(int)
+    blobs = defaultdict(int)
+    errorSum = defaultdict(float)
+    sqErrorSum = defaultdict(float)
+    worstBlobSum = defaultdict(float)
+    percentileSum = defaultdict(float)
 
     def consumer(dataset):
         print(f"Recording {dataset} blob benchmark")
@@ -38,24 +41,37 @@ if __name__ == '__main__':
         recorder = VisionRecorder(vision_ip=thread_local_ip())
 
         def stdoutprocessor(line: str):
-            print(line, end='')
+            #print(line, end='')
             if not line.startswith("[BlobMachine]"):
                 return
 
+            key = dataset.folder.parent
             split = line[:-1].split(' ')
-            totalcirc[dataset] += float(split[1])
-            hitcirc[dataset] += float(split[2])
-            offset[dataset] += float(split[3])
-            size[dataset] += 1
+            frames[key] += int(split[1])
+            blobs[key] += int(split[2])
+            errorSum[key] += float(split[3])
+            sqErrorSum[key] += float(split[4])
+            worstBlobSum[key] += float(split[5])
+            percentileSum[key] += float(split[6])
 
         for video, _ in zip(dataset.images(), range(args.scenes_per_field if args.scenes_per_field else 1000000)):
-            print(f"Recording {video}")
+            print(f"Processing {video}")
             run_binary(args.binary, recorder, dataset, video, stdoutconsumer=stdoutprocessor)
 
     threaded_field_iter(args.data_folder, consumer, 1, args.field)
 
-    for dataset, s in size.items():
-        print(f"Dataset {dataset} score: Circ total {totalcirc[dataset]/s} Circ hit {hitcirc[dataset]/s} Avg offset {offset[dataset]/s}")
+    totalError = 0.0
+    totalStddev = 0.0
+    totalPsr = 0.0
+    for dataset, b in blobs.items():
+        error = errorSum[dataset]/b
+        stddev = math.sqrt(b*sqErrorSum[dataset] - errorSum[dataset]**2) / b
+        psr = (worstBlobSum[dataset]/percentileSum[dataset])/frames[dataset]
+        print(f"  {dataset} error: {error}±{stddev} PSR {psr}")
 
-    totalsize = sum(size.values())
-    print(f"Total score: Circ total {sum(totalcirc.values())/totalsize} Circ hit {sum(hitcirc.values())/totalsize} Avg offset {sum(offset.values())/totalsize}")
+        totalError += error
+        totalStddev += stddev
+        totalPsr += psr
+
+    datasets = len(blobs.keys())
+    print(f"Total error: {totalError/datasets}±{totalStddev/datasets} PSR {totalPsr/datasets}")
