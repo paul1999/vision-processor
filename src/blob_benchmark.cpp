@@ -55,11 +55,16 @@ static void scoreBlob(const Resources& r, const CLImageMap<float>& circMap, cons
 				float circPosX = circMap(std::min(circMap.cv.cols-1, x+1), y);
 				float circNegY = circMap(x, std::max(0, y-1));
 				float circPosY = circMap(x, std::min(circMap.cv.rows-1, y+1));
-				maxPos = {
-						(float)x + 0.5f * (circNegX - circPosX) / (circNegX - 2*c + circPosX),
-						(float)y + 0.5f * (circNegY - circPosY) / (circNegY - 2*c + circPosY)
-				};
-				maxScore = s;
+				if(c > circNegX && c > circPosX && c > circNegY && c > circPosY) {
+					float xdiv = circNegX - 2*c + circPosX;
+					float ydiv = circNegY - 2*c + circPosY;
+
+					maxPos = {
+							(float)x + (xdiv != 0 ? 0.5f * (circNegX - circPosX) / xdiv : 0.0f),
+							(float)y + (ydiv != 0 ? 0.5f * (circNegY - circPosY) / ydiv : 0.0f)
+					};
+					maxScore = s;
+				}
 			}
 		}
 	}
@@ -67,7 +72,7 @@ static void scoreBlob(const Resources& r, const CLImageMap<float>& circMap, cons
 	if(maxScore == -INFINITY)
 		return;
 
-	Eigen::Vector2f offset = r.perspective->flat2field(maxPos.cast<float>()) - r.perspective->flat2field(blob.flat);
+	Eigen::Vector2f offset = r.perspective->flat2field(maxPos) - r.perspective->flat2field(blob.flat);
 	float offsetNorm = offset.norm();
 	blobAmount += 1;
 	offsetSum += offset;
@@ -119,6 +124,7 @@ int main(int argc, char* argv[]) {
 	cl::Kernel satHorizontalKernel = r.openCl->compile(kernel_satHorizontal_cl, kernel_satHorizontal_cl_end);
 	cl::Kernel satVerticalKernel = r.openCl->compile(kernel_satVertical_cl, kernel_satVertical_cl_end);
 	cl::Kernel circleKernel = r.openCl->compile(kernel_satCircle_cl, kernel_satCircle_cl_end);
+	//cl::Kernel circleKernel = r.openCl->compile(kernel_circularize_cl, kernel_circularize_cl_end);
 	cl::Kernel scoreKernel = r.openCl->compile(kernel_score_cl, kernel_score_cl_end);
 
 	while(r.waitForGeometry && !r.socket->getGeometryVersion()) {
@@ -169,7 +175,8 @@ int main(int argc, char* argv[]) {
 		OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale)/3);
 		OpenCL::await(satHorizontalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[1])), color->image, colorHor->image);
 		OpenCL::await(satVerticalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0])), colorHor->image, colorSat->image);
-		OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)floor(r.perspective->minBlobRadius/r.perspective->fieldScale), (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale));
+		OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale));
+		//OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), color->image, circ->image, (int)floor(r.perspective->minBlobRadius/r.perspective->fieldScale), (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale));
 		//OpenCL::await(scoreKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, score->image, (float)r.minCircularity, (int)floor(r.minBlobRadius/r.perspective->fieldScale));
 
 		processingTime += getRealTime() - startTime;
@@ -179,12 +186,12 @@ int main(int argc, char* argv[]) {
 
 		CLImageMap<float> circMap = circ->read<float>();
 		//CLImageMap<float> scoreMap = score->read<float>();
-		CLImageMap<float> scoreMap = circ->read<float>();
+		//CLImageMap<float> scoreMap = circ->read<float>(); //TODO RESEARCH MEMORY LEAK (NVIDIA only?)
 
 		const SSL_DetectionFrame& detection = getCorrespondingFrame(groundTruth, ++frameId);
 		for(const SSL_DetectionBall& ball : detection.balls()) {
 			Eigen::Vector3f field(ball.x(), ball.y(), 30.0f); // See ssl-vision/src/app/plugins/plugin_detect_balls.h
-			scoreBlob(r, circMap, scoreMap, {
+			scoreBlob(r, circMap, circMap, {
 					.field = field,
 					.flat = field2flat(r, field),
 					.radius = r.perspective->field.ball_radius() / r.perspective->fieldScale,
@@ -192,14 +199,20 @@ int main(int argc, char* argv[]) {
 			}, worstBlobScore, blobAmount[ORANGE], offsetSum[ORANGE], errorSum[ORANGE], errorSqSum[ORANGE]);
 		}
 		for(const SSL_DetectionRobot& bot : detection.robots_yellow())
-			scoreBot(r, circMap, scoreMap, YELLOW, bot, worstBlobScore, blobAmount, offsetSum, errorSum, errorSqSum);
+			scoreBot(r, circMap, circMap, YELLOW, bot, worstBlobScore, blobAmount, offsetSum, errorSum, errorSqSum);
 		for(const SSL_DetectionRobot& bot : detection.robots_blue())
-			scoreBot(r, circMap, scoreMap, BLUE, bot, worstBlobScore, blobAmount, offsetSum, errorSum, errorSqSum);
+			scoreBot(r, circMap, circMap, BLUE, bot, worstBlobScore, blobAmount, offsetSum, errorSum, errorSqSum);
 
-		//Assume 0s in potential pitch overallocation
-		int n = circ->height*((int)circMap.rowPitch - circ->width) + (int)((circ->width*circ->height) * 0.99);
-		std::nth_element(*scoreMap, *scoreMap + n, *scoreMap + (scoreMap.rowPitch*circ->height));
-		percentileSum += scoreMap[n];
+		if(worstBlobScore == INFINITY)
+			continue;
+
+		if(frameId == 1) {
+			circ->save(".circ.png", 512.0f, 128.f);
+		}
+
+		int n = circ->height*((int)circMap.rowPitch - circ->width) + (int)((circ->width*circ->height) * 0.95); //TODO retest lower values
+		std::nth_element(*circMap, *circMap + n, *circMap + (circMap.rowPitch*circ->height));
+		percentileSum += circMap[n];
 		worstBlobSum += worstBlobScore;
 		analysisTime += getRealTime() - startTime;
 
@@ -227,7 +240,7 @@ int main(int argc, char* argv[]) {
 		std::cout << "[Blob benchmark] Avg color " << offset.first << " error: " << (offset.second / blobs) << "±" << stddev << " systematic offset: " << (offsetSum[offset.first].transpose() / blobs) << std::endl;
 	}
 	double totalStddev = sqrt(totalBlobs*totalSqError - totalError*totalError) / totalBlobs;
-	std::cout << "[Blob benchmark] Total error: " << (totalError / totalBlobs) << "±" << totalStddev << " worstblob/percentile: " << ((worstBlobSum/percentileSum)/frameId) << std::endl;
+	std::cout << "[Blob benchmark] Total error: " << (totalError / totalBlobs) << "±" << totalStddev << " worstblob/percentile: " << (worstBlobSum/abs(worstBlobSum+percentileSum)) << std::endl;
 	std::cout << "[Blob benchmark] Avg processing time: " << (processingTime / frameId) << " frame load time: " << (imageTime / frameId) << " analysis time: " << (analysisTime / frameId) << " frames: " << frameId << std::endl;
 
 	std::cout << "[BlobMachine] " << frameId << " " << totalBlobs << " " << totalError << " " << totalSqError << " " << worstBlobSum << " " << percentileSum << std::endl;

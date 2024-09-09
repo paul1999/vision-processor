@@ -24,8 +24,8 @@ from visionsocket import VisionRecorder  # Importing visionsocket generates prot
 from proto.ssl_vision_wrapper_pb2 import SSL_WrapperPacket
 
 
-def parser_binary(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser.add_argument('--binary', default='bin/vision', help='Vision binary', type=Path)
+def parser_binary(parser: argparse.ArgumentParser, default='bin/vision') -> argparse.ArgumentParser:
+    parser.add_argument('--binary', default=default, help='Vision binary', type=Path)
     return parser
 
 

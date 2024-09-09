@@ -58,20 +58,20 @@ if __name__ == '__main__':
             print(f"Processing {video}")
             run_binary(args.binary, recorder, dataset, video, stdoutconsumer=stdoutprocessor)
 
-    threaded_field_iter(args.data_folder, consumer, 1, args.field)
+    threaded_field_iter(args.data_folder, consumer, field_filter=args.field)
 
     totalError = 0.0
     totalStddev = 0.0
     totalPsr = 0.0
     for dataset, b in blobs.items():
-        error = errorSum[dataset]/b
+        error = errorSum[dataset] / b
         stddev = math.sqrt(b*sqErrorSum[dataset] - errorSum[dataset]**2) / b
-        psr = (worstBlobSum[dataset]/percentileSum[dataset])/frames[dataset]
-        print(f"  {dataset} error: {error}±{stddev} PSR {psr}")
+        psr = worstBlobSum[dataset] / abs(worstBlobSum[dataset] + percentileSum[dataset])
+        print(f"  {dataset} error: {error: .2f}±{stddev: .2f} PSR {psr: .4f}")
 
         totalError += error
         totalStddev += stddev
         totalPsr += psr
 
     datasets = len(blobs.keys())
-    print(f"Total error: {totalError/datasets}±{totalStddev/datasets} PSR {totalPsr/datasets}")
+    print(f"Total error: {totalError/datasets: .2f}±{totalStddev/datasets: .2f} PSR {totalPsr/datasets: .4f}")

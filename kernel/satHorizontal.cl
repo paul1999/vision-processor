@@ -19,15 +19,25 @@
 
 const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_NONE;
 
+//#pragma OPENCL FP_REASSOCIATE OFF
 kernel void sat_horizontal(read_only image2d_t in, write_only image2d_t out) {
 	const int width = get_image_width(in);
 	const int y = get_global_id(0);
 
-	//TODO better precision algorithm?
 	float sum = 0.f;
 	for(int x = 0; x < width; x++) {
 		const int2 pos = (int2)(x, y);
 		sum += read_imagef(in, sampler, pos).x;
 		write_imagef(out, pos, sum);
 	}
+	//https://en.wikipedia.org/wiki/Kahan_summation_algorithm
+	/*float c = 0.f;
+	for(int x = 0; x < width; x++) {
+		const int2 pos = (int2)(x, y);
+		const float v = read_imagef(in, sampler, pos).x - c;
+		const float t = sum + v;
+		c = (t - sum) - v;
+		sum = t;
+		write_imagef(out, pos, sum);
+	}*/
 }
