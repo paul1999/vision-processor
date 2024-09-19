@@ -40,9 +40,7 @@ static inline bool threshold(const Resources& r, int value, int neg, int pos) {
 	//return value - neg > r.fieldLineThreshold && value - pos > r.fieldLineThreshold && abs(pos - neg) < r.fieldLineThreshold;
 }
 
-Image thresholdImage(const Resources& r, const Image& gray, const int halfLineWidth) {
-	Image thresholded(&PixelFormat::U8, gray.width, gray.height, gray.name);
-
+void thresholdImage(const Resources& r, const Image& gray, const int halfLineWidth, Image& thresholded) {
 	const CLMap<uint8_t> data = gray.read<uint8_t>();
 	const int width = gray.width;
 	CLMap<uint8_t> tData = thresholded.write<uint8_t>();
@@ -55,8 +53,6 @@ Image thresholdImage(const Resources& r, const Image& gray, const int halfLineWi
 			) ? 255 : 0;
 		}
 	}
-
-	return thresholded;
 }
 
 std::vector<CVLines> groupLineSegments(const Resources& r, CVLines& segments) {

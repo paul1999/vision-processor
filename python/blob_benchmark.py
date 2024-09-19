@@ -28,12 +28,22 @@ if __name__ == '__main__':
     parser.add_argument('--scenes_per_field', default=None, type=int, help='Amount of scenes per field to process')
     args = parser.parse_args()
 
-    frames = defaultdict(int)
     blobs = defaultdict(int)
     errorSum = defaultdict(float)
     sqErrorSum = defaultdict(float)
+    fieldScale = defaultdict(float)
+
+    frames = defaultdict(int)
     worstBlobSum = defaultdict(float)
     percentileSum = defaultdict(float)
+
+    balls = defaultdict(int)
+    ballErrorSum = defaultdict(float)
+    ballSqErrorSum = defaultdict(float)
+
+    bots = defaultdict(int)
+    botErrorSum = defaultdict(float)
+    botSqErrorSum = defaultdict(float)
 
     def consumer(dataset):
         print(f"Recording {dataset} blob benchmark")
@@ -41,11 +51,10 @@ if __name__ == '__main__':
         recorder = VisionRecorder(vision_ip=thread_local_ip())
 
         def stdoutprocessor(line: str):
-            #print(line, end='')
             if not line.startswith("[BlobMachine]"):
                 return
 
-            key = dataset.folder.parent
+            key = dataset.folder.parent.name
             split = line[:-1].split(' ')
             frames[key] += int(split[1])
             blobs[key] += int(split[2])
@@ -53,25 +62,49 @@ if __name__ == '__main__':
             sqErrorSum[key] += float(split[4])
             worstBlobSum[key] += float(split[5])
             percentileSum[key] += float(split[6])
+            balls[key] += int(split[7])
+            ballErrorSum[key] += float(split[8])
+            ballSqErrorSum[key] += float(split[9])
+            bots[key] += int(split[10])
+            botErrorSum[key] += float(split[11])
+            botSqErrorSum[key] += float(split[12])
+            fieldScale[key] += float(split[13])
+            #if float(split[5]) < 0:
+            #    print(f"  NEGATIVE WBS")
 
         for video, _ in zip(dataset.images(), range(args.scenes_per_field if args.scenes_per_field else 1000000)):
             print(f"Processing {video}")
-            run_binary(args.binary, recorder, dataset, video, stdoutconsumer=stdoutprocessor)
+            run_binary(args.binary, recorder, dataset, video, stdoutconsumer=stdoutprocessor)  # , ground_truth=video.with_suffix('.vision_processor.json')
 
     threaded_field_iter(args.data_folder, consumer, field_filter=args.field)
 
+    def errorStddev(error, sqError, amount):
+        return error / amount, math.sqrt(amount * sqError - error ** 2) / amount
+
     totalError = 0.0
     totalStddev = 0.0
+    totalBallError = 0.0
+    totalBallStddev = 0.0
+    totalBotError = 0.0
+    totalBotStddev = 0.0
     totalPsr = 0.0
+    totalEfsr = 0.0
     for dataset, b in blobs.items():
-        error = errorSum[dataset] / b
-        stddev = math.sqrt(b*sqErrorSum[dataset] - errorSum[dataset]**2) / b
+        error, stddev = errorStddev(errorSum[dataset], sqErrorSum[dataset], b)
+        ballError, ballStddev = errorStddev(ballErrorSum[dataset], ballSqErrorSum[dataset], balls[dataset])
+        botError, botStddev = errorStddev(botErrorSum[dataset], botSqErrorSum[dataset], bots[dataset])
         psr = worstBlobSum[dataset] / abs(worstBlobSum[dataset] + percentileSum[dataset])
-        print(f"  {dataset} error: {error: .2f}±{stddev: .2f} PSR {psr: .4f}")
+        efsr = errorSum[dataset] / fieldScale[dataset]
+        print(f"  {dataset: >11} blobs: {error: .2f}±{stddev: .2f} balls: {ballError: .2f}±{ballStddev: .2f} bots: {botError: .2f}±{botStddev: .2f} PSR {psr: .4f} EFSR {efsr}")
 
         totalError += error
         totalStddev += stddev
+        totalBallError += ballError
+        totalBallStddev += ballStddev
+        totalBotError += botError
+        totalBotStddev += botStddev
         totalPsr += psr
+        totalEfsr += efsr
 
-    datasets = len(blobs.keys())
-    print(f"Total error: {totalError/datasets: .2f}±{totalStddev/datasets: .2f} PSR {totalPsr/datasets: .4f}")
+    d = len(blobs.keys())
+    print(f"Total blobs: {totalError/d: .2f}±{totalStddev/d: .2f} balls: {totalBallError/d: .2f}±{totalBallStddev/d: .2f} bots: {totalBotError/d: .2f}±{totalBotStddev/d: .2f} PSR {totalPsr/d: .4f} EFSR {totalEfsr/d: .4f}")

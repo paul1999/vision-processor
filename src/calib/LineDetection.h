@@ -25,7 +25,7 @@ typedef std::vector<std::pair<cv::Vec2f, cv::Vec2f>> CVLines;
 int halfLineWidthEstimation(const Resources& r, const Image& img);
 
 /* Finds line points by detecting ridges */
-Image thresholdImage(const Resources& r, const Image& gray, int halfLineWidth);
+void thresholdImage(const Resources& r, const Image& gray, int halfLineWidth, Image& thresholded);
 
 /* Groups neighbouring line segments together */
 std::vector<CVLines> groupLineSegments(const Resources& r, CVLines& segments);

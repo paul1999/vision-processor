@@ -212,6 +212,48 @@ int modelError(const Resources& r, const CameraModel& model, const std::vector<E
 	return error;
 }
 
+static void thresholdCanny(const Resources& r, const int halfLineWidth, const Image& gray, Image& thresholded) {
+	cv::Canny(*gray.cvRead(), *thresholded.cvWrite(), r.fieldLineThreshold/2, r.fieldLineThreshold, halfLineWidth);
+}
+
+static void thresholdAdaMeanAnd(const Resources& r, const int halfLineWidth, const Image& bgr, Image& thresholded) {
+	std::vector<cv::Mat> split_bgr(3);
+	cv::split(*bgr.cvRead(), split_bgr);
+
+	cv::Mat tb, tg, tr;
+	cv::adaptiveThreshold(split_bgr[0], tb, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 20*halfLineWidth + 1, -r.fieldLineThreshold);
+	cv::adaptiveThreshold(split_bgr[1], tg, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 20*halfLineWidth + 1, -r.fieldLineThreshold);
+	cv::adaptiveThreshold(split_bgr[2], tr, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 20*halfLineWidth + 1, -r.fieldLineThreshold);
+
+	{
+		const CLMap<uint8_t> data = bgr.read<uint8_t>();
+		CLMap<uint8_t> tData = thresholded.write<uint8_t>();
+		for (int y = 0; y < bgr.height; y++) {
+			for (int x = 0; x < bgr.width; x++) {
+				int pos = x + y * bgr.width;
+				tData[pos] = (tb.data[pos] && tb.data[pos+1] && tb.data[pos+2]) ? 255 : 0;
+			}
+		}
+	}
+}
+
+static void thresholdAdaMedianOtsu(const int halfLineWidth, const Image& gray, Image& thresholded) {
+	const int halfThresholdWidth = halfLineWidth*4+1;
+	cv::Mat median;
+	cv::medianBlur(*gray.cvRead(), median, 2*halfThresholdWidth+1);
+	Image adaMedian(&PixelFormat::I8, gray.width, gray.height, gray.name);
+	cv::subtract(*gray.cvRead(), median, *adaMedian.cvWrite(), cv::noArray(), CV_8SC1);
+	{
+		CVMap map = adaMedian.cvReadWrite();
+		cv::max(*map, 0, *map);
+		cv::Mat u8;
+		map->convertTo(u8, CV_8U);
+		//cv::Mat thresh;
+		cv::threshold(u8, *thresholded.cvWrite(), 0.0, 255.0, cv::THRESH_BINARY + cv::THRESH_OTSU);
+		//cv::ximgproc::thinning(thresh, *t.cvWrite());
+	}
+}
+
 void geometryCalibration(const Resources& r, const Image& img) {
 	// Adapted from https://stackoverflow.com/a/25436112 by user2398029 under CC BY-SA 3.0
 	// J. Immerkær, “Fast Noise Variance Estimation”, Computer Vision and Image Understanding, Vol. 64, No. 2, pp. 300-302, Sep. 1996
@@ -227,83 +269,23 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	//const int halfLineWidth = halfLineWidthEstimation(r, bgr);
 	const int halfLineWidth = halfLineWidthEstimation(r, gray);
 	std::cout << "[Geometry calibration] Half line width: " << halfLineWidth << std::endl;
-
-	const int halfThresholdWidth = halfLineWidth*4+1;
-	/*cv::Mat integral;
-	cv::integral(*gray.cvRead(), integral, CV_32S);
-	cv::Mat paddedIntegral;
-	cv::copyMakeBorder(integral, paddedIntegral, halfThresholdWidth, halfThresholdWidth, halfThresholdWidth, halfThresholdWidth, cv::BORDER_REPLICATE);
-	Image adaThreshold(&PixelFormat::I8, gray.width, gray.height, gray.name);
-	{
-		CLMap<uint8_t> read = gray.read<uint8_t>();
-		CLMap<int8_t> write = adaThreshold.write<int8_t>();
-		for(int y = 0; y < gray.height; y++) {
-			for(int x = 0; x < gray.width; x++) {
-				write[x + y*gray.width] = cv::saturate_cast<std::int8_t>(read[x + y*gray.width] - (paddedIntegral.at<int>(y + 2*halfThresholdWidth, x + 2*halfThresholdWidth) - paddedIntegral.at<int>(y, x + 2*halfThresholdWidth) - paddedIntegral.at<int>(y + 2*halfThresholdWidth, x) + paddedIntegral.at<int>(y, x)) / (2*halfThresholdWidth * 2*halfThresholdWidth));
-			}
-		}
-	}
-	adaThreshold.save(".adathres.png");*/
-
-	/*std::vector<cv::Mat> split_bgr(3);
-	cv::split(*bgr.cvRead(), split_bgr);
-	for(int i = 0; i < split_bgr.size(); i++) {
-		cv::Mat median;
-		cv::medianBlur(split_bgr[i], median, 2*halfThresholdWidth+1);
-		Image adaMedian(&PixelFormat::I8, gray.width, gray.height, gray.name);
-		cv::subtract(split_bgr[i], median, *adaMedian.cvWrite(), cv::noArray(), CV_8SC1);
-		adaMedian.save(".adamedian" + std::to_string(i) + ".png");
-	}*/
-
-	cv::Mat median;
-	cv::medianBlur(*gray.cvRead(), median, 2*halfThresholdWidth+1);
-	Image adaMedian(&PixelFormat::I8, gray.width, gray.height, gray.name);
-	cv::subtract(*gray.cvRead(), median, *adaMedian.cvWrite(), cv::noArray(), CV_8SC1);
-	/*cv::Mat lut(1, 256, CV_8S);
-	for(int i = 0; i < 128; i++)
-		lut.at<int8_t>(i) = cv::saturate_cast<int8_t>(powf(i / 128.f, 0.641f) * 128.f);
-	for(int i = 0; i < 128; i++)
-		lut.at<int8_t>(i + 128) = 0;//cv::saturate_cast<int8_t>(powf((i - 128) / 128.f, 1/0.641f) * 128.f);
-	{
-		CVMap map = adaMedian.cvReadWrite();
-		cv::LUT(*map, lut, *map);
-	}*/
-	//adaMedian.save(".adamedian.png");
 	Image thresholded(&PixelFormat::U8, gray.width, gray.height, gray.name);
-	{
-		CVMap map = adaMedian.cvReadWrite();
-		cv::max(*map, 0, *map);
-		cv::Mat u8;
-		map->convertTo(u8, CV_8U);
-		//cv::Mat thresh;
-		cv::threshold(u8, *thresholded.cvWrite(), 0.0, 255.0, cv::THRESH_BINARY + cv::THRESH_OTSU);
-		//cv::ximgproc::thinning(thresh, *t.cvWrite());
-	}
-	//return;
+
+	thresholdCanny(r, halfLineWidth, gray, thresholded);
+	thresholdImage(r, gray, halfLineWidth, thresholded);
+	thresholdAdaMeanAnd(r, halfLineWidth, bgr, thresholded);
+	thresholdAdaMedianOtsu(halfLineWidth, gray, thresholded);
 
 	//https://docs.opencv.org/4.x/da/d7f/tutorial_back_projection.html
 
-	/*std::vector<cv::Mat> split_bgr(3);
-	cv::split(*bgr.cvRead(), split_bgr);
+	//Direct calibration
 
-	cv::Mat tb, tg, tr;
-	cv::adaptiveThreshold(split_bgr[0], tb, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 20*halfLineWidth + 1, -r.fieldLineThreshold);
-	cv::adaptiveThreshold(split_bgr[1], tg, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 20*halfLineWidth + 1, -r.fieldLineThreshold);
-	cv::adaptiveThreshold(split_bgr[2], tr, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 20*halfLineWidth + 1, -r.fieldLineThreshold);
 
-	Image thresholded(&PixelFormat::U8, bgr.width, bgr.height, bgr.name);
-	{
-		const CLMap<uint8_t> data = bgr.read<uint8_t>();
-		CLMap<uint8_t> tData = thresholded.write<uint8_t>();
-		for (int y = 0; y < bgr.height; y++) {
-			for (int x = 0; x < bgr.width; x++) {
-				int pos = x + y * bgr.width;
-				tData[pos] = (tb.data[pos] && tb.data[pos+1] && tb.data[pos+2]) ? 255 : 0;
-			}
-		}
-	}*/
-	//Image thresholded = thresholdImage(r, gray, halfLineWidth);
-	//thresholded.save(".fieldlines.png");
+	//Intrinsic line calibration
+	//Extrinsic edge calibration
+	// Handgiven
+	// Catesian product
+	// Horizontal/Vertical separated
 
 	cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
 	cv::Mat4f linesMat;

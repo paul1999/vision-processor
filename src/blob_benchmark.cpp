@@ -108,7 +108,6 @@ static void scoreBot(const Resources& r, const CLImageMap<float>& circMap, const
 	offsetSum[BOT] += botOffset;
 	errorSum[BOT] += botOffset.norm();
 	errorSqSum[BOT] += botOffset.squaredNorm();
-	//TODO orientation?
 }
 
 
@@ -243,5 +242,10 @@ int main(int argc, char* argv[]) {
 	std::cout << "[Blob benchmark] Total error: " << (totalError / totalBlobs) << "±" << totalStddev << " worstblob/percentile: " << (worstBlobSum/abs(worstBlobSum+percentileSum)) << std::endl;
 	std::cout << "[Blob benchmark] Avg processing time: " << (processingTime / frameId) << " frame load time: " << (imageTime / frameId) << " analysis time: " << (analysisTime / frameId) << " frames: " << frameId << std::endl;
 
-	std::cout << "[BlobMachine] " << frameId << " " << totalBlobs << " " << totalError << " " << totalSqError << " " << worstBlobSum << " " << percentileSum << std::endl;
+	std::cout << "[BlobMachine] " << frameId << " "
+	<< totalBlobs << " " << totalError << " " << totalSqError << " "
+	<< worstBlobSum << " " << percentileSum << " "
+	<< blobAmount[ORANGE] << " " << errorSum[ORANGE] << " " << errorSqSum[ORANGE] << " "
+	<< blobAmount[BOT] << " " << errorSum[BOT] << " " << errorSqSum[BOT] << " "
+	<< totalBlobs*r.perspective->fieldScale << std::endl;
 }
