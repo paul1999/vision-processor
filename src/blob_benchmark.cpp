@@ -145,7 +145,7 @@ int main(int argc, char* argv[]) {
 	offsetSum[BlobColor::BLUE] = {0.f, 0.f};
 	offsetSum[BlobColor::GREEN] = {0.f, 0.f};
 	offsetSum[BlobColor::PINK] = {0.f, 0.f};
-	double worstBlobSum = 0.0;
+	//double worstBlobSum = 0.0;
 	double percentileSum = 0.0;
 
 	while(true) {
@@ -206,13 +206,15 @@ int main(int argc, char* argv[]) {
 			continue;
 
 		if(frameId == 1) {
-			circ->save(".circ.png", 512.0f, 128.f);
+			circ->save(".circ.png", 128.0f, 128.f);
 		}
 
-		int n = circ->height*((int)circMap.rowPitch - circ->width) + (int)((circ->width*circ->height) * 0.95); //TODO retest lower values
+		int frameSize = (int)circMap.rowPitch*circ->height;
+		double worstBlobPercentile = (double)std::count_if(*circMap, *circMap + frameSize, [&](const auto& v){ return v < worstBlobScore; }) / (double)frameSize; //TODO does say nothing about clear separation
+		/*int n = circ->height*((int)circMap.rowPitch - circ->width) + (int)((circ->width*circ->height) * 0.99);
 		std::nth_element(*circMap, *circMap + n, *circMap + (circMap.rowPitch*circ->height));
-		percentileSum += circMap[n];
-		worstBlobSum += worstBlobScore;
+		percentileSum += circMap[n]; // median did not help */
+		percentileSum += worstBlobPercentile;
 		analysisTime += getRealTime() - startTime;
 
 		if(r.debugImages && frameId == 1)  {
@@ -239,12 +241,12 @@ int main(int argc, char* argv[]) {
 		std::cout << "[Blob benchmark] Avg color " << offset.first << " error: " << (offset.second / blobs) << "±" << stddev << " systematic offset: " << (offsetSum[offset.first].transpose() / blobs) << std::endl;
 	}
 	double totalStddev = sqrt(totalBlobs*totalSqError - totalError*totalError) / totalBlobs;
-	std::cout << "[Blob benchmark] Total error: " << (totalError / totalBlobs) << "±" << totalStddev << " worstblob/percentile: " << (worstBlobSum/abs(worstBlobSum+percentileSum)) << std::endl;
+	std::cout << "[Blob benchmark] Total error: " << (totalError / totalBlobs) << "±" << totalStddev << " worstblob-percentile: " << percentileSum/frameId << std::endl;
 	std::cout << "[Blob benchmark] Avg processing time: " << (processingTime / frameId) << " frame load time: " << (imageTime / frameId) << " analysis time: " << (analysisTime / frameId) << " frames: " << frameId << std::endl;
 
 	std::cout << "[BlobMachine] " << frameId << " "
 	<< totalBlobs << " " << totalError << " " << totalSqError << " "
-	<< worstBlobSum << " " << percentileSum << " "
+	<< 0	 << " " << percentileSum << " "
 	<< blobAmount[ORANGE] << " " << errorSum[ORANGE] << " " << errorSqSum[ORANGE] << " "
 	<< blobAmount[BOT] << " " << errorSum[BOT] << " " << errorSqSum[BOT] << " "
 	<< totalBlobs*r.perspective->fieldScale << std::endl;

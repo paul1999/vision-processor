@@ -79,23 +79,56 @@ if __name__ == '__main__':
     threaded_field_iter(args.data_folder, consumer, field_filter=args.field)
 
     def errorStddev(error, sqError, amount):
-        return error / amount, math.sqrt(amount * sqError - error ** 2) / amount
+        try:
+            return error / amount, math.sqrt(amount * sqError - error ** 2) / amount
+        except:
+            return math.nan, math.nan
 
-    totalError = 0.0
-    totalStddev = 0.0
-    totalBallError = 0.0
-    totalBallStddev = 0.0
-    totalBotError = 0.0
-    totalBotStddev = 0.0
-    totalPsr = 0.0
-    totalEfsr = 0.0
+    class AvgValue:
+
+        def __init__(self, fourdigits=False):
+            self.value = 0.0
+            self.count = 0
+            self.fourdigits = fourdigits
+
+        def __iadd__(self, value):
+            if math.isnan(value):
+                return self
+
+            self.value += value
+            self.count += 1
+            return self
+
+        def __str__(self):
+            try:
+                value = self.value / self.count
+                return f"{value: .4f}" if self.fourdigits else f"{value: .2f}"
+            except ZeroDivisionError:
+                return " nan "
+
+
+    totalError = AvgValue()
+    totalStddev = AvgValue()
+    totalBallError = AvgValue()
+    totalBallStddev = AvgValue()
+    totalBotError = AvgValue()
+    totalBotStddev = AvgValue()
+    totalPsr = AvgValue(True)
+    totalEfsr = AvgValue(True)
     for dataset, b in blobs.items():
         error, stddev = errorStddev(errorSum[dataset], sqErrorSum[dataset], b)
         ballError, ballStddev = errorStddev(ballErrorSum[dataset], ballSqErrorSum[dataset], balls[dataset])
         botError, botStddev = errorStddev(botErrorSum[dataset], botSqErrorSum[dataset], bots[dataset])
-        psr = worstBlobSum[dataset] / abs(worstBlobSum[dataset] + percentileSum[dataset])
-        efsr = errorSum[dataset] / fieldScale[dataset]
-        print(f"  {dataset: >11} blobs: {error: .2f}±{stddev: .2f} balls: {ballError: .2f}±{ballStddev: .2f} bots: {botError: .2f}±{botStddev: .2f} PSR {psr: .4f} EFSR {efsr}")
+        try:
+            #psr = worstBlobSum[dataset] / (abs(worstBlobSum[dataset]) + abs(percentileSum[dataset]))
+            psr = percentileSum[dataset] / frames[dataset]
+        except ZeroDivisionError:
+            psr = math.nan
+        try:
+            efsr = errorSum[dataset] / fieldScale[dataset]
+        except ZeroDivisionError:
+            efsr = math.nan
+        print(f"  {dataset: >11} blobs: {error: .2f}±{stddev: .2f} balls: {ballError: .2f}±{ballStddev: .2f} bots: {botError: .2f}±{botStddev: .2f} PSR {psr: .4f} EFSR {efsr: .4f}")
 
         totalError += error
         totalStddev += stddev
@@ -106,5 +139,4 @@ if __name__ == '__main__':
         totalPsr += psr
         totalEfsr += efsr
 
-    d = len(blobs.keys())
-    print(f"Total blobs: {totalError/d: .2f}±{totalStddev/d: .2f} balls: {totalBallError/d: .2f}±{totalBallStddev/d: .2f} bots: {totalBotError/d: .2f}±{totalBotStddev/d: .2f} PSR {totalPsr/d: .4f} EFSR {totalEfsr/d: .4f}")
+    print(f"Total blobs: {totalError}±{totalStddev} balls: {totalBallError}±{totalBallStddev} bots: {totalBotError}±{totalBotStddev} PSR {totalPsr} EFSR {totalEfsr}")
