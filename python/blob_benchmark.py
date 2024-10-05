@@ -23,6 +23,30 @@ from dataset import threaded_field_iter, parser_test_data
 from record import thread_local_ip
 from visionsocket import VisionRecorder
 
+
+class AvgValue:
+
+    def __init__(self, fourdigits=False):
+        self.value = 0.0
+        self.count = 0
+        self.fourdigits = fourdigits
+
+    def __iadd__(self, value):
+        if math.isnan(value):
+            return self
+
+        self.value += value
+        self.count += 1
+        return self
+
+    def __str__(self):
+        try:
+            value = self.value / self.count
+            return f"{value: .4f}" if self.fourdigits else f"{value: .2f}"
+        except ZeroDivisionError:
+            return " nan "
+
+
 if __name__ == '__main__':
     parser = parser_test_data(parser_binary(argparse.ArgumentParser(prog='Vision blob benchmark'), default='blob_benchmark'))
     parser.add_argument('--scenes_per_field', default=None, type=int, help='Amount of scenes per field to process')
@@ -32,6 +56,7 @@ if __name__ == '__main__':
     errorSum = defaultdict(float)
     sqErrorSum = defaultdict(float)
     fieldScale = defaultdict(float)
+    processingTime = defaultdict(float)
 
     frames = defaultdict(int)
     worstBlobSum = defaultdict(float)
@@ -69,43 +94,19 @@ if __name__ == '__main__':
             botErrorSum[key] += float(split[11])
             botSqErrorSum[key] += float(split[12])
             fieldScale[key] += float(split[13])
-            #if float(split[5]) < 0:
-            #    print(f"  NEGATIVE WBS")
+            processingTime[key] += float(split[14])
 
         for video, _ in zip(dataset.images(), range(args.scenes_per_field if args.scenes_per_field else 1000000)):
             print(f"Processing {video}")
             run_binary(args.binary, recorder, dataset, video, stdoutconsumer=stdoutprocessor)  # , ground_truth=video.with_suffix('.vision_processor.json')
 
-    threaded_field_iter(args.data_folder, consumer, field_filter=args.field)
+    threaded_field_iter(args.data_folder, consumer, workers=1, field_filter=args.field)
 
     def errorStddev(error, sqError, amount):
         try:
             return error / amount, math.sqrt(amount * sqError - error ** 2) / amount
         except:
             return math.nan, math.nan
-
-    class AvgValue:
-
-        def __init__(self, fourdigits=False):
-            self.value = 0.0
-            self.count = 0
-            self.fourdigits = fourdigits
-
-        def __iadd__(self, value):
-            if math.isnan(value):
-                return self
-
-            self.value += value
-            self.count += 1
-            return self
-
-        def __str__(self):
-            try:
-                value = self.value / self.count
-                return f"{value: .4f}" if self.fourdigits else f"{value: .2f}"
-            except ZeroDivisionError:
-                return " nan "
-
 
     totalError = AvgValue()
     totalStddev = AvgValue()
@@ -115,20 +116,22 @@ if __name__ == '__main__':
     totalBotStddev = AvgValue()
     totalPsr = AvgValue(True)
     totalEfsr = AvgValue(True)
+    totalFrametime = AvgValue()
     for dataset, b in blobs.items():
         error, stddev = errorStddev(errorSum[dataset], sqErrorSum[dataset], b)
         ballError, ballStddev = errorStddev(ballErrorSum[dataset], ballSqErrorSum[dataset], balls[dataset])
         botError, botStddev = errorStddev(botErrorSum[dataset], botSqErrorSum[dataset], bots[dataset])
         try:
-            #psr = worstBlobSum[dataset] / (abs(worstBlobSum[dataset]) + abs(percentileSum[dataset]))
-            psr = percentileSum[dataset] / frames[dataset]
+            psr = worstBlobSum[dataset] / (abs(worstBlobSum[dataset]) + abs(percentileSum[dataset]))
         except ZeroDivisionError:
             psr = math.nan
         try:
             efsr = errorSum[dataset] / fieldScale[dataset]
         except ZeroDivisionError:
             efsr = math.nan
-        print(f"  {dataset: >11} blobs: {error: .2f}±{stddev: .2f} balls: {ballError: .2f}±{ballStddev: .2f} bots: {botError: .2f}±{botStddev: .2f} PSR {psr: .4f} EFSR {efsr: .4f}")
+        frametime = processingTime[dataset] / frames[dataset] * 1000  # ms
+
+        print(f"  {dataset: >11} blobs: {error: .2f}±{stddev: .2f} balls: {ballError: .2f}±{ballStddev: .2f} bots: {botError: .2f}±{botStddev: .2f} PSR {psr: .4f} EFSR {efsr: .4f} Time {frametime: .2f}")
 
         totalError += error
         totalStddev += stddev
@@ -138,5 +141,6 @@ if __name__ == '__main__':
         totalBotStddev += botStddev
         totalPsr += psr
         totalEfsr += efsr
+        totalFrametime += frametime
 
-    print(f"Total blobs: {totalError}±{totalStddev} balls: {totalBallError}±{totalBallStddev} bots: {totalBotError}±{totalBotStddev} PSR {totalPsr} EFSR {totalEfsr}")
+    print(f"Total blobs: {totalError}±{totalStddev} balls: {totalBallError}±{totalBallStddev} bots: {totalBotError}±{totalBotStddev} PSR {totalPsr} EFSR {totalEfsr} Time {totalFrametime}")

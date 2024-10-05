@@ -35,6 +35,7 @@ public:
 			return nullptr;
 
 		return image;
+		//return image->toSharedRGGB();
 	}
 
 	double expectedFrametime() override {

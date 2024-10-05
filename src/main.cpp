@@ -510,10 +510,15 @@ int main(int argc, char* argv[]) {
 			for (const auto& ball : ballHypotheses)
 				ball->addToDetectionFrame(r, detection);
 
+			double processingTime = getRealTime() - realStartTime;
+
+#if BENCHMARK
+			detection->set_t_sent(startTime + processingTime);
+#else
 			detection->set_t_sent(r.camera->getTime());
+#endif
 			r.socket->send(wrapper);
 
-			double processingTime = getRealTime() - realStartTime;
 			if(processingTime > r.camera->expectedFrametime())
 				std::cout << "[main] frame time overrun: " << processingTime * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
 

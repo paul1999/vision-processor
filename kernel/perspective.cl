@@ -80,4 +80,10 @@ kernel void perspective(read_only image2d_t in, write_only image2d_t out, const 
 			(2*color.b - color.r - color.g + 510) / 4,
 			255
 	));
+	/*write_imageui(out, (int2)(get_global_id(0), get_global_id(1)), (uint4)(
+			128,
+			convert_uchar_sat((-38*(int)color.r + -74*(int)color.g + 112*(int)color.b) / 256 + 128),
+			convert_uchar_sat((112*(int)color.r + -94*(int)color.g + -18*(int)color.b) / 256 + 128),
+			255
+	));*/
 }

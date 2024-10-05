@@ -24,11 +24,18 @@ from google.protobuf.json_format import MessageToDict
 if not os.path.exists('python/proto/ssl_vision_wrapper_pb2.py'):
     print("Compiling Protobuf files...")
     import grpc_tools.protoc
-    grpc_tools.protoc.main([
-        'protoc',
-        '--python_out=python', '--pyi_out=python',
-        *[str(path) for path in pathlib.Path().rglob('proto/*.proto')]
-    ])
+    try:
+        grpc_tools.protoc.main([
+            'protoc',
+            '--python_out=python', '--pyi_out=python',
+            *[str(path) for path in pathlib.Path().rglob('proto/*.proto')]
+        ])
+    except:
+        grpc_tools.protoc.main([
+            'protoc',
+            '--python_out=python',
+            *[str(path) for path in pathlib.Path().rglob('proto/*.proto')]
+        ])
 
 
 from proto.ssl_vision_wrapper_pb2 import SSL_WrapperPacket

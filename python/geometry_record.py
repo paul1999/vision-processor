@@ -39,7 +39,7 @@ if __name__ == '__main__':
         del reference_geometry.geometry.calib[:]
 
         # TODO record score
-        run_binary(args.binary, recorder, dataset, dataset.field, reference_geometry, stdoutconsumer=lambda line: print(line, end=''))
+        run_binary(args.binary, recorder, dataset, dataset.field, geometry=reference_geometry) #, stdoutconsumer=lambda line: print(line, end='')
 
         geometries = recorder.subfield('geometry')
 

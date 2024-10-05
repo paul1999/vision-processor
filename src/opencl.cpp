@@ -160,7 +160,7 @@ static inline cl::Image2D allocImage(int width, int height, const PixelFormat* f
 	int error;
 	cl::Image2D image = cl::Image2D(cl::Context::getDefault(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, clFormat, width, height, 0, nullptr, &error);
 	if(error != CL_SUCCESS) {
-		std::cerr << "bgr Image creation error: " << error << std::endl;
+		std::cerr << "bgr Image creation error: " << error << " " << width << "," << height << " " << (format == &PixelFormat::RGBA8) << std::endl;
 		exit(1);
 	}
 	return image;

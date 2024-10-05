@@ -62,7 +62,8 @@ int main(int argc, char* argv[]) {
 	r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
 
 	Image gray = img->toGrayscale();
-	Image thresholded = thresholdImage(r, gray, halfLineWidthEstimation(r, gray));
+	Image thresholded(&PixelFormat::U8, gray.width, gray.height, gray.name);
+	thresholdImage(r, gray, halfLineWidthEstimation(r, gray), thresholded);
 	r.perspective->model.ensureSize({thresholded.width, thresholded.height});
 	const std::vector<Eigen::Vector2f> linePixels = getLinePixels(thresholded);
 	const int error = modelError(r, r.perspective->model, linePixels);

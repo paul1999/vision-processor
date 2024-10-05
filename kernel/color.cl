@@ -25,6 +25,18 @@ kernel void robust_invariant(read_only image2d_t in, write_only image2d_t out, i
 
 	//float4 pxx = convert_float4(read_imageui(in, sampler, (int2)(pos.x+1, pos.y))) - convert_float4(read_imageui(in, sampler, (int2)(pos.x-1, pos.y)));
 	//float4 pxy = convert_float4(read_imageui(in, sampler, (int2)(pos.x, pos.y+1))) - convert_float4(read_imageui(in, sampler, (int2)(pos.x, pos.y-1)));
+
+	/*// Sobel Magnitude
+	float4 pxx =
+			2*convert_float4(read_imageui(in, sampler, (int2)(pos.x+offset, pos.y))) + convert_float4(read_imageui(in, sampler, (int2)(pos.x+offset, pos.y-1))) + convert_float4(read_imageui(in, sampler, (int2)(pos.x+offset, pos.y+1))) -
+			2*convert_float4(read_imageui(in, sampler, (int2)(pos.x-offset, pos.y))) - convert_float4(read_imageui(in, sampler, (int2)(pos.x-offset, pos.y-1))) - convert_float4(read_imageui(in, sampler, (int2)(pos.x-offset, pos.y+1)));
+	float4 pxy =
+			2*convert_float4(read_imageui(in, sampler, (int2)(pos.x, pos.y+offset))) + convert_float4(read_imageui(in, sampler, (int2)(pos.x-1, pos.y+offset))) + convert_float4(read_imageui(in, sampler, (int2)(pos.x+1, pos.y+offset))) -
+			2*convert_float4(read_imageui(in, sampler, (int2)(pos.x, pos.y-offset))) - convert_float4(read_imageui(in, sampler, (int2)(pos.x-1, pos.y-offset))) - convert_float4(read_imageui(in, sampler, (int2)(pos.x+1, pos.y-offset)));
+	pxx *= pxx;
+	pxy *= pxy;
+	write_imagef(out, pos, native_sqrt(pxx.x + pxx.y + pxx.z + pxy.x + pxy.y + pxy.z));*/
+
 	float4 pxx = convert_float4(read_imageui(in, sampler, (int2)(pos.x+offset, pos.y))) - convert_float4(read_imageui(in, sampler, (int2)(pos.x-offset, pos.y)));
 	float4 pxy = convert_float4(read_imageui(in, sampler, (int2)(pos.x, pos.y+offset))) - convert_float4(read_imageui(in, sampler, (int2)(pos.x, pos.y-offset)));
 	/*float xScale = native_sqrt(pxx.x*pxx.x + pxx.y*pxx.y + pxx.z*pxx.z) / 32.0f;
