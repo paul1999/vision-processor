@@ -77,6 +77,7 @@ if __name__ == '__main__':
 
         def stdoutprocessor(line: str):
             if not line.startswith("[BlobMachine]"):
+                #print(line, end='')
                 return
 
             key = dataset.folder.parent.name
@@ -114,7 +115,7 @@ if __name__ == '__main__':
     totalBallStddev = AvgValue()
     totalBotError = AvgValue()
     totalBotStddev = AvgValue()
-    totalPsr = AvgValue(True)
+    totalPpr = AvgValue(True)
     totalEfsr = AvgValue(True)
     totalFrametime = AvgValue()
     for dataset, b in blobs.items():
@@ -122,16 +123,16 @@ if __name__ == '__main__':
         ballError, ballStddev = errorStddev(ballErrorSum[dataset], ballSqErrorSum[dataset], balls[dataset])
         botError, botStddev = errorStddev(botErrorSum[dataset], botSqErrorSum[dataset], bots[dataset])
         try:
-            psr = worstBlobSum[dataset] / (abs(worstBlobSum[dataset]) + abs(percentileSum[dataset]))
+            ppr = worstBlobSum[dataset] / (abs(worstBlobSum[dataset]) + abs(percentileSum[dataset]))
         except ZeroDivisionError:
-            psr = math.nan
+            ppr = math.nan
         try:
             efsr = errorSum[dataset] / fieldScale[dataset]
         except ZeroDivisionError:
             efsr = math.nan
         frametime = processingTime[dataset] / frames[dataset] * 1000  # ms
 
-        print(f"  {dataset: >11} blobs: {error: .2f}±{stddev: .2f} balls: {ballError: .2f}±{ballStddev: .2f} bots: {botError: .2f}±{botStddev: .2f} PSR {psr: .4f} EFSR {efsr: .4f} Time {frametime: .2f}")
+        print(f"  {dataset: >11} blobs: {error: .2f}±{stddev: .2f} balls: {ballError: .2f}±{ballStddev: .2f} bots: {botError: .2f}±{botStddev: .2f} PPR {ppr: .4f} EFSR {efsr: .4f} Time {frametime: .2f}")
 
         totalError += error
         totalStddev += stddev
@@ -139,8 +140,8 @@ if __name__ == '__main__':
         totalBallStddev += ballStddev
         totalBotError += botError
         totalBotStddev += botStddev
-        totalPsr += psr
+        totalPpr += ppr
         totalEfsr += efsr
         totalFrametime += frametime
 
-    print(f"Total blobs: {totalError}±{totalStddev} balls: {totalBallError}±{totalBallStddev} bots: {totalBotError}±{totalBotStddev} PSR {totalPsr} EFSR {totalEfsr} Time {totalFrametime}")
+    print(f"Total blobs: {totalError}±{totalStddev} balls: {totalBallError}±{totalBallStddev} bots: {totalBotError}±{totalBotStddev} PPR {totalPpr} EFSR {totalEfsr} Time {totalFrametime}")

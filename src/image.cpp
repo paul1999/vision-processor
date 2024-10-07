@@ -91,6 +91,31 @@ Image Image::toRGGB() const {
 	}
 }
 
+std::shared_ptr<Image> Image::toSharedRGGB() const {
+	if(format == &PixelFormat::BGR888) {
+		std::shared_ptr<Image> image = std::make_shared<Image>(&PixelFormat::RGGB8, width/2, height/2, name);
+		CLMap<uint8_t> read = ::Image::read<uint8_t>();
+		CLMap<uint8_t> write = image->write<uint8_t>();
+		for(int y = 0; y < height; y++) {
+			for(int x = 0; x < width; x++) {
+				write[x + width * y] = (y % 2 ?
+										(x%2 ? read[3 * (x + width * y) + 0] : read[3 * (x + width * y) + 1]) :
+										(x%2 ? read[3 * (x + width * y) + 1] : read[3 * (x + width * y) + 2])
+				);
+			}
+		}
+
+		if(image->width == 0 || image->height == 0) {
+			std::cerr << image->width << "," << image->height << " " << image->name << " " << width << "," << height << " " << name << std::endl;
+		}
+
+		return image;
+	} else {
+		std::cerr << "[Image] Unimplemented conversion to RGGB" << std::endl;
+		exit(1);
+	}
+}
+
 Image Image::toUpscaleRGGB() const {
 	if(format == &PixelFormat::RGGB8) {
 		return *this;

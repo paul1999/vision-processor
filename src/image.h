@@ -46,6 +46,7 @@ public:
 	[[nodiscard]] Image toGrayscale() const;
 	[[nodiscard]] Image toBGR() const;
 	[[nodiscard]] Image toRGGB() const;
+	std::shared_ptr<Image> toSharedRGGB() const;
 	[[nodiscard]] Image toUpscaleRGGB() const;
 
 	void save(const std::string& suffix, float factor = 1.0f) const;

@@ -126,6 +126,7 @@ int main(int argc, char* argv[]) {
 	cl::Kernel ssdKernel = r.openCl->compile(kernel_ssd_cl, kernel_ssd_cl_end);
 #else
 	cl::Kernel colorKernel = r.openCl->compile(kernel_color_cl, kernel_color_cl_end);
+	//cl::Kernel colorKernel = r.openCl->compile(kernel_robustInvariant_cl, kernel_robustInvariant_cl_end);
 	cl::Kernel satHorizontalKernel = r.openCl->compile(kernel_satHorizontal_cl, kernel_satHorizontal_cl_end);
 	cl::Kernel satVerticalKernel = r.openCl->compile(kernel_satVertical_cl, kernel_satVertical_cl_end);
 	cl::Kernel circleKernel = r.openCl->compile(kernel_satCircle_cl, kernel_satCircle_cl_end);
@@ -168,6 +169,7 @@ int main(int argc, char* argv[]) {
 
 		std::shared_ptr<CLImage> clImg = r.openCl->acquire(&PixelFormat::RGBA8, img->width, img->height, img->name);
 		std::shared_ptr<CLImage> flat = r.openCl->acquire(&PixelFormat::RGBA8, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+		//std::shared_ptr<CLImage> blurred = r.openCl->acquire(&PixelFormat::RGBA8, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 		std::shared_ptr<CLImage> color = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 		std::shared_ptr<CLImage> colorHor = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 		std::shared_ptr<CLImage> colorSat = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
@@ -175,13 +177,13 @@ int main(int argc, char* argv[]) {
 		//std::shared_ptr<CLImage> score = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 
 		cl::NDRange visibleFieldRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1]);
-		//cv::GaussianBlur(flat.read<RGBA>().cv, blurred.write<RGBA>().cv, {5, 5}, 0, 0, cv::BORDER_REPLICATE);
 		OpenCL::await(img->format == &PixelFormat::RGGB8 ? rggb2img : bgr2img, cl::EnqueueArgs(cl::NDRange(clImg->width, clImg->height)), img->buffer, clImg->image);
 		OpenCL::await(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg->image, flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]);
 #if SSD
 		OpenCL::await(ssdKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, r.perspective->fieldScale);
 #else
-		OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image, 1);//(int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale)/3);
+		//cv::GaussianBlur(flat->read<RGBA>().cv, blurred->write<RGBA>().cv, {5, 5}, 0, 0, cv::BORDER_REPLICATE);
+		OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale)/3); //TODO
 		OpenCL::await(satHorizontalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[1])), color->image, colorHor->image);
 		OpenCL::await(satVerticalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0])), colorHor->image, colorSat->image);
 		OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale));
@@ -222,7 +224,7 @@ int main(int argc, char* argv[]) {
 #else
 			//circ->save(".circ.png", 2.0f, 128.f); // 4 dRGB, 8 YUV, 2 RGB
 			//circ->save(".circ.png", 4.0f, 0.f); // 4 dRGB, 8 YUV, 2 RGB
-			color->save(".color.png", 2.0f);
+			color->save(".color.png", 1.0f, 128.0f);
 #endif
 			//flat->save(".flat.png");
 			//color->save(".color.png", 0.0625f, 128.f);
