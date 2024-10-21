@@ -40,4 +40,5 @@ kernel void circle(read_only image2d_t sat, write_only image2d_t out, int maxBlo
 	float npScore = read(sat, pos, -maxBlobRadius,  maxBlobRadius) - read(sat, pos, -maxBlobRadius,  1) - read(sat, pos, -1,  maxBlobRadius) + read(sat, pos, -1,  1); //inverted
 	float nnScore = read(sat, pos, -maxBlobRadius, -maxBlobRadius) - read(sat, pos, -maxBlobRadius, -1) - read(sat, pos, -1, -maxBlobRadius) + read(sat, pos, -1, -1);
 	write_imagef(out, pos, min(min(ppScore, nnScore), min(pnScore, npScore)) / (maxBlobRadius*maxBlobRadius));
+	//write_imagef(out, pos, (ppScore + nnScore + pnScore + npScore) / (maxBlobRadius*maxBlobRadius));
 }

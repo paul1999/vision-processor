@@ -179,6 +179,42 @@ void generateAngleSortedBotHypotheses(const Resources& r, std::list<std::unique_
 	}
 }
 
+void generateAngleSortedHueBotHypotheses(const Resources& r, std::list<std::unique_ptr<BotHypothesis>>& bots, std::vector<Match>& centerBlobs, KDTree& sideBlobs) {
+	std::vector<Match*> botBlobs;
+	for(Match& blob : centerBlobs) {
+		float bestBotScore = 0.0f;
+		std::unique_ptr<BotHypothesis> bestBot = nullptr;
+
+		botBlobs.clear();
+		sideBlobs.rangeSearch(botBlobs, blob.pos, r.perspective->field.max_robot_radius());
+		if(botBlobs.size() < 4)
+			continue;
+
+		std::sort(botBlobs.begin(), botBlobs.end(), [&](const Match* a, const Match* b) -> bool {
+			Eigen::Vector2f aDiff = a->pos - blob.pos;
+			Eigen::Vector2f bDiff = b->pos - blob.pos;
+			return atan2f(aDiff.y(), aDiff.x()) < atan2f(bDiff.y(), bDiff.x());
+		});
+
+		const int size = (int)botBlobs.size();
+		for(int a = 0; a < size; a++) {
+			for(int b = a+1; b < a+size-2; b++) {
+				for(int c = b+1; c < a+size-1; c++) {
+					for(int d = c+1; d < a+size; d++) {
+						std::unique_ptr<BotHypothesis> bot = std::make_unique<HueBotHypothesis>(r, &blob, botBlobs[a], botBlobs[b%size], botBlobs[c%size], botBlobs[d%size]);
+						if(bot->score > bestBotScore) {
+							bestBotScore = bot->score;
+							bestBot = std::move(bot);
+						}
+					}
+				}
+			}
+		}
+
+		bots.push_back(std::move(bestBot));
+	}
+}
+
 void generateRadiusSearchTrackedBotHypotheses(const Resources& r, std::list<std::unique_ptr<BotHypothesis>>& bots, std::vector<Match>& matches, KDTree& blobs, const double currentTimestamp) {
 	std::vector<Match*> botBlobs[5];
 	for (const auto& camTracked : r.socket->getTrackedObjects()) { //TODO Concurrent Modification possible?
@@ -192,6 +228,7 @@ void generateRadiusSearchTrackedBotHypotheses(const Resources& r, std::list<std:
 			Eigen::Rotation2Df rotation(trackedPosition.z());
 
 			timeDelta = std::min(timeDelta, 0.05f); //prevent runtime escalation when FPS drop below 20 FPS (likely due to excessive timeDelta)
+			//TODO QUADRUPLE?
 			//Double acceleration due to velocity determination from two frame difference
 			float blobSearchRadius = (float)r.maxBotAcceleration * timeDelta * timeDelta + (float)r.minTrackingRadius;
 
@@ -423,7 +460,7 @@ int main(int argc, char* argv[]) {
 			OpenCL::await(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg->image, flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]);
 			//cv::GaussianBlur(flat.read<RGBA>().cv, blurred.write<RGBA>().cv, {5, 5}, 0, 0, cv::BORDER_REPLICATE);
 			std::shared_ptr<CLImage> color = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image, (int)ceil(r.perspective->minBlobRadius/2.0f/r.perspective->fieldScale));
+			OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale)/3);
 			std::shared_ptr<CLImage> colorHor = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 			OpenCL::await(satHorizontalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[1])), color->image, colorHor->image);
 			std::shared_ptr<CLImage> colorSat = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
@@ -475,15 +512,41 @@ int main(int argc, char* argv[]) {
 			for(unsigned int i = 1; i < matches.size(); i++)
 				blobs.insert(&matches[i]);
 
+			/*std::vector<Match> centerBlobs;
+			std::vector<Match> ballBlobs;
+			KDTree sideBlobs;
+			for(Match& match : matches) {
+				uint8_t hue = Rgb2Hue(match.color);
+				int orangeDiff = abs((int8_t)(hue - r.orangeHue));
+				int yellowDiff = abs((int8_t)(hue - r.yellowHue));
+				int blueDiff = abs((int8_t)(hue - r.blueHue));
+				int greenDiff = abs((int8_t)(hue - r.greenHue));
+				int pinkDiff = abs((int8_t)(hue - r.pinkHue));
+				int minDiff = std::min(std::min(orangeDiff, std::min(yellowDiff, blueDiff)), std::min(greenDiff, pinkDiff));
+				if(orangeDiff == minDiff)
+					ballBlobs.push_back(match);
+				else if(yellowDiff == minDiff || blueDiff == minDiff)
+					centerBlobs.push_back(match);
+				else {
+					if(sideBlobs.getSize() == 0)
+						sideBlobs = KDTree(&match);
+					else
+						sideBlobs.insert(&match);
+				}
+			}*/
+
 			std::list<std::unique_ptr<BotHypothesis>> botHypotheses;
 			//generateCartesianTrackedBotHypotheses(r, botHypotheses, matches, blobs, startTime);
 			generateRadiusSearchTrackedBotHypotheses(r, botHypotheses, matches, blobs, startTime);
 			//generateCartesianBotHypotheses(r, botHypotheses, matches, blobs);
 			generateAngleSortedBotHypotheses(r, botHypotheses, matches, blobs);
+			/*if(sideBlobs.getSize() > 0)
+				generateAngleSortedHueBotHypotheses(r, botHypotheses, centerBlobs, sideBlobs);*/
 			filterHypothesesScore(botHypotheses, r.minBotConfidence);
 			filterClippingBotBotHypotheses(botHypotheses);
 			std::list<std::unique_ptr<BallHypothesis>> ballHypotheses;
 			generateNonclippingBallHypotheses(r, botHypotheses, matches, ballHypotheses);
+			//generateNonclippingBallHypotheses(r, botHypotheses, ballBlobs, ballHypotheses);
 
 			updateColors(r, botHypotheses, ballHypotheses);
 			for (auto& bot : botHypotheses)

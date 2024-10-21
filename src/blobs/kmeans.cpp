@@ -34,6 +34,7 @@ bool kMeans(const Eigen::Vector3i& contrast, const std::vector<Eigen::Vector3i>&
 	}
 
 	if(inGroupDiff > outGroupDiff) {
+		//TODO rejecting here necessary?
 		//std::cerr << "   Ingroup bigger than outgroup" << std::endl;
 		return false;
 	}

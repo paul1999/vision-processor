@@ -31,6 +31,20 @@ kernel void circularize(read_only image2d_t color, write_only image2d_t out, int
 	int2 pos = (int2)(get_global_id(0), get_global_id(1));
 
 	float score = 0.0f;
+	int n = 0;
+	const float sqRadius = (maxBlobRadius+0.5f)*(maxBlobRadius+0.5f);
+	/*const float sqInnerRadius = (minBlobRadius+0.5f)*(minBlobRadius+0.5f);
+	for(int y = -maxBlobRadius; y <= maxBlobRadius; y++) {
+		for(int x = -maxBlobRadius; x <= maxBlobRadius; x++) {
+			float sqR = x*x + y*y;
+			if(sqR <= sqRadius && sqR >= sqInnerRadius) {
+				px(color, pos, x, y, &score);
+				n++;
+			}
+		}
+	}
+	write_imagef(out, pos, score);*/
+
 	/*for(int i = 3; i < 8; i++) {
 		int n = 0;
 		int x = i;
@@ -74,46 +88,15 @@ kernel void circularize(read_only image2d_t color, write_only image2d_t out, int
 	float pnScore = 0.0f;
 	float npScore = 0.0f;
 	float nnScore = 0.0f;
-	/*for(int y = 2; y < 7; y++) {
-		for(int x = 2; x < 7; x++) {
-			px(color, pos, -8+x, +y, &npScore);
-			px(color, pos, +x, +y, &ppScore);
-			px(color, pos, -8+x, -y, &nnScore);
-			px(color, pos, +x, -y, &pnScore);
-		}
-	}
-	//if(ppScore > 0.0f && nnScore > 0.0f && pnScore < 0.0f && npScore < 0.0f)
-	if(fabs((ppScore/nnScore) - 1) < 0.5f && fabs((pnScore/npScore) - 1) < 0.5f)
-		score = (ppScore + nnScore - pnScore - npScore) / 196.0f;*/
 
-	/*for(int i = 0; i < 2; i++) {
+	/*for(int i = minBlobRadius; i <= maxBlobRadius; i++) {
+	//for(int i = 1; i <= maxBlobRadius; i++) {
 		px(color, pos, -i, +i, &npScore);
 		px(color, pos, +i, +i, &ppScore);
 		px(color, pos, -i, -i, &nnScore);
 		px(color, pos, +i, -i, &pnScore);
-	}
-	npScore = -npScore;
-	ppScore = -ppScore;
-	nnScore = -nnScore;
-	pnScore = -pnScore;*/
-	/*float nxDiv = 0.0f;
-	float nyDiv = 0.0f;
-	float pxDiv = 0.0f;
-	float pyDiv = 0.0f;*/
-	//for(int i = minBlobRadius; i <= maxBlobRadius; i++) {
-	for(int i = 1; i <= maxBlobRadius; i++) {
-		/*px(color, pos, 0, -i, &nyDiv);
-		px(color, pos, -i, 0, &nxDiv);
-		px(color, pos, +i, 0, &pxDiv);
-		px(color, pos, 0, +i, &pyDiv);*/
-
-		/*px(color, pos, -i, +i, &npScore);
-		px(color, pos, +i, +i, &ppScore);
-		px(color, pos, -i, -i, &nnScore);
-		px(color, pos, +i, -i, &pnScore);*/
-	}
-	const int sqRadius = maxBlobRadius*maxBlobRadius;
-	int n = 0;
+		n++;
+	}*/
 	for(int y = 1; y <= maxBlobRadius; y++) {
 		for(int x = 1; x <= maxBlobRadius; x++) {
 			//if(x*x + y*y <= sqRadius) {
@@ -121,7 +104,6 @@ kernel void circularize(read_only image2d_t color, write_only image2d_t out, int
 				px(color, pos, +x, +y, &ppScore);
 				px(color, pos, -x, -y, &nnScore);
 				px(color, pos, +x, -y, &pnScore);
-				//n += 4;
 				n++;
 			//}
 		}
@@ -131,17 +113,7 @@ kernel void circularize(read_only image2d_t color, write_only image2d_t out, int
 	nnScore /= n;
 	pnScore /= n;
 	npScore /= n;
-	//float mean = ppScore + nnScore - pnScore - npScore;
-	//float stddev = native_sqrt(((ppScore-mean)*(ppScore-mean) + (nnScore-mean)*(nnScore-mean) + (pnScore+mean)*(pnScore+mean) + (npScore+mean)*(npScore+mean)) / 4);
 	score = min(min(ppScore, nnScore), min(-pnScore, -npScore));
-	//score = 1024-stddev;
-	//if(fabs((ppScore/nnScore) - 1) < 0.3f && fabs((pnScore/npScore) - 1) < 0.3f)
-	//if(ppScore > 0.0f && nnScore > 0.0f && pnScore < 0.0f && npScore < 0.0f)
-		//score = (ppScore + nnScore - pnScore - npScore) / n /*(4*maxBlobRadius*maxBlobRadius)*/;
-
+	//score = ppScore + nnScore - pnScore -npScore;
 	write_imagef(out, pos, score);
-
-	//float absDiff = fabs(nyDiv) + fabs(nxDiv) + fabs(pyDiv) + fabs(pxDiv);
-	//write_imagef(out, pos, absDiff / 80.0f);
-	//write_imagef(out, pos, 16.0f*score / absDiff);
 }

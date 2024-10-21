@@ -20,11 +20,14 @@
 #include "Resources.h"
 
 
+uint8_t Rgb2Hue(const Eigen::Vector3i& rgb);
+
+
 class BallHypothesis {
 public:
 	BallHypothesis(const Resources& r, const Match* blob);
 
-	void recalcPostColorCalib(const Resources& r);
+	virtual void recalcPostColorCalib(const Resources& r);
 
 	void addToDetectionFrame(const Resources& r, SSL_DetectionFrame* detection);
 
@@ -67,6 +70,17 @@ private:
 class DetectionBotHypothesis: public BotHypothesis {
 public:
 	DetectionBotHypothesis(const Resources& r, const Match* a, const Match* b, const Match* c, const Match* d, const Match* e);
+
+	void recalcPostColorCalib(const Resources &r) override;
+
+private:
+	inline void calcBotId(const Resources& r);
+};
+
+
+class HueBotHypothesis: public BotHypothesis {
+public:
+	HueBotHypothesis(const Resources& r, const Match* a, const Match* b, const Match* c, const Match* d, const Match* e);
 
 	void recalcPostColorCalib(const Resources &r) override;
 

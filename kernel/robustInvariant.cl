@@ -29,8 +29,8 @@ kernel void robust_invariant(read_only image2d_t in, write_only image2d_t out, i
 
 	float saturation = native_sqrt(2*(color.r*color.r + color.g*color.g + color.b*color.b - color.r*color.g - color.r*color.b - color.g*color.b)); // + 1e-9
 
-	float hx = (color.r*(gx.b-gx.g) + color.g*(gx.r-gx.b) + color.b*(gx.g-gx.r)) / saturation; // / saturation for full invariant
-	float hy = (color.r*(gy.b-gy.g) + color.g*(gy.r-gy.b) + color.b*(gy.g-gy.r)) / saturation;
+	float hx = (color.r*(gx.b-gx.g) + color.g*(gx.r-gx.b) + color.b*(gx.g-gx.r));// / saturation; // / saturation for full invariant
+	float hy = (color.r*(gy.b-gy.g) + color.g*(gy.r-gy.b) + color.b*(gy.g-gy.r));// / saturation;
 
 	float cxx = hx*hx;
 	float cxy = 2*hx*hy;

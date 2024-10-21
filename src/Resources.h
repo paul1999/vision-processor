@@ -66,6 +66,17 @@ public:
 	Eigen::Vector3i green;
 	Eigen::Vector3i pink;
 
+	/*uint8_t orangeHue = 30 * 256 / 360;
+	uint8_t yellowHue = 60 * 256 / 360;
+	uint8_t blueHue = 210 * 256 / 360;
+	uint8_t greenHue = 120 * 256 / 360;
+	uint8_t pinkHue = 300 * 256 / 360;*/
+	uint8_t orangeHue = 38.0 * 256 / 360;
+	uint8_t yellowHue = 146.0 * 256 / 360;
+	uint8_t blueHue = 208.0 * 256 / 360;
+	uint8_t greenHue = 182.0 * 256 / 360;
+	uint8_t pinkHue = 252.0 * 256 / 360;
+
 	int cameraAmount;
 	double cameraHeight; // Just for calibration, do not use elsewhere (0.0 as special value for automatic calibration)
 	uint8_t fieldLineThreshold;

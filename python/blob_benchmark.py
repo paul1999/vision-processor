@@ -101,7 +101,7 @@ if __name__ == '__main__':
             print(f"Processing {video}")
             run_binary(args.binary, recorder, dataset, video, stdoutconsumer=stdoutprocessor)  # , ground_truth=video.with_suffix('.vision_processor.json')
 
-    threaded_field_iter(args.data_folder, consumer, workers=1, field_filter=args.field)
+    threaded_field_iter(args.data_folder, consumer, field_filter=args.field)  #, workers=1
 
     def errorStddev(error, sqError, amount):
         try:

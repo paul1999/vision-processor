@@ -18,6 +18,30 @@
 #include "pattern.h"
 
 
+//https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
+uint8_t Rgb2Hue(const Eigen::Vector3i& rgb) {
+	unsigned char rgbMin, rgbMax;
+
+	rgbMin = rgb.minCoeff();
+	rgbMax = rgb.maxCoeff();
+
+	uint8_t value = rgbMax;
+	if (value == 0)
+		return 0;
+
+	uint8_t saturation = (uint8_t)(255 * long(rgbMax - rgbMin) / value);
+	if (saturation == 0)
+		return 0;
+
+	if (rgbMax == rgb.x())
+		return 0 + 43 * (rgb.y() - rgb.z()) / (rgbMax - rgbMin);
+	else if (rgbMax == rgb.y())
+		return 85 + 43 * (rgb.z() - rgb.x()) / (rgbMax - rgbMin);
+	else
+		return 171 + 43 * (rgb.x() - rgb.y()) / (rgbMax - rgbMin);
+}
+
+
 BallHypothesis::BallHypothesis(const Resources& r, const Match* blob): blob(blob), pos(blob->pos) {
 	calcColorScore(r);
 }
@@ -81,7 +105,7 @@ bool BotHypothesis::isClipping(const BotHypothesis& other) const {
 }
 
 bool BotHypothesis::isClipping(const Resources& r, const BallHypothesis& ball) const {
-	const float clippedBallRadius = 0.48837 * r.perspective->field.ball_radius(); // a ball may clip up to 20% of the top-view area into the robot
+	const float clippedBallRadius = 0.48837f * r.perspective->field.ball_radius(); // a ball may clip up to 20% of the top-view area into the robot
 	Eigen::Vector2f diff = ball.pos - pos;
 	float sqDistance = diff.squaredNorm();
 	float minDistance = MIN_ROBOT_RADIUS + clippedBallRadius;
@@ -182,6 +206,28 @@ void DetectionBotHypothesis::calcBotId(const Resources& r) {
 			(((blobs[2]->color - green).squaredNorm() < (blobs[2]->color - pink).squaredNorm()? 1 : 0) << 2) +
 			(((blobs[3]->color - green).squaredNorm() < (blobs[3]->color - pink).squaredNorm() ? 1 : 0) << 1) +
 			((blobs[4]->color - green).squaredNorm() < (blobs[4]->color - pink).squaredNorm() ? 1 : 0)
+	];
+}
+
+HueBotHypothesis::HueBotHypothesis(const Resources& r, const Match* a, const Match* b, const Match* c, const Match* d, const Match* e): BotHypothesis(a, b, c, d, e) {
+	calcBotId(r);
+}
+
+void HueBotHypothesis::recalcPostColorCalib(const Resources& r) {}
+
+void HueBotHypothesis::calcBotId(const Resources& r) {
+	uint8_t hues[5] = {
+			Rgb2Hue(blobs[0]->color),
+			Rgb2Hue(blobs[1]->color),
+			Rgb2Hue(blobs[2]->color),
+			Rgb2Hue(blobs[3]->color),
+			Rgb2Hue(blobs[4]->color)
+	};
+	botId = (abs((int8_t)(hues[0] - r.blueHue)) < abs((int8_t)(hues[0] - r.yellowHue)) ? 16 : 0) + patternLUT[
+			(abs((int8_t)(hues[1] - r.greenHue)) < abs((int8_t)(hues[1] - r.pinkHue)) ? 8 : 0) +
+			(abs((int8_t)(hues[2] - r.greenHue)) < abs((int8_t)(hues[2] - r.pinkHue)) ? 4 : 0) +
+			(abs((int8_t)(hues[3] - r.greenHue)) < abs((int8_t)(hues[3] - r.pinkHue)) ? 2 : 0) +
+			(abs((int8_t)(hues[4] - r.greenHue)) < abs((int8_t)(hues[4] - r.pinkHue)) ? 1 : 0)
 	];
 }
 

@@ -314,6 +314,30 @@ static void thresholdAdaMedianOtsu(const int halfLineWidth, const Image& gray, I
 	}
 }
 
+static void fieldDetection(const int halfLineWidth, const Image& img, Image& thresholded) {
+	std::vector<cv::Mat> bgr(3);
+	cv::split(*img.cvRead(), bgr);
+
+	const int halfThresholdWidth = halfLineWidth*4+1;
+	cv::Mat median(img.height, img.width, CV_32FC1, 0.0f);
+	for(const cv::Mat& channel : bgr) {
+		cv::Mat channelmedian, dx, dy, mag, angle;
+		cv::medianBlur(channel, channelmedian, 2*halfThresholdWidth+1);
+		//TODO not entirely optimal
+		//cv::blur(channelmedian, channelmedian, {3, 3}, {-1, -1}, cv::BORDER_REPLICATE);
+		cv::spatialGradient(channelmedian, dx, dy, 3, cv::BORDER_REPLICATE);
+		dx.convertTo(dx, CV_32F);
+		dy.convertTo(dy, CV_32F);
+		cv::cartToPolar(dx, dy, mag, angle);
+		median += mag;
+	}
+
+	cv::Mat u8;
+	median.convertTo(u8, CV_8U);
+	cv::threshold(u8, *thresholded.cvWrite(), 0.0, 255.0, cv::THRESH_BINARY + cv::THRESH_OTSU);
+	//median.convertTo(*thresholded.cvWrite(), CV_8U);
+}
+
 static void thresholdAdaMedianCanny(const int halfLineWidth, const Image& gray, Image& thresholded) {
 	const int halfThresholdWidth = halfLineWidth*4+1;
 	cv::Mat median;

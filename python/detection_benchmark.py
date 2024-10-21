@@ -31,6 +31,9 @@ if __name__ == '__main__':
         types.add('y' + str(i))
         types.add('b' + str(i))
 
+    # [binary][dataset]
+    frametimes = defaultdict(lambda: defaultdict(lambda: 0))
+    frames = defaultdict(lambda: defaultdict(lambda: 0))
     # [binary][dataset][cam][video][type]
     truepositive_rates = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))))
     falsepositive_rates = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: 0)))))
@@ -64,6 +67,11 @@ if __name__ == '__main__':
                 binary = records.stem.split('.')[-1]
                 with records.open('r') as file:
                     detections[binary] = json.load(file)
+
+            for binary, d2 in detections.items():
+                frames[binary][dataset.folder.parent] += len(d2)
+                for detection in d2:
+                    frametimes[binary][dataset.folder.parent] += float(detection['t_sent']) - float(detection['t_capture'])
 
             with_manual = 'manual' in detections.keys()
             video_frames = max(len(detection_list) for detection_list in detections.values())
@@ -189,7 +197,12 @@ if __name__ == '__main__':
                 video_recall.append(recall)
                 video_precision.append(precision)
 
-            print(f"  Dataset {dataset.name: >11} Recall {recall: .4f} Precision {precision: .4f}")
+            try:
+                frametime = 1000 * frametimes[binary][dataset] / frames[binary][dataset]
+            except:
+                frametime = math.nan
+
+            print(f"  Dataset {dataset.name: >11} Recall {recall: .4f} Precision {precision: .4f} Frametime {frametime: .2f}ms")
 
         print(f"Video Recall {nanmean(video_recall): .4f} Precision {nanmean(video_precision): .4f}")
         print(f"Image Recall {nanmean(img_recall): .4f} Precision {nanmean(img_precision): .4f}")
