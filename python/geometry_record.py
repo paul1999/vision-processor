@@ -39,11 +39,12 @@ if __name__ == '__main__':
         del reference_geometry.geometry.calib[:]
 
         # TODO record score
-        run_binary(args.binary, recorder, dataset, dataset.field, geometry=reference_geometry) #, stdoutconsumer=lambda line: print(line, end='')
+        run_binary(args.binary, recorder, dataset, dataset.field, geometry=reference_geometry, stdoutconsumer=lambda line: print(line, end=''))
 
         geometries = recorder.subfield('geometry')
+        geometries = [geometry for geometry in geometries if len(geometry.calib) > 0]
 
-        if len(geometries[-1].calib) > 0:
+        if geometries:
             with (dataset.folder / ('geometry.' + args.binary.name + '.yml')).open('w') as file:
                 yaml.dump(MessageToDict(geometries[-1], preserving_proto_field_name=True), file)
         else:

@@ -22,6 +22,26 @@
 #include "driver/opencvdriver.h"
 
 template<>
+struct YAML::convert<Eigen::Vector2f> {
+	static YAML::Node encode(const Eigen::Vector2f& rhs) {
+		YAML::Node node;
+		node.push_back(rhs.x());
+		node.push_back(rhs.y());
+		return node;
+	}
+
+	static bool decode(const YAML::Node& node, Eigen::Vector2f& rhs) {
+		if(!node.IsSequence() || node.size() != 2) {
+			return false;
+		}
+
+		rhs.x() = node[0].as<float>();
+		rhs.y() = node[1].as<float>();
+		return true;
+	}
+};
+
+template<>
 struct YAML::convert<Eigen::Vector3i> {
 	static YAML::Node encode(const Eigen::Vector3i& rhs) {
 		YAML::Node node;
@@ -100,6 +120,7 @@ Resources::Resources(const YAML::Node& config) {
 	YAML::Node geometry = getOptional(config["geometry"]);
 	cameraAmount = geometry["camera_amount"].as<int>(1);
 	cameraHeight = geometry["camera_height"].as<double>(0.0);
+	lineCorners = geometry["line_corners"].as<std::vector<Eigen::Vector2f>>(std::vector<Eigen::Vector2f>());
 	fieldLineThreshold = geometry["field_line_threshold"].as<int>(5);
 	minLineSegmentLength = geometry["min_line_segment_length"].as<double>(10.0);
 	minMajorLineLength = geometry["min_major_line_length"].as<double>(0.5);

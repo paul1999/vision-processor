@@ -60,11 +60,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     recorder = VisionRecorder(args=args)
-    total_offset = defaultdict(lambda: [0.0, 0.0])
-    total_bot_error = defaultdict(lambda: 0.0)
-    total_bots = defaultdict(lambda: 0)
-    total_ball_error = defaultdict(lambda: 0.0)
-    total_balls = defaultdict(lambda: 0)
+    total_offset = defaultdict(lambda: defaultdict(lambda: [0.0, 0.0]))
+    total_bot_error = defaultdict(lambda: defaultdict(lambda: 0.0))
+    total_bots = defaultdict(lambda: defaultdict(lambda: 0))
+    total_ball_error = defaultdict(lambda: defaultdict(lambda: 0.0))
+    total_balls = defaultdict(lambda: defaultdict(lambda: 0))
 
     for field in args.data_folder.iterdir():
         if not field.is_dir():
@@ -132,26 +132,28 @@ if __name__ == '__main__':
 
                     print(f"  {balls_error / balls if balls > 0 else math.nan: .2f} mm for {balls} balls")
                     if balls > 0:
-                        total_ball_error[field] += balls_error
-                        total_offset[field][0] += balls_offset[0]
-                        total_offset[field][1] += balls_offset[1]
-                        total_balls[field] += balls
+                        total_ball_error[geometryname][field] += balls_error
+                        total_offset[geometryname][field][0] += balls_offset[0]
+                        total_offset[geometryname][field][1] += balls_offset[1]
+                        total_balls[geometryname][field] += balls
 
                     print(f"  {bots_error / bots if bots > 0 else math.nan: .2f} mm for {bots} bots")
                     if bots > 0:
-                        total_bot_error[field] += bots_error
-                        total_offset[field][0] += bots_offset[0]
-                        total_offset[field][1] += bots_offset[1]
-                        total_bots[field] += bots
+                        total_bot_error[geometryname][field] += bots_error
+                        total_offset[geometryname][field][0] += bots_offset[0]
+                        total_offset[geometryname][field][1] += bots_offset[1]
+                        total_bots[geometryname][field] += bots
 
-    global_bot_error = AvgValue()
-    global_balls_error = AvgValue()
-    for field in total_bot_error:
-        bot_error = total_bot_error[field] / total_bots[field]
-        ball_error = total_ball_error[field] / total_balls[field]
-        offset = math.sqrt((total_offset[field][0] / (total_bots[field] + total_balls[field]))**2 + (total_offset[field][1] / (total_bots[field] + total_balls[field]))**2)
-        print(f"  {field.name: >20}: {bot_error: .2f} mm for {total_bots[field]: >3} bots {ball_error: .2f} mm for {total_balls[field]: >3} balls offset: {offset}")
-        global_bot_error += bot_error
-        global_balls_error += ball_error
+    for geometryname in total_offset:
+        print(f"\n{geometryname}")
+        global_bot_error = AvgValue()
+        global_balls_error = AvgValue()
+        for field in total_bot_error[geometryname]:
+            bot_error = total_bot_error[geometryname][field] / total_bots[geometryname][field]
+            ball_error = total_ball_error[geometryname][field] / total_balls[geometryname][field]
+            offset = math.sqrt((total_offset[geometryname][field][0] / (total_bots[geometryname][field] + total_balls[geometryname][field]))**2 + (total_offset[geometryname][field][1] / (total_bots[geometryname][field] + total_balls[geometryname][field]))**2)
+            print(f"  {field.name: >20}: {bot_error: .2f} mm for {total_bots[geometryname][field]: >3} bots {ball_error: .2f} mm for {total_balls[geometryname][field]: >3} balls offset: {offset: .2f} mm")
+            global_bot_error += bot_error
+            global_balls_error += ball_error
 
-    print(f"Total: {global_bot_error} mm bots {global_balls_error} mm balls")
+        print(f"Total: {global_bot_error} mm bots {global_balls_error} mm balls")

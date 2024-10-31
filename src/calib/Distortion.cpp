@@ -114,10 +114,10 @@ bool calibrateDistortion(const std::vector<std::vector<Eigen::Vector2f>>& linePo
 
 	lm.minimize(k);
 
-	if(lm.info() != Eigen::ComputationInfo::Success) {
+	/*(lm.info() != Eigen::ComputationInfo::Success) {
 		std::cout << "[Distortion] Levenberg-Marquandt minimization failed with code, aborting calibration for this frame: " << lm.info() << std::endl;
 		return false;
-	}
+	}*/
 
 	//std::cout << "[Distortion] Determined parameters: distortion " << k(0) << " principal point " << k(1) << "|" << k(2) << std::endl;
 	if(k(1) < 0.0f || k(2) < 0.0f || k(1) >= model.size.x() || k(2) >= model.size.y()) {
