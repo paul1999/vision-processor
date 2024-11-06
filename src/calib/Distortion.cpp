@@ -71,15 +71,18 @@ static std::vector<float> lineError(const std::vector<Eigen::Vector2f>& undistor
 
 struct Functor : public Eigen::DenseFunctor<float> {
 	const std::vector<std::vector<Eigen::Vector2f>>& lines;
+	const bool calibPP;
 	CameraModel& reference;
 
-	explicit Functor(const std::vector<std::vector<Eigen::Vector2f>>& lines, CameraModel& model): lines(lines), reference(model) {}
+	explicit Functor(const std::vector<std::vector<Eigen::Vector2f>>& lines, CameraModel& model, const bool calibPP): lines(lines), reference(model), calibPP(calibPP) {}
 
 	int operator()(const InputType &x, ValueType& fvec) const {
 		CameraModel model = reference;
 		model.distortionK2 = x(0);
-		model.principalPoint.x() = x(1);
-		model.principalPoint.y() = x(2);
+		if(calibPP) {
+			model.principalPoint.x() = x(1);
+			model.principalPoint.y() = x(2);
+		}
 
 		int i = 0;
 		for(const std::vector<Eigen::Vector2f>& distorted : lines) {
@@ -102,15 +105,17 @@ struct Functor : public Eigen::DenseFunctor<float> {
 	}
 };
 
-bool calibrateDistortion(const std::vector<std::vector<Eigen::Vector2f>>& linePoints, CameraModel& model) {
-	Functor functor(linePoints, model);
+bool calibrateDistortion(const std::vector<std::vector<Eigen::Vector2f>>& linePoints, CameraModel& model, const bool calibPP) {
+	Functor functor(linePoints, model, calibPP);
 	//std::cout << "[Distortion] Lines: " << linePoints.size() << " with line points: " << functor.values() << std::endl;
 	Eigen::NumericalDiff<Functor> numDiff(functor);
 	Eigen::LevenbergMarquardt<Eigen::NumericalDiff<Functor>> lm(numDiff);
-	Eigen::VectorXf k(3);
+	Eigen::VectorXf k(calibPP ? 3 : 1);
 	k(0) = model.distortionK2;
-	k(1) = model.principalPoint.x();
-	k(2) = model.principalPoint.y();
+	if(calibPP) {
+		k(1) = model.principalPoint.x();
+		k(2) = model.principalPoint.y();
+	}
 
 	lm.minimize(k);
 
@@ -120,13 +125,15 @@ bool calibrateDistortion(const std::vector<std::vector<Eigen::Vector2f>>& linePo
 	}*/
 
 	//std::cout << "[Distortion] Determined parameters: distortion " << k(0) << " principal point " << k(1) << "|" << k(2) << std::endl;
-	if(k(1) < 0.0f || k(2) < 0.0f || k(1) >= model.size.x() || k(2) >= model.size.y()) {
+	if(calibPP && (k(1) < 0.0f || k(2) < 0.0f || k(1) >= model.size.x() || k(2) >= model.size.y())) {
 		std::cout << "[Distortion] Principal point outside of image, aborting calibration for this frame" << std::endl;
 		return false;
 	}
 
 	model.distortionK2 = k(0);
-	model.principalPoint.x() = k(1);
-	model.principalPoint.y() = k(2);
+	if(calibPP) {
+		model.principalPoint.x() = k(1);
+		model.principalPoint.y() = k(2);
+	}
 	return true;
 }

@@ -40,13 +40,15 @@ def is_video(path: Path) -> bool:
         return len(json.load(file)) > 1
 
 
-def reproject(args: argparse.Namespace, recorder: VisionRecorder, dataset: Dataset, geometryname: str, detectionsname: str) -> tuple[list[SSL_DetectionBall], list[SSL_DetectionRobot], list[SSL_DetectionRobot]]:
+def reproject(args: argparse.Namespace, recorder: VisionRecorder, dataset: Dataset, geometryname: str, detectionsname: str) -> tuple[list[SSL_DetectionBall], list[SSL_DetectionRobot], list[SSL_DetectionRobot], float]:
+    modelscore = [1.0]
     def score(line: str):
         if line.startswith('[Model score]'):
-            print(dataset.folder.name, line, end='')
+            modelscore[0] = float(line.split(' ')[2][:-1])
+            print(dataset.folder.name, modelscore, line, end='')
     run_binary(args.binary, recorder, dataset, dataset.field, geometry=load_geometry(dataset.folder / geometryname), ground_truth=dataset.folder / detectionsname, stdoutconsumer=score)
     detection = recorder.subfield('detection')[0]
-    return list(detection.balls), list(detection.robots_yellow), list(detection.robots_blue)
+    return list(detection.balls), list(detection.robots_yellow), list(detection.robots_blue), modelscore[0]
 
 
 def merge_bots(a: list[SSL_DetectionRobot], b: list[SSL_DetectionRobot]) -> list[tuple[SSL_DetectionRobot, SSL_DetectionRobot]]:
@@ -60,6 +62,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     recorder = VisionRecorder(args=args)
+    total_score = defaultdict(lambda: defaultdict(lambda: 0.0))
+    total_elements = defaultdict(lambda: defaultdict(lambda: 0))
     total_offset = defaultdict(lambda: defaultdict(lambda: [0.0, 0.0]))
     total_bot_error = defaultdict(lambda: defaultdict(lambda: 0.0))
     total_bots = defaultdict(lambda: defaultdict(lambda: 0))
@@ -85,6 +89,8 @@ if __name__ == '__main__':
                     print(f"Overlapping {detectionsname}: {geometryname}")
                     a_detection = reproject(args, recorder, a, geometryname, detectionsname)
                     b_detection = reproject(args, recorder, b, geometryname, detectionsname)
+                    total_score[geometryname][field] += a_detection[3] + b_detection[3]
+                    total_elements[geometryname][field] += 2
 
                     ball_pair_candidates = []
                     for a_ball in a_detection[0]:
@@ -148,12 +154,15 @@ if __name__ == '__main__':
         print(f"\n{geometryname}")
         global_bot_error = AvgValue()
         global_balls_error = AvgValue()
+        global_score = AvgValue(True)
         for field in total_bot_error[geometryname]:
             bot_error = total_bot_error[geometryname][field] / total_bots[geometryname][field]
             ball_error = total_ball_error[geometryname][field] / total_balls[geometryname][field]
             offset = math.sqrt((total_offset[geometryname][field][0] / (total_bots[geometryname][field] + total_balls[geometryname][field]))**2 + (total_offset[geometryname][field][1] / (total_bots[geometryname][field] + total_balls[geometryname][field]))**2)
-            print(f"  {field.name: >20}: {bot_error: .2f} mm for {total_bots[geometryname][field]: >3} bots {ball_error: .2f} mm for {total_balls[geometryname][field]: >3} balls offset: {offset: .2f} mm")
+            score = 1 - total_score[geometryname][field] / total_elements[geometryname][field]
+            print(f"  {field.name: >20}: {bot_error: .2f} mm for {total_bots[geometryname][field]: >3} bots {ball_error: .2f} mm for {total_balls[geometryname][field]: >3} balls, offset: {offset: .2f} mm, score {score: .4f}")
             global_bot_error += bot_error
             global_balls_error += ball_error
+            global_score += score
 
-        print(f"Total: {global_bot_error} mm bots {global_balls_error} mm balls")
+        print(f"Total: {global_bot_error} mm bots {global_balls_error} mm balls {global_score} score")

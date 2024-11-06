@@ -101,7 +101,7 @@ struct DirectGeometryFit : public Eigen::DenseFunctor<float> {
 	explicit DirectGeometryFit(const Resources& r, const std::vector<Eigen::Vector2f>& linePixels, const std::vector<std::vector<Eigen::Vector2f>>& mergedPixels, const CameraModel& model, const bool calibHeight): linePixels(linePixels), mergedPixels(mergedPixels), reference(model), calibHeight(calibHeight) {
 		fieldToLines(r, lines, arcs);
 
-		float stepSize = 10.f;
+		float stepSize = 100.f;
 		for(const std::pair<Eigen::Vector2f, Eigen::Vector2f>& line : lines) {
 			Eigen::Vector2f delta = line.second - line.first;
 			int steps = (int)(delta.norm() / stepSize);
@@ -296,7 +296,7 @@ float modelError(const Resources& r, const CameraModel& model, const Image& thre
 }
 
 static void thresholdCanny(const Resources& r, const int halfLineWidth, const Image& gray, Image& thresholded) {
-	cv::Canny(*gray.cvRead(), *thresholded.cvWrite(), r.fieldLineThreshold/2, r.fieldLineThreshold, halfLineWidth);
+	cv::Canny(*gray.cvRead(), *thresholded.cvWrite(), 64*(int)r.fieldLineThreshold, 128*(int)r.fieldLineThreshold, 5);
 }
 
 static void thresholdAdaMeanAnd(const Resources& r, const int halfLineWidth, const Image& bgr, Image& thresholded) {
@@ -737,7 +737,7 @@ struct PointGeometryFit : public Eigen::DenseFunctor<float> {
 	}
 };
 
-static bool cornerCalibration(const Resources& r, const std::vector<std::vector<Eigen::Vector2f>>& mergedPixels, const Image& thresholded, bool calibHeight, CameraModel& basicModel, bool calibDistortion) {
+static bool cornerCalibration(const Resources& r, const std::vector<std::vector<Eigen::Vector2f>>& mergedPixels, const Image& thresholded, bool calibHeight, CameraModel& basicModel, const bool calibDistortion, bool calibPP) {
 	std::vector<Eigen::Vector2f> edges = r.lineCorners;
 	std::sort(edges.begin(), edges.end(), [](const auto& l, const auto& r){ return r.y() > l.y() || (r.y() == l.y() && r.x() > l.x()); });
 	if(edges.size() != 4) {
@@ -764,7 +764,7 @@ static bool cornerCalibration(const Resources& r, const std::vector<std::vector<
 
 		for(int i = 0; i < 10; i++) {
 			if(calibDistortion)
-				calibrateDistortion(mergedPixels, model);
+				calibrateDistortion(mergedPixels, model, calibPP);
 
 			PointGeometryFit functor(r, edges, mergedPixels, model, calibHeight, false); //calibDistortion
 			Eigen::NumericalDiff<PointGeometryFit> numDiff(functor);
@@ -845,24 +845,14 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	Image thresholded(&PixelFormat::U8, gray.width, gray.height, gray.name);
 
 	//thresholdCanny(r, halfLineWidth, gray, thresholded);
-	//thresholdImage(r, gray, halfLineWidth, thresholded);
+	thresholdImage(r, gray, halfLineWidth, thresholded);
 	//thresholdAdaMeanAnd(r, halfLineWidth, bgr, thresholded);
-	thresholdAdaMedianOtsu(halfLineWidth, gray, thresholded);
+	//thresholdAdaMedianOtsu(halfLineWidth, gray, thresholded);
 	//thresholdAdaMedianCanny(halfLineWidth, gray, thresholded);
 	//medianGradientFieldDetection(halfLineWidth, bgr, thresholded);
 	//fieldDetection(halfLineWidth, bgr, thresholded);
 	//bgr.save(".pixels.png");
 	thresholded.save(".pixels.png");
-
-	//https://docs.opencv.org/4.x/da/d7f/tutorial_back_projection.html
-
-	//Direct calibration
-
-	//Intrinsic line calibration
-	//Extrinsic edge calibration
-	// Handgiven
-	// Catesian product
-	// Horizontal/Vertical separated
 
 	cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
 	cv::Mat4f linesMat;
@@ -912,6 +902,7 @@ void geometryCalibration(const Resources& r, const Image& img) {
 				if(data[x + y * thresholded.width]) {
 					for(unsigned int i = 0; i < compoundLines.size(); i++) {
 						if(dist(mergedLines[i].first, mergedLines[i].second) < thresholded.height/2)
+						//if(compoundLines[i].size() < 2)
 							continue;
 
 						for(const auto& segment : compoundLines[i]) {
@@ -935,7 +926,7 @@ void geometryCalibration(const Resources& r, const Image& img) {
 			cv::line(*cvBgr, {item.first}, {item.second}, CV_RGB(0, 0, 255));
 		}*/
 	}
-	bgr.save(".lines.png");
+	//bgr.save(".lines.png");
 
 	const bool calibHeight = r.cameraHeight == 0.0;
 	CameraModel model({thresholded.width, thresholded.height}, r.camId, r.cameraAmount, (float)r.cameraHeight, r.socket->getGeometry().field());
@@ -947,10 +938,11 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	//drawModel(r, thresholded, linePixels, model);
 	//thresholded.save(".initial.png");
 
-	//directMixedCalibration(r, mergedPixels, linePixels, calibHeight, model);
+	// TODO Horizontal/Vertical separated
 	//cornerCalibration(r, mergedPixels, linePixels, calibHeight, model, false);
 	//calibrateDistortion(mergedPixels, model);
-	cornerCalibration(r, mergedPixels, thresholded, calibHeight, model, true);
+	cornerCalibration(r, mergedPixels, thresholded, calibHeight, model, true, true);
+	//directMixedCalibration(r, mergedPixels, linePixels, calibHeight, model);
 
 	model.updateDerived();
 	int error = modelError(r, model, linePixels);
@@ -962,6 +954,6 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	r.socket->send(wrapper);
 
 	drawModel(r, thresholded, linePixels, model);
-	thresholded.save(".pixels.png");
+	//thresholded.save(".pixels.png");
 	//thresholded.save(".otsu.png");
 }
