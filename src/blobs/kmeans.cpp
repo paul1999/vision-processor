@@ -87,8 +87,7 @@ bool kMeans(const Eigen::Vector3i& contrast, const std::vector<Eigen::Vector3i>&
 		c2 = sum2 / n2;
 	}
 
-	float mergeRange = (outGroupDiff - inGroupDiff) / 2.0f;
-	if((float)(c1 - c2).norm() < mergeRange) {
+	if((float)(c1 - c2).norm() < outGroupDiff/2.0f) {
 		//std::cerr << "   Skipping Update for " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
 		c1 = c1backup;
 		c2 = c2backup;
