@@ -78,17 +78,6 @@ private:
 };
 
 
-class HueBotHypothesis: public BotHypothesis {
-public:
-	HueBotHypothesis(const Resources& r, const Match* a, const Match* b, const Match* c, const Match* d, const Match* e);
-
-	void recalcPostColorCalib(const Resources &r) override;
-
-private:
-	inline void calcBotId(const Resources& r);
-};
-
-
 class TrackedBotHypothesis: public BotHypothesis {
 public:
 	TrackedBotHypothesis(const Resources& r, const TrackingState& tracked, const Eigen::Vector3f& trackedPosition, const Match* a, const Match* b, const Match* c, const Match* d, const Match* e);

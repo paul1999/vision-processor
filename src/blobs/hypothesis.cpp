@@ -209,28 +209,6 @@ void DetectionBotHypothesis::calcBotId(const Resources& r) {
 	];
 }
 
-HueBotHypothesis::HueBotHypothesis(const Resources& r, const Match* a, const Match* b, const Match* c, const Match* d, const Match* e): BotHypothesis(a, b, c, d, e) {
-	calcBotId(r);
-}
-
-void HueBotHypothesis::recalcPostColorCalib(const Resources& r) {}
-
-void HueBotHypothesis::calcBotId(const Resources& r) {
-	uint8_t hues[5] = {
-			Rgb2Hue(blobs[0]->color),
-			Rgb2Hue(blobs[1]->color),
-			Rgb2Hue(blobs[2]->color),
-			Rgb2Hue(blobs[3]->color),
-			Rgb2Hue(blobs[4]->color)
-	};
-	botId = (abs((int8_t)(hues[0] - r.blueHue)) < abs((int8_t)(hues[0] - r.yellowHue)) ? 16 : 0) + patternLUT[
-			(abs((int8_t)(hues[1] - r.greenHue)) < abs((int8_t)(hues[1] - r.pinkHue)) ? 8 : 0) +
-			(abs((int8_t)(hues[2] - r.greenHue)) < abs((int8_t)(hues[2] - r.pinkHue)) ? 4 : 0) +
-			(abs((int8_t)(hues[3] - r.greenHue)) < abs((int8_t)(hues[3] - r.pinkHue)) ? 2 : 0) +
-			(abs((int8_t)(hues[4] - r.greenHue)) < abs((int8_t)(hues[4] - r.pinkHue)) ? 1 : 0)
-	];
-}
-
 
 TrackedBotHypothesis::TrackedBotHypothesis(const Resources& r, const TrackingState& tracked, const Eigen::Vector3f& trackedPosition, const Match* a, const Match* b, const Match* c, const Match* d, const Match* e): BotHypothesis(a, b, c, d, e), trackedScore(tracked.confidence), trackedPosition(trackedPosition) {
 	botId = tracked.id;

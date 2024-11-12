@@ -22,11 +22,11 @@ typedef struct __attribute__ ((packed)) {
 	float f;       // 1/(focal length)
 	float p[2];    // principal point
 	float d;       // distortion
-	float r[9]; // rotation matrix
+	float r[9];    // rotation matrix
 	float c[3];    // camera position
-	int field[2]; // field size incl. boundary in cm
-	float fInv;
-	float rInv[9];
+	int field[2];  // field size incl. boundary in cm
+	float fInv;    // focal length
+	float rInv[9]; // inverted rotation matrix
 } Perspective;
 
 inline float2 field2image(const Perspective p, float3 fieldpos) {
@@ -53,33 +53,19 @@ inline float2 field2image(const Perspective p, float3 fieldpos) {
 const sampler_t sampler = CLK_FILTER_LINEAR | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE;
 
 kernel void perspective(read_only image2d_t in, write_only image2d_t out, const Perspective perspective, const float maxRobotHeight, const float fieldScale, const float fieldOffsetX, const float fieldOffsetY) {
-	//float4 color = read_imagef(in, sampler, field2image(perspective, (float3)(get_global_id(0)*fieldScale + fieldOffsetX, get_global_id(1)*fieldScale + fieldOffsetY, maxRobotHeight)));
-	//write_imagef(out, (int2)(get_global_id(0), get_global_id(1)), color);
-	//TODO 0.0f - 1.0f
-	/*write_imagef(out, (int2)(get_global_id(0), get_global_id(1)), (float4)(
-			(2.f*color.r - color.g - color.b + 2.f) * 0.25f,
-			(2.f*color.g - color.r - color.b + 2.f) * 0.25f,
-			(2.f*color.b - color.r - color.g + 2.f) * 0.25f,
-			color.a
-	));*/
-	/*float4 dcolor;
-	dcolor.r = color.r/2 - color.g/4 - color.b/4;
-	dcolor.g = color.g/2 - color.r/4 - color.b/4;
-	dcolor.b = color.b/2 - color.r/4 - color.g/4;
-	dcolor.a = color.a;
-	write_imagef(out, (int2)(get_global_id(0), get_global_id(1)), dcolor);*/
-
 	uint4 color = read_imageui(in, sampler, field2image(perspective, (float3)(get_global_id(0)*fieldScale + fieldOffsetX, get_global_id(1)*fieldScale + fieldOffsetY, maxRobotHeight)));
+	// RGB
 	//write_imageui(out, (int2)(get_global_id(0), get_global_id(1)), color);
-	//color.r = 0.1f*pow(color.r, 1.41f); // 21 * x^0.45
-	//color.g = 0.1f*pow(color.g, 1.41f); // 0.10 * x^1.41
-	//color.b = 0.1f*pow(color.b, 1.41f);
+
+	// dRGB
 	write_imageui(out, (int2)(get_global_id(0), get_global_id(1)), (uint4)(
 			(2*color.r - color.g - color.b + 510) / 4,
 			(2*color.g - color.r - color.b + 510) / 4,
 			(2*color.b - color.r - color.g + 510) / 4,
 			255
 	));
+
+	// YUV
 	/*write_imageui(out, (int2)(get_global_id(0), get_global_id(1)), (uint4)(
 			128,
 			convert_uchar_sat((-38*(int)color.r + -74*(int)color.g + 112*(int)color.b) / 256 + 128),

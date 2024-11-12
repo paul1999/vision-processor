@@ -21,21 +21,21 @@
 
 class MVImpactImage : public Image {
 public:
-	explicit MVImpactImage(const std::shared_ptr<Request>& request): Image(&PixelFormat::RGGB8, request->imageWidth.read(), request->imageHeight.read(), (double)request->infoTimeStamp_us.read() / 1e6, (uint8_t*)request->imageData.read()), request(request) {}
+	explicit MVImpactImage(const std::shared_ptr<Request>& request): Image(&PixelFormat::RGGB8, request->imageWidth.read()/2, request->imageHeight.read()/2, (double)request->infoTimeStamp_us.read() / 1e6, (uint8_t*)request->imageData.read()), request(request) {}
 
 private:
 	std::shared_ptr<Request> request;
 };
 
 
-MVImpactDriver::MVImpactDriver(const int id): devMgr(mvIMPACT::acquire::DeviceManager()) {
+MVImpactDriver::MVImpactDriver(const int id) {
 	while(devMgr.deviceCount() <= id) {
 		std::cerr << "[mvIMPACT] Waiting for cam: " << devMgr.deviceCount() << "/" << (id+1) << std::endl;
-		devMgr.updateDeviceList();
 		sleep(1);
+		devMgr.updateDeviceList();
 	}
-
 	device = devMgr[id];
+	device->userControlledImageProcessingEnable.write(TBoolean::bFalse);
 
 	try {
 		device->open();
@@ -44,17 +44,17 @@ MVImpactDriver::MVImpactDriver(const int id): devMgr(mvIMPACT::acquire::DeviceMa
 		exit(1);
 	}
 
-	GenICam::ImageFormatControl control(device);
-	control.pixelFormat.writeS("BayerRG8");
-	control.mvSensorDigitizationBitDepth.writeS("Bpp10");
+	SettingsBlueFOX settings(device);
+	settings.cameraSetting.restoreDefault();
+	settings.imageProcessing.restoreDefault();
+	settings.imageDestination.restoreDefault();
+	settings.cameraSetting.autoExposeControl.write(TAutoExposureControl::aecOn);
+	settings.cameraSetting.autoGainControl.write(TAutoGainControl::agcOn);
+	settings.cameraSetting.pixelFormat.write(TImageBufferPixelFormat::ibpfMono8);
+	settings.imageProcessing.whiteBalanceCalibration.write(TWhiteBalanceCalibrationMode::wbcmNextFrame);
+	settings.imageDestination.pixelFormat.write(TImageDestinationPixelFormat::idpfRaw);
 
-	ImageProcessing proc(device);
-	proc.restoreDefault();
-
-	ImageDestination idest(device);
-	idest.restoreDefault();
-
-	//TODO user supplied memory functionality to prevent copies https://assets.balluff.com/documents/DRF_957352_AA_000/CaptureToUserMemory_8cpp-example.html
+	//TODO user supplied memory functionality to prevent copies https://wassets.balluff.com/documents/DRF_957352_AA_000/CaptureToUserMemory_8cpp-example.html
 
 	provider = std::make_unique<mvIMPACT::acquire::helper::RequestProvider>(device);
 	provider->acquisitionStart();

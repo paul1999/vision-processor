@@ -61,30 +61,6 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, write_onl
 	float4 stddev = native_sqrt((convert_float4(s2) - convert_float4(s1)*convert_float4(s1)/n) / n);
 	//float4 stddev = native_sqrt(n*convert_float4(s2) - convert_float4(s1)*convert_float4(s1)) / convert_float(n);
 
-	/*uchar3 hsv;
-	uchar rgbMin = min(min(color.x, color.y), color.z);
-	hsv.z = max(max(color.x, color.y), color.z);
-	if (hsv.z == 0) {
-		hsv.x = 0;
-		hsv.y = 0;
-	} else {
-		uchar span = hsv.z - rgbMin;
-		hsv.y = convert_uchar_sat(255 * convert_int(span) / hsv.z);
-		if (hsv.y == 0) {
-			hsv.x = 0;
-		} else {
-			if (hsv.z == color.x)
-				hsv.x = 0 + 43 * (color.y - color.z) / span;
-			else if (hsv.z == color.y)
-				hsv.x = 85 + 43 * (color.z - color.x) / span;
-			else
-				hsv.x = 171 + 43 * (color.x - color.y) / span;
-		}
-	}*/
-
-	//if(hsv.y < sThreshold || hsv.z < vThreshold)
-	//	return;
-
 	//write_imagef(score, pos, -(stddev.x + stddev.y + stddev.z));
 	//write_imagef(score, pos, convert_float(color.x)-256.f-(stddev.x + stddev.y + stddev.z));
 	write_imagef(score, pos, circScore / (stddev.x + stddev.y + stddev.z));

@@ -123,8 +123,6 @@ Resources::Resources(const YAML::Node& config) {
 	lineCorners = geometry["line_corners"].as<std::vector<Eigen::Vector2f>>(std::vector<Eigen::Vector2f>());
 	fieldLineThreshold = geometry["field_line_threshold"].as<int>(5);
 	minLineSegmentLength = geometry["min_line_segment_length"].as<double>(10.0);
-	minMajorLineLength = geometry["min_major_line_length"].as<double>(0.5);
-	maxIntersectionDistance = geometry["max_intersection_distance"].as<double>(0.2);
 	maxLineSegmentOffset = geometry["max_line_segment_offset"].as<double>(10.0);
 	maxLineSegmentAngle = geometry["max_line_segment_angle"].as<double>(3.0) * M_PI/180.0;
 

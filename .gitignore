@@ -13,9 +13,11 @@ __pycache__
 
 #Output binaries
 vision_processor
+blob_benchmark
 geometry_benchmark
 
 #CMake files
+/build
 .cmake
 CMakeFiles
 cmake_install.cmake
@@ -24,6 +26,3 @@ CMakeCache.txt
 # CLion IDE
 /.idea
 /cmake-build-*
-
-# Additional config files
-config*.yml

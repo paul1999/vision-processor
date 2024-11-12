@@ -7,12 +7,14 @@ camera:
   # Camera driver type. Availability depending on libraries installed.
   # Existing: SPINNAKER (FLIR cameras), MVIMPACT (Bluefox3 cameras), OPENCV(files, v4l2 cameras)
   #driver: SPINNAKER
+
   # Spinnaker, mvIMPACT or OpenCV(v4l2) camera id
   #id: 0
-  # OpenCV camera device, image or video file path (if not set id is used instead)
+  # OpenCV camera device, image or video file path (if unset id is used instead)
   #path: /dev/video0
+
   # Spinnaker camera exposure time in ms to adjust brightness. Higher values lead to more motion blur.
-  # Camera framerate will drop if set equal to or higher than the frametime (1 / fps_cam).
+  # Camera frame rate will drop if set equal to or higher than the frame time (1 / fps_cam).
   # 0.0 = automatic exposure
   #exposure: 0.0
   # Spinnaker camera gain to adjust brightness. Higher values lead to more noise.
@@ -28,6 +30,16 @@ geometry:
   # Camera height above field in mm
   # 0.0 = automated camera height calibration, this does not work if the camera looks perpendicular to the field
   #camera_height: 0.0
+
+  # Field line crossings at the edges of camera extent in pixels from the top left image corner.
+  # Goal line/Touch line crossings on single camera fields
+  # Halfway line/Touch lines/Goal line crossings on dual camera fields...
+  #line_corners:
+  #- [0 , 1000]
+  #- [0 , 0]
+  #- [1000, 0]
+  #- [1000, 1000]
+
   # Minimum brightness difference to surrounding pixels for the classification as field line pixel (0 - 255)
   #field_line_threshold: 5
   # Minimum length of line segments to ensure angular stability in pixels
@@ -36,10 +48,6 @@ geometry:
   #max_line_segment_offset: 10.0
   # Maximum relative angle of line segments for merging in °
   #max_line_segment_angle: 3.0
-  # Minimum length for classifying field lines as major (fraction of the image size)
-  #min_major_line_length: 0.5
-  # Maximum field line intersection distance from the visible image plane (fraction of the image size)
-  #max_intersection_distance: 0.2
 
 thresholds:
   # Minimum mean cosine similarity (not normalized) of the blob border gradient (0 - 195075.0)
@@ -47,7 +55,7 @@ thresholds:
   # Minimum circularity/(3*stddev) blob score
   #score: 0.0
 
-  # Max blobs
+  # Maximum amount of blobs processed per frame. Should not be necessary to adjust this value.
   #blobs: 2000
 
   # Minimum bot confidence (0.0 - 1.0)

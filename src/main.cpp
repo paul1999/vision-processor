@@ -40,107 +40,6 @@ struct __attribute__ ((packed)) CLMatch {
 	auto operator<=>(const CLMatch&) const = default;
 };
 
-
-void generateCartesianTrackedBotHypotheses(const Resources& r, std::list<std::unique_ptr<BotHypothesis>>& bots, std::vector<Match>& matches, KDTree& blobs, const double currentTimestamp) {
-	std::vector<Match*> botBlobs;
-	for (const auto& camTracked : r.socket->getTrackedObjects()) { //TODO Concurrent Modification possible?
-		for (const auto& tracked : camTracked.second) {
-			if(tracked.id == -1)
-				continue;
-
-			auto timeDelta = (float)(currentTimestamp - tracked.timestamp);
-			Eigen::Vector2f reprojectedPosition = r.perspective->model.image2field(r.perspective->model.field2image({tracked.x, tracked.y, tracked.z}), r.gcSocket->maxBotHeight).head<2>();
-			Eigen::Vector3f trackedPosition = Eigen::Vector3f(reprojectedPosition.x(), reprojectedPosition.y(), tracked.w) + Eigen::Vector3f(tracked.vx, tracked.vy, tracked.vw) * timeDelta;
-
-			timeDelta = std::min(timeDelta, 0.05f); //prevent runtime escalation when FPS drop below 20 FPS (likely due to excessive timeDelta)
-			//Double acceleration due to velocity determination from two frame difference
-			float blobSearchRadius = (float)r.maxBotAcceleration * timeDelta * timeDelta + r.perspective->field.max_robot_radius();
-
-			float bestBotScore = 0.0f;
-			std::unique_ptr<BotHypothesis> bestBot = nullptr;
-
-			botBlobs.clear();
-			botBlobs.push_back(nullptr);
-			blobs.rangeSearch(botBlobs, trackedPosition.head<2>(), blobSearchRadius);
-			for(Match* const& a : botBlobs) {
-				for(Match* const& b : botBlobs) {
-					if(b != nullptr && a == b)
-						continue;
-
-					for(Match* const& c : botBlobs) {
-						if(c != nullptr && (a == c || b == c))
-							continue;
-
-						for(Match* const& d : botBlobs) {
-							if(d != nullptr && (a == d || b == d || c == d))
-								continue;
-
-							for(Match* const& e : botBlobs) {
-								if (e != nullptr && (a == e || b == e || c == e || d == e))
-									continue;
-
-								std::unique_ptr<BotHypothesis> bot = std::make_unique<TrackedBotHypothesis>(r, tracked, trackedPosition, a, b, c, d, e);
-								if(bot->score > bestBotScore) {
-									bestBotScore = bot->score;
-									bestBot = std::move(bot);
-								}
-							}
-						}
-					}
-				}
-			}
-
-			if(bestBot == nullptr)
-				continue;
-
-			bots.push_back(std::move(bestBot));
-		}
-	}
-}
-
-void generateCartesianBotHypotheses(const Resources& r, std::list<std::unique_ptr<BotHypothesis>>& bots, std::vector<Match>& matches, KDTree& blobs) {
-	std::vector<Match*> botBlobs;
-	for(int i = 0; i < blobs.getSize(); i++) {
-		Match& blob = matches[i];
-
-		float bestBotScore = 0.0f;
-		std::unique_ptr<BotHypothesis> bestBot = nullptr;
-
-		botBlobs.clear();
-		blobs.rangeSearch(botBlobs, blob.pos, r.perspective->field.max_robot_radius());
-		if(botBlobs.size() < 4)
-			continue;
-
-		for(Match* const& a : botBlobs) {
-			for(Match* const& b : botBlobs) {
-				if(a == b)
-					continue;
-
-				for(Match* const& c : botBlobs) {
-					if(a == c || b == c)
-						continue;
-
-					for(Match* const& d : botBlobs) {
-						if(a == d || b == d || c == d)
-							continue;
-
-						std::unique_ptr<BotHypothesis> bot = std::make_unique<DetectionBotHypothesis>(r, &blob, a, b, c, d);
-						if(bot->score > bestBotScore) {
-							bestBotScore = bot->score;
-							bestBot = std::move(bot);
-						}
-					}
-				}
-			}
-		}
-
-		if(bestBot == nullptr)
-			continue;
-
-		bots.push_back(std::move(bestBot));
-	}
-}
-
 void generateAngleSortedBotHypotheses(const Resources& r, std::list<std::unique_ptr<BotHypothesis>>& bots, std::vector<Match>& matches, KDTree& blobs) {
 	std::vector<Match*> botBlobs;
 	for(int i = 0; i < blobs.getSize(); i++) {
@@ -179,42 +78,6 @@ void generateAngleSortedBotHypotheses(const Resources& r, std::list<std::unique_
 	}
 }
 
-void generateAngleSortedHueBotHypotheses(const Resources& r, std::list<std::unique_ptr<BotHypothesis>>& bots, std::vector<Match>& centerBlobs, KDTree& sideBlobs) {
-	std::vector<Match*> botBlobs;
-	for(Match& blob : centerBlobs) {
-		float bestBotScore = 0.0f;
-		std::unique_ptr<BotHypothesis> bestBot = nullptr;
-
-		botBlobs.clear();
-		sideBlobs.rangeSearch(botBlobs, blob.pos, r.perspective->field.max_robot_radius());
-		if(botBlobs.size() < 4)
-			continue;
-
-		std::sort(botBlobs.begin(), botBlobs.end(), [&](const Match* a, const Match* b) -> bool {
-			Eigen::Vector2f aDiff = a->pos - blob.pos;
-			Eigen::Vector2f bDiff = b->pos - blob.pos;
-			return atan2f(aDiff.y(), aDiff.x()) < atan2f(bDiff.y(), bDiff.x());
-		});
-
-		const int size = (int)botBlobs.size();
-		for(int a = 0; a < size; a++) {
-			for(int b = a+1; b < a+size-2; b++) {
-				for(int c = b+1; c < a+size-1; c++) {
-					for(int d = c+1; d < a+size; d++) {
-						std::unique_ptr<BotHypothesis> bot = std::make_unique<HueBotHypothesis>(r, &blob, botBlobs[a], botBlobs[b%size], botBlobs[c%size], botBlobs[d%size]);
-						if(bot->score > bestBotScore) {
-							bestBotScore = bot->score;
-							bestBot = std::move(bot);
-						}
-					}
-				}
-			}
-		}
-
-		bots.push_back(std::move(bestBot));
-	}
-}
-
 void generateRadiusSearchTrackedBotHypotheses(const Resources& r, std::list<std::unique_ptr<BotHypothesis>>& bots, std::vector<Match>& matches, KDTree& blobs, const double currentTimestamp) {
 	std::vector<Match*> botBlobs[5];
 	for (const auto& camTracked : r.socket->getTrackedObjects()) { //TODO Concurrent Modification possible?
@@ -228,7 +91,6 @@ void generateRadiusSearchTrackedBotHypotheses(const Resources& r, std::list<std:
 			Eigen::Rotation2Df rotation(trackedPosition.z());
 
 			timeDelta = std::min(timeDelta, 0.05f); //prevent runtime escalation when FPS drop below 20 FPS (likely due to excessive timeDelta)
-			//TODO QUADRUPLE?
 			//Double acceleration due to velocity determination from two frame difference
 			float blobSearchRadius = (float)r.maxBotAcceleration * timeDelta * timeDelta + (float)r.minTrackingRadius;
 
@@ -336,16 +198,6 @@ void generateNonclippingBallHypotheses(const Resources& r, const std::list<std::
 	}
 }
 
-/*static void bgrDrawBlobs(const Resources& r, Image& bgr, const std::list<CLMatch>& matches, const RGB& color) {
-	auto bgrMap = bgr.cvReadWrite();
-
-	for(const CLMatch& match : matches) {
-		V2 pos = r.perspective->field2image({(float)match.x, (float)match.y, r.gcSocket->maxBotHeight});
-		cv::drawMarker(*bgrMap, cv::Point(2*pos.x, 2*pos.y), CV_RGB(color.r, color.g, color.b), cv::MARKER_CROSS, 10);
-		//cv::putText(*bgrMap, std::to_string((int)(match.score*100)) + " h" + std::to_string((int)hsv.r) + "s" + std::to_string((int)hsv.g) + "v" + std::to_string((int)hsv.b), cv::Point(2*pos.x, 2*pos.y), cv::FONT_HERSHEY_SIMPLEX, 0.4, CV_RGB(color.r, color.g, color.b));
-	}
-}*/
-
 static inline void updateColor(const Resources& r, const Eigen::Vector3i& reference, const Eigen::Vector3i& oldColor, Eigen::Vector3i& color) {
 	const float updateForce = 1.0f - r.referenceForce - r.historyForce;
 	color = (r.referenceForce*reference.cast<float>() + r.historyForce*oldColor.cast<float>() + updateForce*color.cast<float>()).cast<int>();
@@ -450,15 +302,10 @@ int main(int argc, char* argv[]) {
 		//TODO better type switching
 		OpenCL::await(img->format == &PixelFormat::RGGB8 ? rggb2img : bgr2img, cl::EnqueueArgs(cl::NDRange(clImg->width, clImg->height)), img->buffer, clImg->image);
 
-		//std::shared_ptr<Image> mask = std::make_shared<Image>(&PixelFormat::U8, img->width, img->height);
-		//OpenCL::wait(r.openCl->run(r.bgkernel, cl::EnqueueArgs(cl::NDRange(img->width, img->height)), img->buffer, bg->buffer, mask->buffer, img->format->stride, img->format->rowStride, (uint8_t)16)); //TODO adaptive threshold
-		//bgsub->apply(*img->cvRead(), *mask->cvWrite());
-
 		if(r.perspective->geometryVersion) {
 			cl::NDRange visibleFieldRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1]);
 			std::shared_ptr<CLImage> flat = r.openCl->acquire(&PixelFormat::RGBA8, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 			OpenCL::await(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg->image, flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]);
-			//cv::GaussianBlur(flat.read<RGBA>().cv, blurred.write<RGBA>().cv, {5, 5}, 0, 0, cv::BORDER_REPLICATE);
 			std::shared_ptr<CLImage> color = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 			OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale)/3);
 			std::shared_ptr<CLImage> colorHor = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
@@ -466,7 +313,7 @@ int main(int argc, char* argv[]) {
 			std::shared_ptr<CLImage> colorSat = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 			OpenCL::await(satVerticalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0])), colorHor->image, colorSat->image);
 			std::shared_ptr<CLImage> circ = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale)); //TODO testing at robocup with MINBLOBRADIUS? COMPARE! , (int)floor(r.minBlobRadius/r.perspective->fieldScale)
+			OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale));
 
 			if(r.debugImages) {
 				flat->save(".perspective." + std::to_string(frameId) + ".png");
@@ -483,13 +330,11 @@ int main(int argc, char* argv[]) {
 			}
 			CLArray matchArray(sizeof(CLMatch) * r.maxBlobs);
 			OpenCL::await(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, (float)r.minScore, (int)floor(r.perspective->minBlobRadius/r.perspective->fieldScale), r.maxBlobs); //TODO borked minScore and radius at robocup?
-			//std::cout << "[match filtering] time " << (getTime() - startTime) * 1000.0 << " ms" << std::endl;
 
 			std::vector<Match> matches; //Same lifetime as KDTree required
 			{
 				CLMap<int> counterMap = counter.read<int>();
 				CLMap<CLMatch> matchMap = matchArray.read<CLMatch>();
-				//std::cerr << (flat->width*flat->height - (counterMap[2] + counterMap[1] + counterMap[0])) << "circScore " << counterMap[2] << "circPeak " << counterMap[1] << "score " << counterMap[0] << std::endl;
 				const int matchAmount = std::min(r.maxBlobs, counterMap[0]);
 				matches.reserve(matchAmount);
 
@@ -508,45 +353,20 @@ int main(int argc, char* argv[]) {
 					std::cerr << "[blob] max blob amount reached: " << counterMap[0] << "/" << r.maxBlobs << std::endl;
 			}
 
-			KDTree blobs = matches.empty() ? KDTree() : KDTree(&matches[0]);
-			for(unsigned int i = 1; i < matches.size(); i++)
-				blobs.insert(&matches[i]);
-
-			/*std::vector<Match> centerBlobs;
-			std::vector<Match> ballBlobs;
-			KDTree sideBlobs;
-			for(Match& match : matches) {
-				uint8_t hue = Rgb2Hue(match.color);
-				int orangeDiff = abs((int8_t)(hue - r.orangeHue));
-				int yellowDiff = abs((int8_t)(hue - r.yellowHue));
-				int blueDiff = abs((int8_t)(hue - r.blueHue));
-				int greenDiff = abs((int8_t)(hue - r.greenHue));
-				int pinkDiff = abs((int8_t)(hue - r.pinkHue));
-				int minDiff = std::min(std::min(orangeDiff, std::min(yellowDiff, blueDiff)), std::min(greenDiff, pinkDiff));
-				if(orangeDiff == minDiff)
-					ballBlobs.push_back(match);
-				else if(yellowDiff == minDiff || blueDiff == minDiff)
-					centerBlobs.push_back(match);
-				else {
-					if(sideBlobs.getSize() == 0)
-						sideBlobs = KDTree(&match);
-					else
-						sideBlobs.insert(&match);
-				}
-			}*/
-
 			std::list<std::unique_ptr<BotHypothesis>> botHypotheses;
-			//generateCartesianTrackedBotHypotheses(r, botHypotheses, matches, blobs, startTime);
-			generateRadiusSearchTrackedBotHypotheses(r, botHypotheses, matches, blobs, startTime);
-			//generateCartesianBotHypotheses(r, botHypotheses, matches, blobs);
-			generateAngleSortedBotHypotheses(r, botHypotheses, matches, blobs);
-			/*if(sideBlobs.getSize() > 0)
-				generateAngleSortedHueBotHypotheses(r, botHypotheses, centerBlobs, sideBlobs);*/
-			filterHypothesesScore(botHypotheses, r.minBotConfidence);
-			filterClippingBotBotHypotheses(botHypotheses);
 			std::list<std::unique_ptr<BallHypothesis>> ballHypotheses;
-			generateNonclippingBallHypotheses(r, botHypotheses, matches, ballHypotheses);
-			//generateNonclippingBallHypotheses(r, botHypotheses, ballBlobs, ballHypotheses);
+
+			if(!matches.empty()) {
+				KDTree blobs = KDTree(&matches[0]);
+				for(unsigned int i = 1; i < matches.size(); i++)
+					blobs.insert(&matches[i]);
+
+				generateRadiusSearchTrackedBotHypotheses(r, botHypotheses, matches, blobs, startTime);
+				generateAngleSortedBotHypotheses(r, botHypotheses, matches, blobs);
+				filterHypothesesScore(botHypotheses, r.minBotConfidence);
+				filterClippingBotBotHypotheses(botHypotheses);
+				generateNonclippingBallHypotheses(r, botHypotheses, matches, ballHypotheses);
+			}
 
 			updateColors(r, botHypotheses, ballHypotheses);
 			for (auto& bot : botHypotheses)
@@ -583,7 +403,7 @@ int main(int argc, char* argv[]) {
 			r.socket->send(wrapper);
 
 			if(processingTime > r.camera->expectedFrametime())
-				std::cout << "[main] frame time overrun: " << processingTime * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
+				std::cout << "[main] frame time overrun: " << processingTime * 1000.0 << " ms " << matches.size() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
 
 #if BENCHMARK
 			std::cout << "[main] time " << processingTime * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;

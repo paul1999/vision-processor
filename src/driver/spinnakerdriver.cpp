@@ -17,6 +17,8 @@
 
 #include "spinnakerdriver.h"
 
+#define CATCH_SPINNAKER(f) try { f; } catch (Spinnaker::Exception &e) { std::cerr << "[Spinnaker] Could not set parameter: " << e.GetFullErrorMessage() << std::endl; }
+
 
 class SpinnakerImage : public Image {
 public:
@@ -52,44 +54,47 @@ SpinnakerDriver::SpinnakerDriver(int id, double exposure, double gain, WhiteBala
 		sleep(1);
 	}
 
-	pCam->TriggerMode.SetValue(Spinnaker::TriggerMode_Off);
-	pCam->AcquisitionMode.SetValue(Spinnaker::AcquisitionMode_Continuous);
-	pCam->PixelFormat.SetValue(Spinnaker::PixelFormat_BayerRG8);
-	pCam->GammaEnable.SetValue(false);
-	pCam->AcquisitionFrameRateEnable.SetValue(false);
+	CATCH_SPINNAKER(pCam->TriggerMode.SetValue(Spinnaker::TriggerMode_Off))
+	CATCH_SPINNAKER(pCam->AcquisitionMode.SetValue(Spinnaker::AcquisitionMode_Continuous))
+	CATCH_SPINNAKER(pCam->PixelFormat.SetValue(Spinnaker::PixelFormat_BayerRG8))
+	CATCH_SPINNAKER(pCam->GammaEnable.SetValue(false))
+	CATCH_SPINNAKER(pCam->AcquisitionFrameRateEnable.SetValue(false))
 	/*pCam->GammaEnable.SetValue(true);
 	pCam->Gamma.SetValue(0.45);*/
 
 	if(exposure == 0.0) {
-		pCam->AutoExposureControlPriority.SetValue(Spinnaker::AutoExposureControlPriority_Gain);
-		pCam->AutoExposureMeteringMode.SetValue(Spinnaker::AutoExposureMeteringMode_Average);
-		pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Continuous);
+		CATCH_SPINNAKER(pCam->AutoExposureMeteringMode.SetValue(Spinnaker::AutoExposureMeteringMode_Average))
+		CATCH_SPINNAKER(pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Continuous))
 	} else {
-		pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Off);
-		pCam->ExposureTime.SetValue(exposure / 1000.0);
+		CATCH_SPINNAKER(pCam->ExposureAuto.SetValue(Spinnaker::ExposureAuto_Off))
+		CATCH_SPINNAKER(pCam->ExposureTime.SetValue(exposure * 1000.0))
 	}
 
 	//TODO smarter autogain and autoexposure through feedback from blob brightness
 	if(gain == 0.0) {
-		pCam->GainAuto.SetValue(Spinnaker::GainAuto_Continuous);
+		CATCH_SPINNAKER(pCam->GainAuto.SetValue(Spinnaker::GainAuto_Continuous))
 	} else {
-		pCam->GainAuto.SetValue(Spinnaker::GainAuto_Off);
-		pCam->Gain.SetValue(gain);
+		CATCH_SPINNAKER(pCam->GainAuto.SetValue(Spinnaker::GainAuto_Off))
+		CATCH_SPINNAKER(pCam->Gain.SetValue(gain))
+	}
+
+	if(exposure == 0.0 && gain == 0.0) {
+		CATCH_SPINNAKER(pCam->AutoExposureControlPriority.SetValue(Spinnaker::AutoExposureControlPriority_Gain))
 	}
 
 	if(wbType != WhiteBalanceType_Manual) {
-		pCam->BalanceWhiteAutoProfile.SetValue(
+		CATCH_SPINNAKER(pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Continuous))
+		CATCH_SPINNAKER(pCam->BalanceWhiteAutoProfile.SetValue(
 				wbType == WhiteBalanceType_AutoOutdoor
 				? Spinnaker::BalanceWhiteAutoProfile_Outdoor
 				: Spinnaker::BalanceWhiteAutoProfile_Indoor
-		);
-		pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Continuous);
+		))
 	} else {
-		pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Off);
-		pCam->BalanceRatioSelector.SetValue(Spinnaker::BalanceRatioSelector_Blue);
-		pCam->BalanceRatio.SetValue(wbValues[0]);
-		pCam->BalanceRatioSelector.SetValue(Spinnaker::BalanceRatioSelector_Red);
-		pCam->BalanceRatio.SetValue(wbValues[1]);
+		CATCH_SPINNAKER(pCam->BalanceWhiteAuto.SetValue(Spinnaker::BalanceWhiteAuto_Off))
+		CATCH_SPINNAKER(pCam->BalanceRatioSelector.SetValue(Spinnaker::BalanceRatioSelector_Blue))
+		CATCH_SPINNAKER(pCam->BalanceRatio.SetValue(wbValues[0]))
+		CATCH_SPINNAKER(pCam->BalanceRatioSelector.SetValue(Spinnaker::BalanceRatioSelector_Red))
+		CATCH_SPINNAKER(pCam->BalanceRatio.SetValue(wbValues[1]))
 	}
 
 	pCam->TLStream.StreamBufferHandlingMode.SetValue(Spinnaker::StreamBufferHandlingMode_NewestOnly);

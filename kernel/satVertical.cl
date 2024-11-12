@@ -19,7 +19,6 @@
 
 const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_NONE;
 
-//#pragma OPENCL FP_REASSOCIATE OFF
 kernel void sat_horizontal(read_only image2d_t in, write_only image2d_t out) {
 	const int height = get_image_height(in);
 	const int x = get_global_id(0);
@@ -30,14 +29,4 @@ kernel void sat_horizontal(read_only image2d_t in, write_only image2d_t out) {
 		sum += read_imagef(in, sampler, pos).x;
 		write_imagef(out, pos, sum);
 	}
-	//https://en.wikipedia.org/wiki/Kahan_summation_algorithm
-	/*float c = 0.f;
-	for(int y = 0; y < height; y++) {
-		const int2 pos = (int2)(x, y);
-		const float v = read_imagef(in, sampler, pos).x - c;
-		const float t = sum + v;
-		c = (t - sum) - v;
-		sum = t;
-		write_imagef(out, pos, sum);
-	}*/
 }

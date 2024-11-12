@@ -23,7 +23,7 @@ from google.protobuf.json_format import ParseDict
 
 from visionsocket import parser_vision_network, VisionSocket  # Importing visionsocket generates protobuf files
 from proto.ssl_vision_wrapper_pb2 import SSL_WrapperPacket
-from proto.ssl_vision_geometry_pb2 import SSL_FieldShapeType
+from proto.ssl_vision_geometry_pb2 import SSL_FieldShapeType, SSL_GeometryData
 
 
 def yaml_load(path: Path, default = None):
@@ -108,17 +108,30 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     wrapper = load_geometry(Path(args.config))
-    calib = wrapper.geometry.calib
+    geometry: SSL_GeometryData = wrapper.geometry
+    calib = geometry.calib
 
     receiver = VisionSocket(args=args)
     def update_cameras(received):
         if received.HasField('geometry'):
             for camera in received.geometry.calib:
-                if calib[camera.camera_id].SerializeToString(deterministic=True) == camera.SerializeToString(deterministic=True):
-                    continue
+                updated = False
+                handled = False
+                for c in calib:
+                    if c.camera_id == camera.camera_id:
+                        handled = True
+                        if c.SerializeToString(deterministic=True) == camera.SerializeToString(deterministic=True):
+                            continue
+                        else:
+                            calib[camera.camera_id].CopyFrom(camera)
+                            updated = True
 
-                calib[camera.camera_id].CopyFrom(camera)
-                print(f"Updated camera {camera.camera_id} calibration.")
+                if not handled:
+                    calib.append(camera)
+                    updated = True
+
+                if updated:
+                    print(f"Updated camera {camera.camera_id} calibration.")
     receiver.consume = update_cameras
 
     with receiver:

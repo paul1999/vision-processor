@@ -38,11 +38,12 @@ typedef struct { float x, y; } float2;
 typedef struct { float x, y, z; } float3;
 typedef struct { float x, y, z, w; } float4;
 typedef struct { int x, y, z, w; } int4;
-typedef struct { uint x, y, z, w; } uint4;
+typedef struct { uint x, y, z, w; uint r, g, b; } uint4;
 typedef int sampler_t;
 typedef struct {} image2d_t;
 
 uint4 read_imageui(image2d_t, sampler_t, int2);
+uint4 read_imageui(image2d_t, sampler_t, float2);
 int4 read_imagei(image2d_t, sampler_t, int2);
 float4 read_imagef(image2d_t, sampler_t, int2);
 float4 read_imagef(image2d_t, sampler_t, float2);
@@ -71,6 +72,7 @@ int convert_int(uchar);
 float2 convert_float2(int2);
 float4 convert_float4(int4);
 float4 convert_float4(uint4);
+int abs(int);
 float fabs(float);
 float round(float);
 

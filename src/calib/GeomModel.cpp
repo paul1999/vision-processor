@@ -862,7 +862,6 @@ void geometryCalibration(const Resources& r, const Image& img) {
 		CVMap cvBgr = bgr.cvReadWrite();
 		detector->drawSegments(*cvBgr, linesMat);
 	}
-	//bgr.save(".linesegments.png");
 
 	CVLines lines;
 	for(int i = 0; i < linesMat.rows; i++) {
@@ -878,21 +877,6 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	const CVLines mergedLines = mergeLineSegments(compoundLines);
 	std::cout << "[Geometry calibration] Lines: " << mergedLines.size() << std::endl;
 
-	/*std::vector<std::vector<Eigen::Vector2f>> mergedPixels;
-	for(const CVLines& segments : compoundLines) {
-		if(segments.size() <= 2)
-			continue;
-
-		std::vector<Eigen::Vector2f> points;
-		for(const CVLine& segment : segments) {
-			points.push_back(cv2eigen(segment.first));
-			points.push_back(cv2eigen(segment.second));
-		}
-
-		mergedPixels.emplace_back(points);
-	}*/
-
-
 	std::vector<std::vector<Eigen::Vector2f>> mergedPixels(mergedLines.size());
 	{
 		const float sqHalfLineWidth = (float)(halfLineWidth*halfLineWidth);
@@ -902,7 +886,6 @@ void geometryCalibration(const Resources& r, const Image& img) {
 				if(data[x + y * thresholded.width]) {
 					for(unsigned int i = 0; i < compoundLines.size(); i++) {
 						if(dist(mergedLines[i].first, mergedLines[i].second) < thresholded.height/2)
-						//if(compoundLines[i].size() < 2)
 							continue;
 
 						for(const auto& segment : compoundLines[i]) {
@@ -922,29 +905,20 @@ void geometryCalibration(const Resources& r, const Image& img) {
 		for (const auto& item : mergedLines) {
 			cv::line(*cvBgr, {item.first}, {item.second}, CV_RGB(0, 255, 0));
 		}
-		/*for (const auto& item : majorLines) {
-			cv::line(*cvBgr, {item.first}, {item.second}, CV_RGB(0, 0, 255));
-		}*/
 	}
-	//bgr.save(".lines.png");
+	bgr.save(".lines.png");
 
 	const bool calibHeight = r.cameraHeight == 0.0;
 	CameraModel model({thresholded.width, thresholded.height}, r.camId, r.cameraAmount, (float)r.cameraHeight, r.socket->getGeometry().field());
-	//std::cout << calibrateDistortion(mergedPixels, model) << " " << model.focalLength << " " << model.distortionK2 << std::endl;
-	/*if(!calibrateDistortion(mergedPixels, model))
-		return;*/
-
-	const std::vector<Eigen::Vector2f> linePixels = getLinePixels(thresholded);
 	//drawModel(r, thresholded, linePixels, model);
 	//thresholded.save(".initial.png");
 
 	// TODO Horizontal/Vertical separated
-	//cornerCalibration(r, mergedPixels, linePixels, calibHeight, model, false);
-	//calibrateDistortion(mergedPixels, model);
 	cornerCalibration(r, mergedPixels, thresholded, calibHeight, model, true, true);
 	//directMixedCalibration(r, mergedPixels, linePixels, calibHeight, model);
 
 	model.updateDerived();
+	const std::vector<Eigen::Vector2f> linePixels = getLinePixels(thresholded);
 	int error = modelError(r, model, linePixels);
 	std::cout << "[Geometry calibration] Best model: " << model << " error " << (error/(float)linePixels.size()) << std::endl;
 
@@ -954,6 +928,5 @@ void geometryCalibration(const Resources& r, const Image& img) {
 	r.socket->send(wrapper);
 
 	drawModel(r, thresholded, linePixels, model);
-	//thresholded.save(".pixels.png");
-	//thresholded.save(".otsu.png");
+	thresholded.save(".pixels.png");
 }
