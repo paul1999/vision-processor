@@ -18,20 +18,19 @@
 
 #include "proto/ssl_vision_geometry.pb.h"
 
-void visibleFieldExtentEstimation(const int camId, const int camAmount, const SSL_GeometryFieldSize& field, const bool withBoundary, Eigen::Vector2f &min, Eigen::Vector2f &max);
+void visibleFieldExtentEstimation(int camId, int camAmount, const SSL_GeometryFieldSize& field, bool withBoundary, Eigen::Vector2f& min, Eigen::Vector2f& max);
 
 
 class CameraModel {
 public:
 	CameraModel();
-	CameraModel(const Eigen::Vector2i& size, int camId, int camAmount, const float cameraHeight, const SSL_GeometryFieldSize& field);
+	CameraModel(const Eigen::Vector2i& size, int camId, int camAmount, float cameraHeight, const SSL_GeometryFieldSize& field);
 
 	explicit CameraModel(const SSL_GeometryCameraCalibration& calib);
 	[[nodiscard]] SSL_GeometryCameraCalibration getProto(int camId) const;
 
 	void updateDerived();
 	void ensureSize(const Eigen::Vector2i& newSize);
-	void updateFocalLength(float newFocalLength);
 
 	[[nodiscard]] Eigen::Vector2f normalizeUndistort(const Eigen::Vector2f& p) const;
 	[[nodiscard]] Eigen::Vector2f undistort(const Eigen::Vector2f& p) const;

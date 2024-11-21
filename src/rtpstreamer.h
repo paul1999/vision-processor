@@ -35,7 +35,7 @@ typedef struct AVPacket AVPacket;
 
 class RTPStreamer {
 public:
-	explicit RTPStreamer(std::shared_ptr<OpenCL> openCl, std::string uri, int framerate = 30);
+	explicit RTPStreamer(bool active, std::shared_ptr<OpenCL> openCl, std::string uri, int framerate = 30);
 	~RTPStreamer();
 	void sendFrame(std::shared_ptr<CLImage> image);
 private:
@@ -44,6 +44,7 @@ private:
 	void allocResources();
 	void freeResources();
 
+	const bool active;
 	const std::shared_ptr<OpenCL> openCl;
 	const std::string uri;
 	const int framerate;

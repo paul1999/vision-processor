@@ -14,6 +14,7 @@
      limitations under the License.
  */
 #include "opencl.h"
+#include "cl_kernels.h"
 
 #include <iostream>
 #include <utility>
@@ -21,12 +22,12 @@
 #include <opencv2/imgproc.hpp>
 
 
-const PixelFormat PixelFormat::RGBA8 = PixelFormat(4, 1, true, CV_8UC4);
-const PixelFormat PixelFormat::RGGB8 = PixelFormat(2, 2, true, CV_8UC1);
-const PixelFormat PixelFormat::BGR888 = PixelFormat(3, 1, true, CV_8UC3);
-const PixelFormat PixelFormat::U8 = PixelFormat(1, 1, false, CV_8UC1);
-const PixelFormat PixelFormat::I8 = PixelFormat(1, 1, false, CV_8SC1);
-const PixelFormat PixelFormat::F32 = PixelFormat(4, 1, false, CV_32FC1);
+const PixelFormat PixelFormat::RGBA8 = PixelFormat(4, 1, true, CV_8UC4, {CL_RGBA, CL_UNSIGNED_INT8});
+const PixelFormat PixelFormat::F32 = PixelFormat(4, 1, false, CV_32FC1, {CL_R, CL_FLOAT});
+
+const PixelFormat PixelFormat::RGGB8 = PixelFormat(2, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}, kernel_rggb2rgba_cl, kernel_rggb2rgba_cl_end);
+const PixelFormat PixelFormat::GRBG8 = PixelFormat(2, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}, kernel_grbg2rgba_cl, kernel_grbg2rgba_cl_end);
+const PixelFormat PixelFormat::BGR8 = PixelFormat(3, 1, true, CV_8UC3, {}, kernel_bgr2rgba_cl, kernel_bgr2rgba_cl_end);
 
 
 OpenCL::OpenCL() {
@@ -34,12 +35,12 @@ OpenCL::OpenCL() {
 	cl::Platform::get(&platforms);
 
 	if (platforms.empty()) {
-		std::cerr << "No platforms found. Check OpenCL installation!" << std::endl;
+		std::cerr << "[OpenCL] No platforms found. Check OpenCL installation!" << std::endl;
 		exit(1);
 	}
 
 	if(!searchDevice(platforms, CL_DEVICE_TYPE_GPU) && !searchDevice(platforms, CL_DEVICE_TYPE_ALL)) {
-		std::cerr << "No GPU devices found. Check OpenCL installation!" << std::endl;
+		std::cerr << "[OpenCL] No GPU devices found. Check OpenCL installation!" << std::endl;
 		exit(1);
 	}
 
@@ -47,25 +48,6 @@ OpenCL::OpenCL() {
 	cl::Context::setDefault(context);
 	queue = cl::CommandQueue(context, device);
 	cl::CommandQueue::setDefault(queue);
-
-	/*std::map<int, std::string> table;
-	table[CL_R] = "CL_R";
-	table[CL_A] = "CL_A";
-	table[CL_RG] = "CL_RG";
-	table[CL_RGBA] = "CL_RGBA";
-	table[CL_BGRA] = "CL_BGRA";
-	table[CL_INTENSITY] = "CL_INTENSITY";
-	table[CL_LUMINANCE] = "CL_LUMINANCE";
-	table[CL_DEPTH] = "CL_DEPTH";
-
-	table[CL_UNORM_INT8] = "CL_UNORM_INT8";
-	table[CL_FLOAT] = "CL_FLOAT";
-	cl_image_format formats[64];
-	unsigned int numFormats;
-	clGetSupportedImageFormats(cl::Context::getDefault()(), 0, CL_MEM_OBJECT_IMAGE2D, 64, formats, &numFormats);
-	for(int i = 0; i < numFormats; i++) {
-		std::cout << std::hex << table[formats[i].image_channel_order] << " " << table[formats[i].image_channel_data_type] << std::endl;
-	}*/
 }
 
 bool OpenCL::searchDevice(const std::vector<cl::Platform>& platforms, cl_device_type type) {
@@ -146,21 +128,10 @@ CLArray::CLArray(int size): buffer(clAlloc((cl_mem_flags) CL_MEM_ALLOC_HOST_PTR,
 CLArray::CLArray(void* data, const int size): buffer(clAlloc((cl_mem_flags) CL_MEM_COPY_HOST_PTR, (cl::size_type) size, data)), size(size) {}
 
 static inline cl::Image2D allocImage(int width, int height, const PixelFormat* format) {
-	//TODO embed into PixelFormat as value
-	cl::ImageFormat clFormat;
-	if(format == &PixelFormat::RGBA8)
-		clFormat = cl::ImageFormat(CL_RGBA, CL_UNSIGNED_INT8);
-	else if(format == &PixelFormat::F32)
-		clFormat = cl::ImageFormat(CL_LUMINANCE, CL_FLOAT);
-	else {
-		std::cerr << "[OpenCL] cannot alloc CLImage with given PixelFormat " << std::endl;
-		exit(1);
-	}
-
 	int error;
-	cl::Image2D image = cl::Image2D(cl::Context::getDefault(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, clFormat, width, height, 0, nullptr, &error);
+	cl::Image2D image = cl::Image2D(cl::Context::getDefault(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, format->clFormat, width, height, 0, nullptr, &error);
 	if(error != CL_SUCCESS) {
-		std::cerr << "bgr Image creation error: " << error << " " << width << "," << height << " " << (format == &PixelFormat::RGBA8) << std::endl;
+		std::cerr << "[OpenCL] Image creation error: " << error << " " << width << "," << height << " " << (format == &PixelFormat::RGBA8) << std::endl;
 		exit(1);
 	}
 	return image;

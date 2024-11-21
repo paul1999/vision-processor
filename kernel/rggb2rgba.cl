@@ -26,9 +26,5 @@ kernel void buf2img(global const uchar* img, write_only image2d_t out) {
 	uchar g = img[imgpos+1]/2 + img[imgpos+2*get_global_size(0)]/2;
 	uchar b = img[imgpos+1+2*get_global_size(0)];
 
-	/*uchar g = img[imgpos]/2 + img[imgpos+1+2*get_global_size(0)]/2;
-	uchar r = img[imgpos+1];
-	uchar b = img[imgpos+2*get_global_size(0)];*/
-
 	write_imageui(out, pos, (uint4)(r, g, b, 255));
 }

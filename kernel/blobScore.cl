@@ -19,6 +19,7 @@
 
 const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE;
 
+//Replica of matches.cl used to compute a score for each possible blob location
 kernel void matches(read_only image2d_t img, read_only image2d_t circ, write_only image2d_t score, const float circThreshold, const int radius) {
 	int2 pos = (int2)(get_global_id(0), get_global_id(1));
 	float circScore = read_imagef(circ, sampler, pos).x;
@@ -27,7 +28,6 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, write_onl
 		return;
 	}
 
-	//TODO subpixel position
 	if(
 			read_imagef(circ, sampler, (int2)(pos.x-1, pos.y)).x > circScore ||
 			read_imagef(circ, sampler, (int2)(pos.x+1, pos.y)).x > circScore ||
@@ -50,7 +50,7 @@ kernel void matches(read_only image2d_t img, read_only image2d_t circ, write_onl
 					uint4 v = read_imageui(img, sampler, pos + (int2)(x, y));
 					s1 += v;
 					s2 += v*v;
-					n++; //TODO faster by computation?
+					n++;
 				}
 			}
 		}

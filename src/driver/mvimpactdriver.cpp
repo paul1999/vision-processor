@@ -19,16 +19,16 @@
 #include <mvIMPACT_CPP/mvIMPACT_acquire_GenICam.h>
 
 
-class MVImpactImage : public Image {
+class MVImpactImage : public RawImage {
 public:
-	explicit MVImpactImage(const std::shared_ptr<Request>& request): Image(&PixelFormat::RGGB8, request->imageWidth.read()/2, request->imageHeight.read()/2, (double)request->infoTimeStamp_us.read() / 1e6, (uint8_t*)request->imageData.read()), request(request) {}
+	explicit MVImpactImage(const std::shared_ptr<Request>& request): RawImage(&PixelFormat::GRBG8, request->imageWidth.read() / 2, request->imageHeight.read() / 2, (double)request->infoTimeStamp_us.read() / 1e6, (uint8_t*)request->imageData.read()), request(request) {}
 
 private:
 	std::shared_ptr<Request> request;
 };
 
 
-MVImpactDriver::MVImpactDriver(const int id) {
+MVImpactDriver::MVImpactDriver(const int id, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double>& wbValues) {
 	while(devMgr.deviceCount() <= id) {
 		std::cerr << "[mvIMPACT] Waiting for cam: " << devMgr.deviceCount() << "/" << (id+1) << std::endl;
 		sleep(1);
@@ -48,11 +48,34 @@ MVImpactDriver::MVImpactDriver(const int id) {
 	settings.cameraSetting.restoreDefault();
 	settings.imageProcessing.restoreDefault();
 	settings.imageDestination.restoreDefault();
-	settings.cameraSetting.autoExposeControl.write(TAutoExposureControl::aecOn);
-	settings.cameraSetting.autoGainControl.write(TAutoGainControl::agcOn);
 	settings.cameraSetting.pixelFormat.write(TImageBufferPixelFormat::ibpfMono8);
-	settings.imageProcessing.whiteBalanceCalibration.write(TWhiteBalanceCalibrationMode::wbcmNextFrame);
 	settings.imageDestination.pixelFormat.write(TImageDestinationPixelFormat::idpfRaw);
+
+	if(exposure == 0.0) {
+		settings.cameraSetting.autoExposeControl.write(TAutoExposureControl::aecOn);
+	} else {
+		settings.cameraSetting.autoExposeControl.write(TAutoExposureControl::aecOff);
+		settings.cameraSetting.expose_us.write((int)(exposure * 1000));
+	}
+
+	if(gain == 0.0) {
+		settings.cameraSetting.autoGainControl.write(TAutoGainControl::agcOn);
+	} else {
+		settings.cameraSetting.autoGainControl.write(TAutoGainControl::agcOff);
+		settings.cameraSetting.gain_dB.write(gain);
+	}
+
+	if(wbType != WhiteBalanceType_Manual) {
+		settings.imageProcessing.whiteBalanceCalibration.write(TWhiteBalanceCalibrationMode::wbcmNextFrame);
+	} else {
+		settings.imageProcessing.whiteBalanceCalibration.write(TWhiteBalanceCalibrationMode::wbcmOff);
+		WhiteBalanceSettings& wb = settings.imageProcessing.getWBUserSetting(0);
+		wb.restoreDefault();
+		wb.blueGain.write(wbValues[0]);
+		wb.redGain.write(wbValues[0]);
+		settings.imageProcessing.whiteBalance.write(TWhiteBalanceParameter::wbpUser1);
+	}
+
 
 	//TODO user supplied memory functionality to prevent copies https://wassets.balluff.com/documents/DRF_957352_AA_000/CaptureToUserMemory_8cpp-example.html
 
@@ -66,7 +89,7 @@ MVImpactDriver::~MVImpactDriver() {
 	device->close();
 }
 
-std::shared_ptr<Image> MVImpactDriver::readImage() {
+std::shared_ptr<RawImage> MVImpactDriver::readImage() {
 	std::shared_ptr<Request> request = provider->waitForNextRequest();
 
 	//Get only newest frame
@@ -80,6 +103,10 @@ std::shared_ptr<Image> MVImpactDriver::readImage() {
 	}
 
 	return std::make_shared<MVImpactImage>(request);
+}
+
+const PixelFormat MVImpactDriver::format() {
+	return PixelFormat::GRBG8;
 }
 
 double MVImpactDriver::expectedFrametime() {

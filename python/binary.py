@@ -59,6 +59,7 @@ def run_processor(binary: Path, recorder: VisionRecorder, dataset: Dataset, imag
         camera={'path': str(image)},
         debug={'wait_for_geometry': True, 'ground_truth': str(image.with_suffix('.vision.json') if ground_truth is None else ground_truth)},
         network={'vision_ip': recorder.address[0], 'vision_port': recorder.address[1]},
+        stream={'active': False},
         color={'reference_force': 0.3333, 'history_force': 0.0} if dataset.is_image_dataset() else {}
     )
 

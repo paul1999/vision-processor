@@ -42,7 +42,7 @@ static inline Eigen::Vector2f field2flat(const Resources& r, const Eigen::Vector
 	return r.perspective->field2flat(r.perspective->model.image2field(r.perspective->model.field2image(field), (float)r.gcSocket->maxBotHeight).head<2>());
 }
 
-static void scoreBlob(const Resources& r, const CLImageMap<float>& circMap, const CLImageMap<float>& scoreMap, const Blob& blob, float& worstBlobScore, int& blobAmount, Eigen::Vector2f& offsetSum, double& errorSum, double& errorSqSum) {
+static void scoreBlob(const Resources& r, const CLImageMap<float>& circMap, const CLImageMap<float>& scoreMap, const Blob& blob, float& blobScoreSum, int& blobAmount, Eigen::Vector2f& offsetSum, double& errorSum, double& errorSqSum) {
 	Eigen::Vector2f maxPos;
 	float maxScore = -INFINITY;
 	for(int y = std::max(0, (int)floorf(blob.flat.y() - blob.radius)); y < std::min(r.perspective->reprojectedFieldSize[1], (int)ceilf(blob.flat.y() + blob.radius)); y++) {
@@ -80,12 +80,10 @@ static void scoreBlob(const Resources& r, const CLImageMap<float>& circMap, cons
 	errorSum += offsetNorm;
 	errorSqSum += offsetNorm*offsetNorm;
 
-	worstBlobScore += maxScore;
-	//if(maxScore < worstBlobScore)
-	//	worstBlobScore = maxScore;
+	blobScoreSum += maxScore;
 }
 
-static void scoreBot(const Resources& r, const CLImageMap<float>& circMap, const CLImageMap<float>& scoreMap, const BlobColor botColor, const SSL_DetectionRobot& bot, float& worstBlobScore, std::map<BlobColor, int>& blobAmount, std::map<BlobColor, Eigen::Vector2f>& offsetSum, std::map<BlobColor, double>& errorSum, std::map<BlobColor, double>& errorSqSum) {
+static void scoreBot(const Resources& r, const CLImageMap<float>& circMap, const CLImageMap<float>& scoreMap, const BlobColor botColor, const SSL_DetectionRobot& bot, float& blobScoreSum, std::map<BlobColor, int>& blobAmount, std::map<BlobColor, Eigen::Vector2f>& offsetSum, std::map<BlobColor, double>& errorSum, std::map<BlobColor, double>& errorSqSum) {
 	int pattern = patterns[bot.robot_id()];
 
 	Eigen::Vector2f botOffset(0, 0);
@@ -101,7 +99,7 @@ static void scoreBot(const Resources& r, const CLImageMap<float>& circMap, const
 				.flat = field2flat(r, field),
 				.radius = (float)(i == 0 ? CENTER_BLOB_RADIUS : SIDE_BLOB_RADIUS) / r.perspective->fieldScale,
 				.color = color
-		}, worstBlobScore, blobAmount[color], blobOffset, errorSum[color], errorSqSum[color]);
+		}, blobScoreSum, blobAmount[color], blobOffset, errorSum[color], errorSqSum[color]);
 		offsetSum[color] += blobOffset;
 		botOffset += blobOffset / 5;
 	}
@@ -113,31 +111,11 @@ static void scoreBot(const Resources& r, const CLImageMap<float>& circMap, const
 }
 
 
-#define SSD false
 int main(int argc, char* argv[]) {
 	YAML::Node configFile = YAML::LoadFile(argc > 1 ? argv[1] : "config.yml");
 	Resources r(configFile);
 	std::vector<SSL_DetectionFrame> groundTruth = parseGroundTruth(r.groundTruth);
-
-	cl::Kernel rggb2img = r.openCl->compile(kernel_rggb2img_cl, kernel_rggb2img_cl_end);
-	cl::Kernel bgr2img = r.openCl->compile(kernel_bgr2img_cl, kernel_bgr2img_cl_end);
-	cl::Kernel perspectiveKernel = r.openCl->compile(kernel_perspective_cl, kernel_perspective_cl_end);
-#if SSD
-	cl::Kernel ssdKernel = r.openCl->compile(kernel_ssd_cl, kernel_ssd_cl_end);
-#else
-	cl::Kernel colorKernel = r.openCl->compile(kernel_color_cl, kernel_color_cl_end);
-	//cl::Kernel colorKernel = r.openCl->compile(kernel_robustInvariant_cl, kernel_robustInvariant_cl_end);
-	cl::Kernel satHorizontalKernel = r.openCl->compile(kernel_satHorizontal_cl, kernel_satHorizontal_cl_end);
-	cl::Kernel satVerticalKernel = r.openCl->compile(kernel_satVertical_cl, kernel_satVertical_cl_end);
-	cl::Kernel circleKernel = r.openCl->compile(kernel_satCircle_cl, kernel_satCircle_cl_end);
-	//cl::Kernel circleKernel = r.openCl->compile(kernel_circularize_cl, kernel_circularize_cl_end);
-	cl::Kernel scoreKernel = r.openCl->compile(kernel_score_cl, kernel_score_cl_end);
-#endif
-
-	while(r.waitForGeometry && !r.socket->getGeometryVersion()) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		r.socket->geometryCheck();
-	}
+	cl::Kernel scoreKernel = r.openCl->compile(kernel_blobScore_cl, kernel_blobScore_cl_end);
 
 	int frameId = 0;
 	double imageTime = 0.0;
@@ -158,7 +136,7 @@ int main(int argc, char* argv[]) {
 
 	while(true) {
 		double startTime = getRealTime();
-		std::shared_ptr<Image> img = r.camera->readImage();
+		std::shared_ptr<RawImage> img = r.camera->readImage();
 		if(img == nullptr)
 			break;
 
@@ -167,38 +145,23 @@ int main(int argc, char* argv[]) {
 
 		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
 
-		std::shared_ptr<CLImage> clImg = r.openCl->acquire(&PixelFormat::RGBA8, img->width, img->height, img->name);
-		std::shared_ptr<CLImage> flat = r.openCl->acquire(&PixelFormat::RGBA8, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		//std::shared_ptr<CLImage> blurred = r.openCl->acquire(&PixelFormat::RGBA8, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		std::shared_ptr<CLImage> color = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		std::shared_ptr<CLImage> colorHor = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		std::shared_ptr<CLImage> colorSat = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		std::shared_ptr<CLImage> circ = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-		//std::shared_ptr<CLImage> score = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+		std::shared_ptr<CLImage> clImg = r.raw2rgba(*img);
+		std::shared_ptr<CLImage> flat;
+		std::shared_ptr<CLImage> gradDot;
+		std::shared_ptr<CLImage> blobCenter;
+		r.rgba2blobCenter(*clImg, flat, gradDot, blobCenter);
 
-		cl::NDRange visibleFieldRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1]);
-		OpenCL::await(img->format == &PixelFormat::RGGB8 ? rggb2img : bgr2img, cl::EnqueueArgs(cl::NDRange(clImg->width, clImg->height)), img->buffer, clImg->image);
-		OpenCL::await(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg->image, flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]);
-#if SSD
-		OpenCL::await(ssdKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, r.perspective->fieldScale);
-#else
-		//cv::GaussianBlur(flat->read<RGBA>().cv, blurred->write<RGBA>().cv, {5, 5}, 0, 0, cv::BORDER_REPLICATE);
-		OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale)/3); //TODO
-		OpenCL::await(satHorizontalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[1])), color->image, colorHor->image);
-		OpenCL::await(satVerticalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0])), colorHor->image, colorSat->image);
-		OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale));
-		//OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), color->image, circ->image, (int)floor(r.perspective->minBlobRadius/r.perspective->fieldScale), (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale));
-		//OpenCL::await(scoreKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, score->image, (float)r.minCircularity, (int)floor(r.minBlobRadius/r.perspective->fieldScale));
-#endif
+		//std::shared_ptr<CLImage> score = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
+		//OpenCL::await(scoreKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1])), flat->image, blobCenter->image, score->image, (float)r.minCircularity, (int)floor(r.minBlobRadius/r.perspective->fieldScale));
 
 		processingTime += getRealTime() - startTime;
 		startTime = getRealTime();
 
 		float blobScore = 0.0;
 
-		CLImageMap<float> circMap = circ->read<float>();
+		CLImageMap<float> circMap = blobCenter->read<float>();
 		//CLImageMap<float> scoreMap = score->read<float>();
-		//CLImageMap<float> scoreMap = circ->read<float>(); //TODO RESEARCH MEMORY LEAK (NVIDIA only?)
+		//CLImageMap<float> scoreMap = circ->read<float>(); //TODO Research memory leak through double (read) mapping of same buffer (NVIDIA only?)
 
 		const SSL_DetectionFrame& detection = getCorrespondingFrame(groundTruth, ++frameId);
 		for(const SSL_DetectionBall& ball : detection.balls()) {
@@ -219,25 +182,14 @@ int main(int argc, char* argv[]) {
 			continue;
 
 		if(r.debugImages && frameId == 1)  {
-#if SSD
-			circ->save(".ssd.png", 255.0f, 0.f);
-#else
-			//circ->save(".circ.png", 2.0f, 128.f); // 4 dRGB, 8 YUV, 2 RGB
-			//circ->save(".circ.png", 4.0f, 0.f); // 4 dRGB, 8 YUV, 2 RGB
-			color->save(".color.png", 1.0f, 128.0f);
-#endif
-			//flat->save(".flat.png");
-			//color->save(".color.png", 0.0625f, 128.f);
-			//circ->save(".circ.png", 2.0f);
-			//score->save(".score.png", 2.0f);
+			flat->save(".flat." + std::to_string(frameId) + ".png");
+			gradDot->save(".gradDot." + std::to_string(frameId) + ".png", 0.25f, 128.f);
+			blobCenter->save(".blob." + std::to_string(frameId) + ".png");
 		}
 
-		//int frameSize = (int)circMap.rowPitch*circ->height;
-		//double worstBlobPercentile = (double)std::count_if(*circMap, *circMap + frameSize, [&](const auto& v){ return v < worstBlobScore; }) / (double)frameSize; //TODO does say nothing about clear separation
-		//percentileSum += worstBlobPercentile;
-		int n = circ->height*((int)circMap.rowPitch - circ->width) + (int)((circ->width*circ->height) * 0.99);
-		std::nth_element(*circMap, *circMap + n, *circMap + (circMap.rowPitch*circ->height));
-		percentileSum += circMap[n]; // median did not help
+		int n = blobCenter->height * ((int)circMap.rowPitch - blobCenter->width) + (int)((blobCenter->width * blobCenter->height) * 0.99);
+		std::nth_element(*circMap, *circMap + n, *circMap + (circMap.rowPitch * blobCenter->height));
+		percentileSum += circMap[n];
 		blobScoreSum += blobScore;
 		analysisTime += getRealTime() - startTime;
 	}

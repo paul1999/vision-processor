@@ -80,7 +80,7 @@ void generateAngleSortedBotHypotheses(const Resources& r, std::list<std::unique_
 
 void generateRadiusSearchTrackedBotHypotheses(const Resources& r, std::list<std::unique_ptr<BotHypothesis>>& bots, std::vector<Match>& matches, KDTree& blobs, const double currentTimestamp) {
 	std::vector<Match*> botBlobs[5];
-	for (const auto& camTracked : r.socket->getTrackedObjects()) { //TODO Concurrent Modification possible?
+	for (const auto& camTracked : r.socket->getTrackedObjects()) {
 		for (const auto& tracked : camTracked.second) {
 			if(tracked.id == -1)
 				continue;
@@ -271,65 +271,43 @@ int main(int argc, char* argv[]) {
 	signal(SIGTERM, sig_stop);
 	signal(SIGINT, sig_stop);
 	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
-
-	cl::Kernel rggb2img = r.openCl->compile(kernel_rggb2img_cl, kernel_rggb2img_cl_end);
-	cl::Kernel bgr2img = r.openCl->compile(kernel_bgr2img_cl, kernel_bgr2img_cl_end);
-	cl::Kernel perspectiveKernel = r.openCl->compile(kernel_perspective_cl, kernel_perspective_cl_end);
-	cl::Kernel colorKernel = r.openCl->compile(kernel_color_cl, kernel_color_cl_end);
-	cl::Kernel satHorizontalKernel = r.openCl->compile(kernel_satHorizontal_cl, kernel_satHorizontal_cl_end);
-	cl::Kernel satVerticalKernel = r.openCl->compile(kernel_satVertical_cl, kernel_satVertical_cl_end);
-	cl::Kernel circleKernel = r.openCl->compile(kernel_satCircle_cl, kernel_satCircle_cl_end);
-	cl::Kernel matchKernel = r.openCl->compile(kernel_matches_cl, kernel_matches_cl_end);
-
-	while(r.waitForGeometry && !r.socket->getGeometryVersion()) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		r.socket->geometryCheck();
-	}
+	cl::Kernel blobList = r.openCl->compile(kernel_blobList_cl, kernel_blobList_cl_end);
 
 	uint32_t frameId = 0;
+	CLArray matchArray(sizeof(CLMatch) * r.maxBlobs);
+	CLArray counter(sizeof(cl_int)*3);
 	while(noSigterm) {
 		frameId++;
-		std::shared_ptr<Image> img = r.camera->readImage();
+		std::shared_ptr<RawImage> img = r.camera->readImage();
 		if(img == nullptr)
 			break;
 
 		double startTime = r.camera->getTime();
 		double realStartTime = getRealTime(); // Just for realtime performance measurements
+
 		r.socket->geometryCheck();
 		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
-
-		std::shared_ptr<CLImage> clImg = r.openCl->acquire(&PixelFormat::RGBA8, img->width, img->height, img->name);
-		//TODO better type switching
-		OpenCL::await(img->format == &PixelFormat::RGGB8 ? rggb2img : bgr2img, cl::EnqueueArgs(cl::NDRange(clImg->width, clImg->height)), img->buffer, clImg->image);
+		std::shared_ptr<CLImage> clImg = r.raw2rgba(*img);
 
 		if(r.perspective->geometryVersion) {
-			cl::NDRange visibleFieldRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1]);
-			std::shared_ptr<CLImage> flat = r.openCl->acquire(&PixelFormat::RGBA8, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			OpenCL::await(perspectiveKernel, cl::EnqueueArgs(visibleFieldRange), clImg->image, flat->image, r.perspective->getClPerspective(), (float)r.gcSocket->maxBotHeight, r.perspective->fieldScale, r.perspective->visibleFieldExtent[0], r.perspective->visibleFieldExtent[2]);
-			std::shared_ptr<CLImage> color = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			OpenCL::await(colorKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, color->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale)/3);
-			std::shared_ptr<CLImage> colorHor = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			OpenCL::await(satHorizontalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[1])), color->image, colorHor->image);
-			std::shared_ptr<CLImage> colorSat = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			OpenCL::await(satVerticalKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0])), colorHor->image, colorSat->image);
-			std::shared_ptr<CLImage> circ = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
-			OpenCL::await(circleKernel, cl::EnqueueArgs(visibleFieldRange), colorSat->image, circ->image, (int)ceil(r.perspective->maxBlobRadius/r.perspective->fieldScale));
+			std::shared_ptr<CLImage> flat;
+			std::shared_ptr<CLImage> gradDot;
+			std::shared_ptr<CLImage> blobCenter;
+			r.rgba2blobCenter(*clImg, flat, gradDot, blobCenter);
 
-			if(r.debugImages) {
-				flat->save(".perspective." + std::to_string(frameId) + ".png");
-				color->save(".color." + std::to_string(frameId) + ".png", 0.25f, 128.f);
-				circ->save(".circle." + std::to_string(frameId) + ".png");
-			}
-
-			CLArray counter(sizeof(cl_int)*3);
 			{
 				CLMap<int> counterMap = counter.write<int>();
 				counterMap[0] = 0;
 				counterMap[1] = 0;
 				counterMap[2] = 0;
 			}
-			CLArray matchArray(sizeof(CLMatch) * r.maxBlobs);
-			OpenCL::await(matchKernel, cl::EnqueueArgs(visibleFieldRange), flat->image, circ->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, (float)r.minScore, (int)floor(r.perspective->minBlobRadius/r.perspective->fieldScale), r.maxBlobs); //TODO borked minScore and radius at robocup?
+			OpenCL::await(blobList, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1])), flat->image, blobCenter->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, (float)r.minScore, (int)floorf(r.perspective->minBlobRadius / r.perspective->fieldScale), r.maxBlobs);
+
+			if(r.debugImages && frameId == 1) {
+				flat->save(".flat." + std::to_string(frameId) + ".png");
+				gradDot->save(".gradDot." + std::to_string(frameId) + ".png", 0.25f, 128.f);
+				blobCenter->save(".blob." + std::to_string(frameId) + ".png");
+			}
 
 			std::vector<Match> matches; //Same lifetime as KDTree required
 			{
@@ -350,7 +328,7 @@ int main(int argc, char* argv[]) {
 				}
 
 				if(counterMap[0] > r.maxBlobs)
-					std::cerr << "[blob] max blob amount reached: " << counterMap[0] << "/" << r.maxBlobs << std::endl;
+					std::cerr << "[main] max blob amount reached: " << counterMap[0] << "/" << r.maxBlobs << std::endl;
 			}
 
 			std::list<std::unique_ptr<BotHypothesis>> botHypotheses;
@@ -376,10 +354,6 @@ int main(int argc, char* argv[]) {
 
 			filterHypothesesScore(ballHypotheses, 0.0);
 
-			//TODO area around tracked ball with reduced or alternative minCircularity?
-			//TODO test circ score scoring influences
-			//TODO more than one ball on field line unrealistic
-
 			SSL_WrapperPacket wrapper;
 			SSL_DetectionFrame* detection = wrapper.mutable_detection();
 			detection->set_frame_number(frameId);
@@ -397,6 +371,7 @@ int main(int argc, char* argv[]) {
 
 #if BENCHMARK
 			detection->set_t_sent(startTime + processingTime);
+			std::cout << "[main] time " << processingTime * 1000.0 << " ms " << matches.size() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
 #else
 			detection->set_t_sent(r.camera->getTime());
 #endif
@@ -405,9 +380,6 @@ int main(int argc, char* argv[]) {
 			if(processingTime > r.camera->expectedFrametime())
 				std::cout << "[main] frame time overrun: " << processingTime * 1000.0 << " ms " << matches.size() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
 
-#if BENCHMARK
-			std::cout << "[main] time " << processingTime * 1000.0 << " ms " << blobs.getSize() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
-#else
 			if(r.rawFeed) {
 				r.rtpStreamer->sendFrame(clImg);
 			} else {
@@ -416,18 +388,22 @@ int main(int argc, char* argv[]) {
 						r.rtpStreamer->sendFrame(flat);
 						break;
 					case 1:
-						r.rtpStreamer->sendFrame(color);
+						r.rtpStreamer->sendFrame(gradDot);
 						break;
 					case 2:
-						r.rtpStreamer->sendFrame(circ);
+						r.rtpStreamer->sendFrame(blobCenter);
 						break;
 				}
 			}
-#endif
 		} else if(r.socket->getGeometryVersion()) {
-			geometryCalibration(r, *img);
+			geometryCalibration(r, *clImg);
 		} else {
 			r.rtpStreamer->sendFrame(clImg);
+
+			if(frameId == 100) {  // Wait for automatic gain, exposure and white balance adjustments
+				clImg->save(".sample." + std::to_string(r.camId) + ".png");
+				std::cout << "[main] Saved sample image" << std::endl;
+			}
 		}
 	}
 

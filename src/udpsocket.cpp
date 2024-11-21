@@ -109,11 +109,21 @@ void UDPSocket::run() {
 void VisionSocket::geometryCheck() {
 	geometryMutex.lock();
 	if(!google::protobuf::util::MessageDifferencer::Equals(receivedGeometry, geometry)) {
-		std::cout << "[VisionSocket] New geometry received" << std::endl;
 		geometry.CopyFrom(receivedGeometry);
+		if(geometry.field().has_ball_radius())
+			ballRadius = geometry.field().ball_radius();
+
 		geometryVersion++;
+		std::cout << "[VisionSocket] New geometry received" << std::endl;
 	}
 	geometryMutex.unlock();
+}
+
+std::map<int, std::vector<TrackingState>> VisionSocket::getTrackedObjects() {
+	trackedMutex.lock();
+	std::map<int, std::vector<TrackingState>> copy = trackedObjects;
+	trackedMutex.unlock();
+	return copy;
 }
 
 
@@ -176,10 +186,11 @@ static inline void trackBots(const double timestamp, const float defaultBotHeigh
 void VisionSocket::detectionTracking(const SSL_DetectionFrame &detection) {
 	const double timestamp = detection.t_capture();
 
-	const std::vector<TrackingState>& previous = trackedObjects[detection.camera_id()];
+	trackedMutex.lock();
+	const std::vector<TrackingState> previous = trackedObjects[detection.camera_id()];
+	trackedMutex.unlock();
 	std::vector<TrackingState> objects;
 
-	//TODO better filtering than next
 	for (const auto& ball : detection.balls()) {
 		float z = ball.has_z() ? ball.z() : ballRadius;
 
@@ -221,7 +232,9 @@ void VisionSocket::detectionTracking(const SSL_DetectionFrame &detection) {
 	trackBots(timestamp, defaultBotHeight, detection.robots_yellow(), previous, objects, 0);
 	trackBots(timestamp, defaultBotHeight, detection.robots_blue(), previous, objects, 16);
 
-	trackedObjects[detection.camera_id()] = objects; //TODO synchronization/mutex
+	trackedMutex.lock();
+	trackedObjects[detection.camera_id()] = objects;
+	trackedMutex.unlock();
 }
 
 

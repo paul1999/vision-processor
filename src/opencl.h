@@ -25,12 +25,15 @@
 
 class PixelFormat {
 public:
+	// CLImage formats
 	static const PixelFormat RGBA8;
-	static const PixelFormat RGGB8;
-	static const PixelFormat BGR888;
-	static const PixelFormat U8;
-	static const PixelFormat I8;
 	static const PixelFormat F32;
+
+	// Raw Bayer formats
+	static const PixelFormat RGGB8;
+	static const PixelFormat GRBG8;
+
+	static const PixelFormat BGR8;
 
 	[[nodiscard]] int pixelSize() const { return stride*rowStride; }
 
@@ -38,8 +41,13 @@ public:
 	const int rowStride;
 	const bool color;
 	const int cvType;
+	const cl::ImageFormat clFormat;
+
+	const char* toRgbaKernel;
+	const char* toRgbaKernelEnd;
 private:
-	PixelFormat(int stride, int rowStride, bool color, int cvType): stride(stride), rowStride(rowStride), color(color), cvType(cvType) {}
+	PixelFormat(int stride, int rowStride, bool color, int cvType, const cl::ImageFormat& clFormat, const char* toRgbaKernel, const char* toRgbakernelEnd): stride(stride), rowStride(rowStride), color(color), cvType(cvType), clFormat(clFormat), toRgbaKernel(toRgbaKernel), toRgbaKernelEnd(toRgbakernelEnd) {}
+	PixelFormat(int stride, int rowStride, bool color, int cvType, const cl::ImageFormat& clFormat): PixelFormat(stride, rowStride, color, cvType, clFormat, nullptr, nullptr) {}
 };
 
 

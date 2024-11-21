@@ -27,9 +27,9 @@ extern "C" {
 }
 
 
-RTPStreamer::RTPStreamer(std::shared_ptr<OpenCL> openCl, std::string uri, int framerate): openCl(std::move(openCl)), uri(std::move(uri)), framerate(framerate), frametime_us(1000000 / framerate) {
+RTPStreamer::RTPStreamer(bool active, std::shared_ptr<OpenCL> openCl, std::string uri, int framerate): active(active), openCl(std::move(openCl)), uri(std::move(uri)), framerate(framerate), frametime_us(1000000 / framerate) {
 	encoder = std::thread(&RTPStreamer::encoderRun, this);
-	rgb2nv12 = this->openCl->compile(kernel_rgb2nv12_cl, kernel_rgb2nv12_cl_end);
+	rgb2nv12 = this->openCl->compile(kernel_rgba2nv12_cl, kernel_rgba2nv12_cl_end);
 	f2nv12 = this->openCl->compile(kernel_f2nv12_cl, kernel_f2nv12_cl_end);
 }
 
@@ -47,6 +47,9 @@ RTPStreamer::~RTPStreamer() {
 
 //Adopted from CC BY-SA 4.0 https://stackoverflow.com/a/61988145 Dmitrii Zabotlin
 void RTPStreamer::sendFrame(std::shared_ptr<CLImage> image) {
+	if(!active)
+		return;
+
 	std::unique_lock<std::mutex> lock(queueMutex);
 
 	queue = std::move(image);

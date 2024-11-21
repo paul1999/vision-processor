@@ -20,10 +20,10 @@
 #define CATCH_SPINNAKER(f) try { f; } catch (Spinnaker::Exception &e) { std::cerr << "[Spinnaker] Could not set parameter: " << e.GetFullErrorMessage() << std::endl; }
 
 
-class SpinnakerImage : public Image {
+class SpinnakerImage : public RawImage {
 public:
 	// TODO investigate unusable timestamp due to bad time resolution: pImage->GetTimeStamp() / 1e9
-	SpinnakerImage(SpinnakerDriver& source, const Spinnaker::ImagePtr& pImage): Image(*source.borrow(pImage)), source(source), pImage(pImage) {}
+	SpinnakerImage(SpinnakerDriver& source, const Spinnaker::ImagePtr& pImage): RawImage(*source.borrow(pImage)), source(source), pImage(pImage) {}
 
 	~SpinnakerImage() override {
 		pImage->Release();
@@ -70,7 +70,6 @@ SpinnakerDriver::SpinnakerDriver(int id, double exposure, double gain, WhiteBala
 		CATCH_SPINNAKER(pCam->ExposureTime.SetValue(exposure * 1000.0))
 	}
 
-	//TODO smarter autogain and autoexposure through feedback from blob brightness
 	if(gain == 0.0) {
 		CATCH_SPINNAKER(pCam->GainAuto.SetValue(Spinnaker::GainAuto_Continuous))
 	} else {
@@ -104,7 +103,7 @@ SpinnakerDriver::SpinnakerDriver(int id, double exposure, double gain, WhiteBala
 	int width = pCam->WidthMax.GetValue();
 	int height = pCam->HeightMax.GetValue();
 	for(int i = 0; i < pCam->TLStream.StreamBufferCountManual.GetMin(); i++) {
-		std::shared_ptr<Image> buffer = std::make_shared<Image>(&PixelFormat::RGGB8, width/2, height/2, "spinnaker");
+		std::shared_ptr<RawImage> buffer = std::make_shared<RawImage>(&PixelFormat::RGGB8, width/2, height/2, "spinnaker");
 		buffers[buffer] = std::make_unique<CLMap<uint8_t>>(buffer->write<uint8_t>());
 	}
 
@@ -115,16 +114,19 @@ SpinnakerDriver::SpinnakerDriver(int id, double exposure, double gain, WhiteBala
 	pCam->SetBufferOwnership(Spinnaker::SPINNAKER_BUFFER_OWNERSHIP_USER);
 	pCam->SetUserBuffers(bufferPtrs.data(), buffers.size(), width*height);
 
-	/* TODO Advisable with Ethernet cameras on special interfaces
-	 if (IsWritable(pCam->GevSCPSPacketSize)) {
-		pCam->GevSCPSPacketSize.SetValue(9000);
-	}*/
+	if (IsWritable(pCam->GevSCPSPacketSize)) {
+		CATCH_SPINNAKER(pCam->GevSCPSPacketSize.SetValue(9000));
+	}
 
 	pCam->BeginAcquisition();
 }
 
-std::shared_ptr<Image> SpinnakerDriver::readImage() {
+std::shared_ptr<RawImage> SpinnakerDriver::readImage() {
 	return std::make_shared<SpinnakerImage>(*this, pCam->GetNextImage());
+}
+
+const PixelFormat SpinnakerDriver::format() {
+	return PixelFormat::RGGB8;
 }
 
 double SpinnakerDriver::expectedFrametime() {
@@ -135,7 +137,7 @@ SpinnakerDriver::~SpinnakerDriver() {
 	pCam->EndAcquisition();
 }
 
-std::shared_ptr<Image> SpinnakerDriver::borrow(const Spinnaker::ImagePtr& pImage) {
+std::shared_ptr<RawImage> SpinnakerDriver::borrow(const Spinnaker::ImagePtr& pImage) {
 	void* data = pImage->GetData();
 	for (auto& item : buffers) {
 		if(item.second != nullptr && **item.second == data) {
@@ -145,12 +147,12 @@ std::shared_ptr<Image> SpinnakerDriver::borrow(const Spinnaker::ImagePtr& pImage
 	}
 
 	std::cerr << "[Spinnaker] Did not get image with given buffer, creating new buffer; expect OpenCL performance degradation" << std::endl;
-	std::shared_ptr<Image> image = std::make_shared<Image>(&PixelFormat::RGGB8, (int)pImage->GetWidth() / 2, (int)pImage->GetHeight() / 2, (unsigned char*)pImage->GetData());
+	std::shared_ptr<RawImage> image = std::make_shared<RawImage>(&PixelFormat::RGGB8, (int)pImage->GetWidth() / 2, (int)pImage->GetHeight() / 2, (unsigned char*)pImage->GetData());
 	buffers[image] = nullptr;
 	return image;
 }
 
-void SpinnakerDriver::restore(const Image& image) {
+void SpinnakerDriver::restore(const RawImage& image) {
 	for (auto& item : buffers) {
 		if(item.first->buffer == image.buffer) {
 			item.second = std::make_unique<CLMap<uint8_t>>(item.first->write<uint8_t>());

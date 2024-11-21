@@ -131,7 +131,7 @@ if __name__ == '__main__':
                     updated = True
 
                 if updated:
-                    print(f"Updated camera {camera.camera_id} calibration.")
+                    print(f"Updated camera {camera.camera_id} calibration: {camera}")
     receiver.consume = update_cameras
 
     with receiver:

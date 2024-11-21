@@ -22,10 +22,10 @@ typedef std::pair<cv::Vec2f, cv::Vec2f> CVLine;
 typedef std::vector<std::pair<cv::Vec2f, cv::Vec2f>> CVLines;
 
 /* Estimates the half line width without camera model from the field size and camera amount */
-int halfLineWidthEstimation(const Resources& r, const Image& img);
+int halfLineWidthEstimation(const Resources& r, const cv::Mat& img);
 
 /* Finds line points by detecting ridges */
-void thresholdImage(const Resources& r, const Image& gray, int halfLineWidth, Image& thresholded);
+void thresholdImage(const Resources& r, const cv::Mat& gray, int halfLineWidth, cv::Mat& thresholded);
 
 /* Groups neighbouring line segments together */
 std::vector<CVLines> groupLineSegments(const Resources& r, CVLines& segments);

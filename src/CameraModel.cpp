@@ -129,13 +129,6 @@ void CameraModel::ensureSize(const Eigen::Vector2i& newSize) {
 	principalPoint *= factor;
 }
 
-void CameraModel::updateFocalLength(float newFocalLength) {
-	const float factor = newFocalLength / focalLength;
-
-	focalLength = newFocalLength;
-	distortionK2 *= factor*factor;
-}
-
 Eigen::Vector2f CameraModel::normalizeUndistort(const Eigen::Vector2f& p) const {
 	Eigen::Vector2f normalized = (p - principalPoint) / focalLength;
 	normalized *= 1.0f + distortionK2 * normalized.dot(normalized);

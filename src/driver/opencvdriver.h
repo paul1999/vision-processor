@@ -21,41 +21,18 @@
 
 class OpenCVDriver : public CameraDriver {
 public:
-	explicit OpenCVDriver(const std::string& path): capture(path, cv::CAP_ANY, {cv::CAP_PROP_HW_ACCELERATION, cv::VIDEO_ACCELERATION_ANY}), name(path) {
-		std::replace(name.begin(), name.end(), '/', '_');
-	}
+	explicit OpenCVDriver(const std::string& path, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double>& wbValues);
 
-	std::shared_ptr<Image> readImage() override {
-		if(image == nullptr || !image.unique())
-			image = std::make_shared<Image>(&PixelFormat::BGR888, capture.get(cv::CAP_PROP_FRAME_WIDTH), capture.get(cv::CAP_PROP_FRAME_HEIGHT), name);
+	std::shared_ptr<RawImage> readImage() override;
 
-		{
-			CLMap<uint8_t> map = image->write<uint8_t>();
-			cv::Mat mat(cv::Size(image->width, image->height), CV_8UC3, (void*)*map);
-			if(!capture.read(mat))
-				return nullptr;
-		}
+	const PixelFormat format() override;
 
-		return image;
-		//return image->toSharedRGGB();
-	}
+	double expectedFrametime() override;
 
-	double expectedFrametime() override {
-		//TODO might fail with cameras
-		return 1 / capture.get(cv::CAP_PROP_FPS);
-	}
-
-	double getTime() override {
-		double pos = capture.get(cv::CAP_PROP_POS_FRAMES);
-
-		if(pos == 0.0) // Not a video file, use real time
-			return CameraDriver::getTime();
-
-		return pos / capture.get(cv::CAP_PROP_FPS);
-	}
+	double getTime() override;
 
 private:
 	cv::VideoCapture capture;
-	std::shared_ptr<Image> image = nullptr;
+	std::shared_ptr<RawImage> image = nullptr;
 	std::string name;
 };

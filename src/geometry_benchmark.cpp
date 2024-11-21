@@ -14,6 +14,7 @@
      limitations under the License.
  */
 #include <yaml-cpp/node/parse.h>
+#include <opencv2/imgproc.hpp>
 #include "Resources.h"
 #include "GroundTruth.h"
 #include "proto/ssl_vision_wrapper.pb.h"
@@ -53,18 +54,15 @@ static void geometryBenchmark(Resources& r, const uint32_t frameId) {
 int main(int argc, char* argv[]) {
 	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
 
-	while(r.waitForGeometry && !r.socket->getGeometryVersion()) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		r.socket->geometryCheck();
-	}
-
-	std::shared_ptr<Image> img = r.camera->readImage();
+	std::shared_ptr<RawImage> img = r.camera->readImage();
 	r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
+	std::shared_ptr<CLImage> clImg = r.raw2rgba(*img);
 
-	Image gray = img->toGrayscale();
-	Image thresholded(&PixelFormat::U8, gray.width, gray.height, gray.name);
+	cv::Mat gray;
+	cv::cvtColor(clImg->read<RGBA>().cv, gray, cv::COLOR_RGBA2GRAY);
+	cv::Mat thresholded(gray.rows, gray.cols, CV_8UC1);
 	thresholdImage(r, gray, halfLineWidthEstimation(r, gray), thresholded);
-	r.perspective->model.ensureSize({thresholded.width, thresholded.height});
+	r.perspective->model.ensureSize({thresholded.cols, thresholded.rows});
 	const std::vector<Eigen::Vector2f> linePixels = getLinePixels(thresholded);
 	const int error = modelError(r, r.perspective->model, linePixels);
 

@@ -19,14 +19,6 @@
 #include "udpsocket.h"
 #include "CameraModel.h"
 
-struct V2 {
-	double x, y;
-};
-
-struct V3{
-	double x, y, z;
-};
-
 typedef struct __attribute__ ((packed)) {
 	int shape[2];  // raw image shape
 	float f;       // 1/(focal length)
@@ -34,10 +26,7 @@ typedef struct __attribute__ ((packed)) {
 	float d;       // distortion
 	float r[9]; // rotation matrix
 	float c[3];    // camera position
-	int field[2]; // field size incl. boundary in cm
-	float fInv;
-	float rInv[9];
-} ClPerspective;
+} CLCameraModel;
 
 
 class Perspective {
@@ -45,13 +34,10 @@ public:
 	Perspective(std::shared_ptr<VisionSocket> socket, int camId): socket(std::move(socket)), camId(camId) {}
 	void geometryCheck(int width, int height, double maxBotHeight);
 
-	V2 image2field(V2 pos, double height) const;
-	V2 field2image(V3 pos) const;
-
 	Eigen::Vector2f flat2field(const Eigen::Vector2f& pos) const;
 	Eigen::Vector2f field2flat(const Eigen::Vector2f& pos) const;
 
-	ClPerspective getClPerspective() const;
+	CLCameraModel getCLCameraModel() const;
 
 	SSL_GeometryFieldSize field;
 	CameraModel model;

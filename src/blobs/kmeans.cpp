@@ -33,14 +33,8 @@ bool kMeans(const Eigen::Vector3i& contrast, const std::vector<Eigen::Vector3i>&
 		}
 	}
 
-	if(inGroupDiff > outGroupDiff) {
-		//TODO rejecting here necessary?
-		//std::cerr << "   Ingroup bigger than outgroup" << std::endl;
+	if(inGroupDiff > outGroupDiff)
 		return false;
-	}
-
-	inGroupDiff = sqrtf(inGroupDiff);
-	outGroupDiff = sqrtf(outGroupDiff);
 
 	Eigen::Vector3i c1backup = c1;
 	Eigen::Vector3i c2backup = c2;
@@ -75,7 +69,6 @@ bool kMeans(const Eigen::Vector3i& contrast, const std::vector<Eigen::Vector3i>&
 		}
 
 		if(n1 == 0 || n2 == 0) {
-			//std::cerr << "   N0 " << n1 << "|" << n2 << "   " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
 			c1 = c1backup;
 			c2 = c2backup;
 			return false;
@@ -87,39 +80,11 @@ bool kMeans(const Eigen::Vector3i& contrast, const std::vector<Eigen::Vector3i>&
 		c2 = sum2 / n2;
 	}
 
-	if((float)(c1 - c2).norm() < outGroupDiff/2.0f) {
-		//std::cerr << "   Skipping Update for " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
+	if((float)(c1 - c2).norm() < sqrtf(outGroupDiff)/2.0f) {
 		c1 = c1backup;
 		c2 = c2backup;
 		return false;
 	}
-
-	/*if((c1 - c2).dot(c1backup - c2backup) <= 0) { //TODO did never trigger
-		std::cerr << "   Attempted color direction inversion" << std::endl;
-		c1 = c1backup;
-		c2 = c2backup;
-	}*/
-
-	// https://en.wikipedia.org/wiki/Silhouette_(clustering)#Simplified_Silhouette_and_Medoid_Silhouette
-	/*float s1 = 0.0;
-	float s2 = 0.0;
-	for (const auto& value : values) {
-		float a = (float)(value - c1).norm();
-		float b = (float)(value - c2).norm();
-		if(a < b) {
-			s1 += (b - a) / b;
-		} else {
-			s2 += (a - b) / a;
-		}
-	}
-
-	//TODO circularity of samples: if roughly circular: one cluster?
-	//TODO if small sample size: combine multiple frames
-	if(std::max(s1/(float)n1, s2/(float)n2) < 1.0f) { //TODO not working	 //TODO hardcoded value
-		std::cerr << "   Skipping Update for " << n1 << "|" << n2 << "   " << c1backup.transpose() << "|" << c2backup.transpose() << "   " << c1.transpose() << "|" << c2.transpose() << std::endl;
-		c1 = c1backup;
-		c2 = c2backup;
-	}*/
 
 	return true;
 }

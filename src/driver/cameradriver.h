@@ -16,7 +16,7 @@
 #pragma once
 
 #include <memory>
-#include "image.h"
+#include "rawimage.h"
 
 double getRealTime();
 
@@ -32,7 +32,9 @@ class CameraDriver {
 public:
 	virtual ~CameraDriver() = default;
 
-	virtual std::shared_ptr<Image> readImage() = 0;
+	virtual std::shared_ptr<RawImage> readImage() = 0;
+
+	virtual const PixelFormat format() = 0;
 
 	virtual double expectedFrametime() = 0;
 

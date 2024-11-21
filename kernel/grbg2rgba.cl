@@ -17,16 +17,14 @@
 #include "clstd.h"
 #endif
 
-const sampler_t sampler = CLK_FILTER_NEAREST | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_NONE;
 
-kernel void sat_vertical(read_only image2d_t in, write_only image2d_t out) {
-	const int height = get_image_height(in);
-	const int x = get_global_id(0);
+kernel void buf2img(global const uchar* img, write_only image2d_t out) {
+	int2 pos = (int2)(get_global_id(0), get_global_id(1));
+	int imgpos = 2*pos.x + 2*pos.y*2*get_global_size(0);
 
-	float sum = 0.f;
-	for(int y = 0; y < height; y++) {
-		const int2 pos = (int2)(x, y);
-		sum += read_imagef(in, sampler, pos).x;
-		write_imagef(out, pos, sum);
-	}
+	uchar r = img[imgpos+1];
+	uchar g = img[imgpos]/2 + img[imgpos+1+2*get_global_size(0)]/2;
+	uchar b = img[imgpos+2*get_global_size(0)];
+
+	write_imageui(out, pos, (uint4)(r, g, b, 255));
 }

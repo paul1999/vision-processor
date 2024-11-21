@@ -216,7 +216,6 @@ if __name__ == '__main__':
                         min_video = video, rate
         print(f"Worst video {min_video[0]} Recall {min_video[1]: .4f}")
 
-        # TODO unweighted average?
         min_type = None, 1.0
         for t in {t for cams in truepositive_rates[binary].values() for videos in cams.values() for types in videos.values() for t in types.keys()}:
             if t != 'false':

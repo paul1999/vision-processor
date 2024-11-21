@@ -1,6 +1,7 @@
 # Minimal vision_processor configuration
 
 # Vision camera ID handled by this vision_processor instance.
+# On multi camera fields the IDs have to be ordered according to camera_ids.png.
 cam_id: 0
 
 camera:
@@ -23,9 +24,8 @@ geometry:
   # If your camera doesn't look perpendicular to the field you can let it at 0.0 for automatic camera height calibration.
   camera_height: 0.0
 
-  # Field line crossings at the edges of camera extent in pixels from the top left image corner.
-  # Goal line/Touch line crossings on single camera fields
-  # Halfway line/Touch lines/Goal line crossings on dual camera fields...
+  # Field line crossings at the edges of the camera extent in pixels from the top left image corner.
+  # The first coordinate must be the edge with the smallest x and y field coordinate.
   line_corners:
   #- [0 , 1000]
   #- [0 , 0]

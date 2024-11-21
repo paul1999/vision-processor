@@ -62,27 +62,28 @@ struct TrackingState {
 
 class VisionSocket: public UDPSocket {
 public:
-	VisionSocket(const std::string &ip, uint16_t port, float defaultBotHeight, float ballRadius): UDPSocket(ip, port), defaultBotHeight(defaultBotHeight), ballRadius(ballRadius) {}
+	VisionSocket(const std::string &ip, uint16_t port, float defaultBotHeight): UDPSocket(ip, port), defaultBotHeight(defaultBotHeight) {}
 
 	void geometryCheck();
 	int getGeometryVersion() const { return geometryVersion; }
 	SSL_GeometryData& getGeometry() { return geometry; }
 
-	std::map<int, std::vector<TrackingState>>& getTrackedObjects() { return trackedObjects; }
+	std::map<int, std::vector<TrackingState>> getTrackedObjects();
 private:
 	void parse(char* data, int length) override;
 
 	void detectionTracking(const SSL_DetectionFrame& detection);
 
 	const float defaultBotHeight;
-	const float ballRadius;
 
 	int geometryVersion = 0;
+	float ballRadius = 21.5f;
 	SSL_GeometryData geometry;
 	SSL_GeometryData receivedGeometry;
 	std::mutex geometryMutex;
 
 	std::map<int, std::vector<TrackingState>> trackedObjects;
+	std::mutex trackedMutex;
 };
 
 class GCSocket: public UDPSocket {

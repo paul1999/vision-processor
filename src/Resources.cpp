@@ -15,6 +15,7 @@
  */
 #include <yaml-cpp/yaml.h>
 
+#include "cl_kernels.h"
 #include "Resources.h"
 #include "driver/spinnakerdriver.h"
 #include "driver/mvimpactdriver.h"
@@ -94,14 +95,14 @@ Resources::Resources(const YAML::Node& config) {
 
 #ifdef MVIMPACT
 	if(driver == "MVIMPACT")
-		camera = std::make_unique<MVImpactDriver>(driver_id);
+		camera = std::make_unique<MVImpactDriver>(driver_id, exposure, gain, wbType, wbValues);
 #endif
 
 	if(driver == "OPENCV")
-		camera = std::make_unique<OpenCVDriver>(cam["path"].as<std::string>("/dev/video" + std::to_string(driver_id)));
+		camera = std::make_unique<OpenCVDriver>(cam["path"].as<std::string>("/dev/video" + std::to_string(driver_id)), exposure, gain, wbType, wbValues);
 
 	if(camera == nullptr) {
-		std::cerr << "[Resources] No camera/image source defined." << std::endl;
+		std::cerr << "[Resources] Unknown camera/image driver defined: " << driver << std::endl;
 		exit(1);
 	}
 
@@ -144,14 +145,48 @@ Resources::Resources(const YAML::Node& config) {
 
 	YAML::Node debug = getOptional(config["debug"]);
 	groundTruth = debug["ground_truth"].as<std::string>("gt.yml");
-	waitForGeometry = debug["wait_for_geometry"].as<bool>(false);
+	bool waitForGeometry = debug["wait_for_geometry"].as<bool>(false);
 	debugImages = debug["debug_images"].as<bool>(false);
-	rawFeed = debug["raw_feed"].as<bool>(false);
 
-	YAML::Node sizes = getOptional(config["sizes"]);
 	YAML::Node network = getOptional(config["network"]);
-	gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(sizes["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());
-	socket = std::make_shared<VisionSocket>(network["vision_ip"].as<std::string>("224.5.23.2"), network["vision_port"].as<int>(10006), gcSocket->defaultBotHeight, 21.5); //TODO
+	gcSocket = std::make_shared<GCSocket>(network["gc_ip"].as<std::string>("224.5.23.1"), network["gc_port"].as<int>(10003), YAML::LoadFile(config["bot_heights_file"].as<std::string>("robot-heights.yml")).as<std::map<std::string, double>>());
+	socket = std::make_shared<VisionSocket>(network["vision_ip"].as<std::string>("224.5.23.2"), network["vision_port"].as<int>(10006), gcSocket->defaultBotHeight);
 	perspective = std::make_shared<Perspective>(socket, camId);
-	rtpStreamer = std::make_shared<RTPStreamer>(openCl, "rtp://" + network["stream_ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(network["stream_ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(network["stream_port"].as<int>(10100)));
+
+	YAML::Node stream = getOptional(config["stream"]);
+	rtpStreamer = std::make_shared<RTPStreamer>(stream["active"].as<bool>(true), openCl, "rtp://" + stream["ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(stream["ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(stream["port"].as<int>(10100)));
+	rawFeed = stream["raw_feed"].as<bool>(true);
+
+	raw2rgbaKernel = openCl->compile(camera->format().toRgbaKernel, camera->format().toRgbaKernelEnd);
+	resampling = openCl->compile(kernel_resampling_cl, kernel_resampling_cl_end);
+	gradientDot = openCl->compile(kernel_gradientDot_cl, kernel_gradientDot_cl_end);
+	satHorizontal = openCl->compile(kernel_satHorizontal_cl, kernel_satHorizontal_cl_end);
+	satVertical = openCl->compile(kernel_satVertical_cl, kernel_satVertical_cl_end);
+	satBlobCenter = openCl->compile(kernel_satBlobCenter_cl, kernel_satBlobCenter_cl_end);
+
+	while(waitForGeometry && !socket->getGeometryVersion()) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		socket->geometryCheck();
+	}
+}
+
+std::shared_ptr<CLImage> Resources::raw2rgba(const RawImage& img) {
+	std::shared_ptr<CLImage> clImg = openCl->acquire(&PixelFormat::RGBA8, img.width, img.height, img.name);
+	OpenCL::await(raw2rgbaKernel, cl::EnqueueArgs(cl::NDRange(img.width, img.height)), img.buffer, clImg->image);
+	return clImg;
+}
+
+void Resources::rgba2blobCenter(const CLImage& rgba, std::shared_ptr<CLImage>& flat, std::shared_ptr<CLImage>& gradDot, std::shared_ptr<CLImage>& blobCenter) {
+	cl::NDRange visibleFieldRange(perspective->reprojectedFieldSize[0], perspective->reprojectedFieldSize[1]);
+	flat = openCl->acquire(&PixelFormat::RGBA8, perspective->reprojectedFieldSize[0], perspective->reprojectedFieldSize[1], rgba.name);
+	gradDot = openCl->acquire(&PixelFormat::F32, perspective->reprojectedFieldSize[0], perspective->reprojectedFieldSize[1], rgba.name);
+	std::shared_ptr<CLImage> gradDotHor = openCl->acquire(&PixelFormat::F32, perspective->reprojectedFieldSize[0], perspective->reprojectedFieldSize[1], rgba.name);
+	std::shared_ptr<CLImage> gradDotSat = openCl->acquire(&PixelFormat::F32, perspective->reprojectedFieldSize[0], perspective->reprojectedFieldSize[1], rgba.name);
+	blobCenter = openCl->acquire(&PixelFormat::F32, perspective->reprojectedFieldSize[0], perspective->reprojectedFieldSize[1], rgba.name);
+
+	cl::Event e1 = OpenCL::run(resampling, cl::EnqueueArgs(visibleFieldRange), rgba.image, flat->image, perspective->getCLCameraModel(), (float)gcSocket->maxBotHeight, perspective->fieldScale, perspective->visibleFieldExtent[0], perspective->visibleFieldExtent[2]);
+	cl::Event e2 = OpenCL::run(gradientDot, cl::EnqueueArgs(e1, visibleFieldRange), flat->image, gradDot->image, (int)ceilf(perspective->maxBlobRadius / perspective->fieldScale) / 3);
+	cl::Event e3 = OpenCL::run(satHorizontal, cl::EnqueueArgs(e2, cl::NDRange(perspective->reprojectedFieldSize[1])), gradDot->image, gradDotHor->image);
+	cl::Event e4 = OpenCL::run(satVertical, cl::EnqueueArgs(e3, cl::NDRange(perspective->reprojectedFieldSize[0])), gradDotHor->image, gradDotSat->image);
+	OpenCL::await(satBlobCenter, cl::EnqueueArgs(e4, visibleFieldRange), gradDotSat->image, blobCenter->image, (int)ceilf(perspective->maxBlobRadius / perspective->fieldScale));
 }

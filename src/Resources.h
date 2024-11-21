@@ -75,7 +75,6 @@ public:
 	double maxLineSegmentAngle;
 
 	std::string groundTruth;
-	bool waitForGeometry;
 	bool debugImages;
 	bool rawFeed;
 
@@ -84,4 +83,14 @@ public:
 	std::shared_ptr<Perspective> perspective;
 	std::shared_ptr<OpenCL> openCl;
 	std::shared_ptr<RTPStreamer> rtpStreamer;
+
+	cl::Kernel raw2rgbaKernel;
+	cl::Kernel resampling;
+	cl::Kernel gradientDot;
+	cl::Kernel satHorizontal;
+	cl::Kernel satVertical;
+	cl::Kernel satBlobCenter;
+
+	std::shared_ptr<CLImage> raw2rgba(const RawImage& img);
+	void rgba2blobCenter(const CLImage& rgba, std::shared_ptr<CLImage>& flat, std::shared_ptr<CLImage>& gradDot, std::shared_ptr<CLImage>& blobCenter);
 };

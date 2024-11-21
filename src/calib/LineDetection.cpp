@@ -16,13 +16,13 @@
 #include "LineDetection.h"
 #include "GeomModel.h"
 
-int halfLineWidthEstimation(const Resources& r, const Image& img) {
+int halfLineWidthEstimation(const Resources& r, const cv::Mat& img) {
 	Eigen::Vector2f min;
 	Eigen::Vector2f max;
 	visibleFieldExtent(r, true, min, max);
 
 	Eigen::Vector2f extent = max - min;
-	Eigen::Vector2f camera(img.width, img.height);
+	Eigen::Vector2f camera(img.cols, img.rows);
 
 	// Assume large field extent side is large camera side
 	if(extent[0] < extent[1])
@@ -37,19 +37,15 @@ int halfLineWidthEstimation(const Resources& r, const Image& img) {
 
 static inline bool threshold(const Resources& r, int value, int neg, int pos) {
 	return value - neg > r.fieldLineThreshold && value - pos > r.fieldLineThreshold;
-	//return value - neg > r.fieldLineThreshold && value - pos > r.fieldLineThreshold && abs(pos - neg) < r.fieldLineThreshold;
 }
 
-void thresholdImage(const Resources& r, const Image& gray, const int halfLineWidth, Image& thresholded) {
-	const CLMap<uint8_t> data = gray.read<uint8_t>();
-	const int width = gray.width;
-	CLMap<uint8_t> tData = thresholded.write<uint8_t>();
-	for (int y = halfLineWidth; y < gray.height - halfLineWidth; y++) {
-		for (int x = halfLineWidth; x < width - halfLineWidth; x++) {
-			int value = data[x + y * width];
-			tData[x + y * width] = (
-					threshold(r, value, data[x - halfLineWidth + y * width], data[x + halfLineWidth + y * width]) ||
-					threshold(r, value, data[x + (y - halfLineWidth) * width], data[x + (y + halfLineWidth) * width])
+void thresholdImage(const Resources& r, const cv::Mat& gray, const int halfLineWidth, cv::Mat& thresholded) {
+	for (int y = halfLineWidth; y < gray.rows - halfLineWidth; y++) {
+		for (int x = halfLineWidth; x < gray.cols - halfLineWidth; x++) {
+			uint8_t value = gray.at<uint8_t>(y, x);
+			thresholded.at<uint8_t>(y, x) = (
+					threshold(r, value, gray.at<uint8_t>(y, x - halfLineWidth), gray.at<uint8_t>(y, x + halfLineWidth)) ||
+					threshold(r, value, gray.at<uint8_t>(y - halfLineWidth, x), gray.at<uint8_t>(y + halfLineWidth, x))
 			) ? 255 : 0;
 		}
 	}
@@ -76,7 +72,6 @@ std::vector<CVLines> groupLineSegments(const Resources& r, CVLines& segments) {
 						std::min(abs(v1[0]*(l.first[1] - root.first[1]) - (l.first[0] - root.first[0])*v1[1]) / sqrtf(v1.dot(v1)), abs(v1[0]*(l.second[1] - root.first[1]) - (l.second[0] - root.first[0])*v1[1]) / sqrtf(v1.dot(v1))) <= r.maxLineSegmentOffset &&
 						(dist(root.first, l.first) <= 200 || dist(root.second, l.first) <= 200 || dist(root.first, l.second) <= 200 || dist(root.second, l.second) <= 200)
 						) {
-					//TODO max dist
 					compound.push_back(l);
 					lit = segments.erase(lit);
 				} else {

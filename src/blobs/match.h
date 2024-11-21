@@ -18,7 +18,6 @@
 
 #include <compare>
 #include <eigen3/Eigen/Core>
-//#include <eigen3/Eigen/src/Core/Matrix.h>
 
 struct Match {
 	Eigen::Vector2f pos;

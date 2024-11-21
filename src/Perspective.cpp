@@ -57,7 +57,7 @@ void Perspective::geometryCheck(const int width, const int height, const double 
 	//calculate optimal fieldScale
 	float minFieldScale = MAXFLOAT;
 	float maxFieldScale = 0;
-	float fieldScaleSum = 0; //TODO currently from the perspective of the image -> better from field perspective?
+	float fieldScaleSum = 0;
 	int n = 0;
 	for(int y = 0; y < height-1; y++) {
 		for(int x = 0; x < width-1; x++) {
@@ -73,7 +73,6 @@ void Perspective::geometryCheck(const int width, const int height, const double 
 			}
 		}
 	}
-	//TODO option for best possible scale
 	fieldScale = fieldScaleSum / (float)n;
 	std::cout << "[Perspective] Field scale: " << minFieldScale << "mm/px < " << fieldScale << "mm/px < " << maxFieldScale << "mm/px" << std::endl;
 
@@ -110,16 +109,6 @@ void Perspective::geometryCheck(const int width, const int height, const double 
 	std::cout << "[Perspective] Visible field extent: " << visibleFieldExtent.transpose() << "mm (xmin,xmax,ymin,ymax) Field scale: " << fieldScale << "mm/px" << std::endl;
 }
 
-V2 Perspective::image2field(V2 pos, double height) const {
-	Eigen::Vector3f p = model.image2field({pos.x, pos.y}, (float)height);
-	return {p.x(), p.y()};
-}
-
-V2 Perspective::field2image(V3 pos) const {
-	Eigen::Vector2f p = model.field2image({(float)pos.x, (float)pos.y, (float)pos.z});
-	return {p.x(), p.y()};
-}
-
 Eigen::Vector2f Perspective::flat2field(const Eigen::Vector2f& pos) const {
 	return pos * fieldScale + Eigen::Vector2f(visibleFieldExtent[0], visibleFieldExtent[2]);
 }
@@ -129,26 +118,18 @@ Eigen::Vector2f Perspective::field2flat(const Eigen::Vector2f& pos) const {
 }
 
 
-ClPerspective Perspective::getClPerspective() const {
-	const Eigen::Matrix3f& i2f = model.i2fOrientation;
+CLCameraModel Perspective::getCLCameraModel() const {
 	const Eigen::Matrix3f& f2i = model.f2iOrientation.toRotationMatrix();
 	return {
 			{model.size.x(), model.size.y()},
-			1/model.focalLength,
+			model.focalLength,
 			{model.principalPoint.x(), model.principalPoint.y()},
 			model.distortionK2,
 			{
-				i2f(0, 0), i2f(0, 1), i2f(0, 2),
-				i2f(1, 0), i2f(1, 1), i2f(1, 2),
-				i2f(2, 0), i2f(2, 1), i2f(2, 2)
+					f2i(0, 0), f2i(0, 1), f2i(0, 2),
+					f2i(1, 0), f2i(1, 1), f2i(1, 2),
+					f2i(2, 0), f2i(2, 1), f2i(2, 2)
 			},
-			{model.pos.x(), model.pos.y(), model.pos.z()},
-			{(field.field_length() + 2*field.boundary_width())/10, (field.field_width() + 2*field.boundary_width())/10},
-			model.focalLength,
-			{
-				f2i(0, 0), f2i(0, 1), f2i(0, 2),
-				f2i(1, 0), f2i(1, 1), f2i(1, 2),
-				f2i(2, 0), f2i(2, 1), f2i(2, 2)
-			}
+			{model.pos.x(), model.pos.y(), model.pos.z()}
 	};
 }

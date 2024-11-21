@@ -6,14 +6,15 @@ minimize setup time and improve detection rates in uneven illumination condition
 ## Usage
 
 1. Compile `vision_processor` on all video data processing computers,
-   setup Python on the computer intended to inspect and configure vision.
-2. Configure one `config-minimal.yml` for each camera (on the corresponding processing computer, skip the `geometry` section for now) and
+   setup Python on the computer intended to inspect and configure the vision.
+2. Configure one `config-minimal.yml` for each camera
+   (on the corresponding processing computer, skip the `geometry` section for now) and
    `geometry.yml` on the configuration computer.
 3. Start `vision_processor` with correct configuration for each camera.
 4. Start `python/cam_viewer.py --cameras <X>` on the configuration computer.
 5. Adjust the orientation and position of the cameras.
    If blobs are overexposed (more white than colorful) set manual camera exposure and gain values (see `config.yml`). 
-6. Capture a single frame from each camera (`ffmpeg -protocol_whitelist file,rtp,udp -i python/cam[X].sdp -vframes 1 cam[X].png`)
+6. Restart `vision_processor` for the generation of a new sample image `img/sample.[X].png`
    and complete the `geometry` section of each camera config with it.
 7. Restart all `vision_processor`s (to reload the config).
 8. Start the `python/geom_publisher.py`.
@@ -81,11 +82,9 @@ Configure one of the geometry*.yml files according to your field setup and give 
 Opens the `mpv` video player with the camera streams from the vision_processor instances.
 
 
-## Known issues
+## Troubleshooting
 
-### Blobs in dark areas
-Blobs in dark areas might not be detected sufficiently du to too little contrast to the surrounding areas.
+Look if a config option in the full `config.yml` might fix your issues.
 
-### Team color instability
-In case multiple robots of one team color and no robots of the opposing team color are visible vision processor
-might start toggling the team color of the robots.
+If nothing helps, preserve the problematic scenario (Used `config.yml`, `geometry.yml` and a video of with
+`ffmpeg -protocol_whitelist file,rtp,udp -i python/cam[X].sdp cam[X].mp4`) for remote analysis.

@@ -20,9 +20,6 @@
 #include "Resources.h"
 
 
-uint8_t Rgb2Hue(const Eigen::Vector3i& rgb);
-
-
 class BallHypothesis {
 public:
 	BallHypothesis(const Resources& r, const Match* blob);

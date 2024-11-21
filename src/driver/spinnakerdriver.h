@@ -24,18 +24,20 @@ public:
 	explicit SpinnakerDriver(int id, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double>& wbValues);
 	~SpinnakerDriver() override;
 
-	std::shared_ptr<Image> readImage() override;
+	std::shared_ptr<RawImage> readImage() override;
+
+	const PixelFormat format() override;
 
 	double expectedFrametime() override;
 
-	std::shared_ptr<Image> borrow(const Spinnaker::ImagePtr& pImage);
-	void restore(const Image& image);
+	std::shared_ptr<RawImage> borrow(const Spinnaker::ImagePtr& pImage);
+	void restore(const RawImage& image);
 
 private:
 	Spinnaker::SystemPtr pSystem;
 	Spinnaker::CameraPtr pCam;
 
-	std::map<std::shared_ptr<Image>, std::unique_ptr<CLMap<uint8_t>>> buffers; // Use own image buffers for page size alignment (OpenCL pinned memory and zero copy)
+	std::map<std::shared_ptr<RawImage>, std::unique_ptr<CLMap<uint8_t>>> buffers; // Use own image buffers for page size alignment (OpenCL pinned memory and zero copy)
 };
 
 #endif

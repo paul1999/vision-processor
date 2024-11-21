@@ -18,30 +18,6 @@
 #include "pattern.h"
 
 
-//https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
-uint8_t Rgb2Hue(const Eigen::Vector3i& rgb) {
-	unsigned char rgbMin, rgbMax;
-
-	rgbMin = rgb.minCoeff();
-	rgbMax = rgb.maxCoeff();
-
-	uint8_t value = rgbMax;
-	if (value == 0)
-		return 0;
-
-	uint8_t saturation = (uint8_t)(255 * long(rgbMax - rgbMin) / value);
-	if (saturation == 0)
-		return 0;
-
-	if (rgbMax == rgb.x())
-		return 0 + 43 * (rgb.y() - rgb.z()) / (rgbMax - rgbMin);
-	else if (rgbMax == rgb.y())
-		return 85 + 43 * (rgb.z() - rgb.x()) / (rgbMax - rgbMin);
-	else
-		return 171 + 43 * (rgb.x() - rgb.y()) / (rgbMax - rgbMin);
-}
-
-
 BallHypothesis::BallHypothesis(const Resources& r, const Match* blob): blob(blob), pos(blob->pos) {
 	calcColorScore(r);
 }

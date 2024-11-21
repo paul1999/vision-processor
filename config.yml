@@ -1,7 +1,11 @@
 # VisionProcessor configuration
 
 # Vision camera ID handled by this VisionProcessor instance.
+# On multi camera fields the IDs have to be ordered according to camera_ids.png.
 #cam_id: 0
+
+# Team bot heights yml file (heights in mm)
+#bot_heights_file: robot-heights.yml
 
 camera:
   # Camera driver type. Availability depending on libraries installed.
@@ -13,14 +17,15 @@ camera:
   # OpenCV camera device, image or video file path (if unset id is used instead)
   #path: /dev/video0
 
-  # Spinnaker camera exposure time in ms to adjust brightness. Higher values lead to more motion blur.
+  # Camera exposure time in ms to adjust brightness. Higher values lead to more motion blur.
   # Camera frame rate will drop if set equal to or higher than the frame time (1 / fps_cam).
   # 0.0 = automatic exposure
   #exposure: 0.0
-  # Spinnaker camera gain to adjust brightness. Higher values lead to more noise.
+  # Camera gain to adjust brightness. Higher values lead to more noise.
   # 0.0 = automatic gain
   #gain: 0.0
-  # Spinnaker camera white balance. OUTDOOR or INDOOR for auto white balance with green or gray carpet respectively.
+  # Camera white balance. OUTDOOR or INDOOR for auto white balance with green or gray carpet respectively.
+  # (distinction between OUTDOOR and INDOOR currently only implemented for SPINNAKER backend)
   # [Blue white balance, Red white balance] for manual white balance.
   #white_balance: OUTDOOR
 
@@ -31,9 +36,8 @@ geometry:
   # 0.0 = automated camera height calibration, this does not work if the camera looks perpendicular to the field
   #camera_height: 0.0
 
-  # Field line crossings at the edges of camera extent in pixels from the top left image corner.
-  # Goal line/Touch line crossings on single camera fields
-  # Halfway line/Touch lines/Goal line crossings on dual camera fields...
+  # Field line crossings at the edges of the camera extent in pixels from the top left image corner.
+  # The first coordinate must be the edge with the smallest x and y field coordinate.
   #line_corners:
   #- [0 , 1000]
   #- [0 , 0]
@@ -77,10 +81,6 @@ color:
   #green: [0, 255, 128]
   #pink: [255, 0, 128]
 
-sizes:
-  # Team bot heights yml file (heights in mm)
-  #bot_heights_file: robot-heights.yml
-
 tracking:
   # Min tracking radius in mm
   #min_tracking_radius: 20.0
@@ -99,19 +99,23 @@ network:
   # Vision multicast port
   #vision_port: 10006
 
+stream:
+  # If false no network live stream will be encoded and sent
+  #active: true
+  # Only stream raw camera footage. Useful for recordings.
+  #raw_feed: true
+
   # Camera stream ip prefix
-  #stream_ip_base_prefix: 224.5.23.
+  #ip_base_prefix: 224.5.23.
   # Camera stream ip end base (cam_id is added to maintain separation)
-  #stream_ip_base_end: 100
+  #ip_base_end: 100
   # Camera stream port
-  #stream_port: 10100
+  #port: 10100
 
 debug:
   # Ground truth file. Only used by blob and geometry benchmark.
   #ground_truth: gt.yml
   # Wait for geometry prior to processing frames
   #wait_for_geometry: false
-  # Only stream raw camera footage. Useful for recordings.
-  #raw_feed: false
-  # Save debug images in img/. Do not use while influencing robots (massive performance impact).
+  # Save additional debug images in img/.
   #debug_images: false
