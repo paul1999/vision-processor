@@ -6,7 +6,7 @@ stages:
 build:
   stage: build
   script:
-    - apt update
-    - apt -y install g++ cmake pkg-config libyaml-cpp-dev ocl-icd-opencl-dev libeigen3-dev libopencv-dev protobuf-compiler libprotobuf-dev ffmpeg libavcodec-dev libavformat-dev libavutil-dev
+    - apt -qq update
+    - apt -qqy install g++ cmake pkg-config libyaml-cpp-dev ocl-icd-opencl-dev libeigen3-dev libopencv-dev protobuf-compiler libprotobuf-dev ffmpeg libavcodec-dev libavformat-dev libavutil-dev
     - cmake -B build .
     - make -C build -j vision_processor
