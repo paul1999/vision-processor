@@ -43,8 +43,9 @@ find_package(yaml-cpp REQUIRED)
 add_compile_definitions(CL_HPP_TARGET_OPENCL_VERSION=300)
 # m (c math) and stdc++ (c++ standard library) explicitly required by LLD
 link_libraries("m" "stdc++" ${YAML_CPP_LIBRARIES} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL ${Protobuf_LIBRARIES} ${mvIMPACT_LIBS})
-include_directories(src ${YAML_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_INCLUDE_DIRS} ${Protobuf_INCLUDE_DIRS} Eigen3::Eigen ${mvIMPACT_INCLUDE_DIRS})
+include_directories(SYSTEM ${YAML_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_INCLUDE_DIRS} ${Protobuf_INCLUDE_DIRS} Eigen3::Eigen ${mvIMPACT_INCLUDE_DIRS})
 
+include_directories(src)
 file(GLOB PROTO_FILES proto/*.proto)
 file(GLOB CL_KERNELS RELATIVE "${CMAKE_SOURCE_DIR}" kernel/*.cl)
 file(GLOB_RECURSE SRC src/*.cpp src/*.c)

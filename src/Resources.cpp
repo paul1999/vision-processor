@@ -155,7 +155,7 @@ Resources::Resources(const YAML::Node& config) {
 
 	YAML::Node stream = getOptional(config["stream"]);
 	rtpStreamer = std::make_shared<RTPStreamer>(stream["active"].as<bool>(true), openCl, "rtp://" + stream["ip_base_prefix"].as<std::string>("224.5.23.") + std::to_string(stream["ip_base_end"].as<int>(100) + camId) + ":" + std::to_string(stream["port"].as<int>(10100)));
-	rawFeed = stream["raw_feed"].as<bool>(true);
+	rawFeed = stream["raw_feed"].as<bool>(false);
 
 	raw2rgbaKernel = openCl->compile(camera->format().toRgbaKernel, camera->format().toRgbaKernelEnd);
 	resampling = openCl->compile(kernel_resampling_cl, kernel_resampling_cl_end);

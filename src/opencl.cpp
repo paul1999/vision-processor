@@ -27,7 +27,7 @@ const PixelFormat PixelFormat::F32 = PixelFormat(4, 1, false, CV_32FC1, {CL_R, C
 
 const PixelFormat PixelFormat::RGGB8 = PixelFormat(2, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}, kernel_rggb2rgba_cl, kernel_rggb2rgba_cl_end);
 const PixelFormat PixelFormat::GRBG8 = PixelFormat(2, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}, kernel_grbg2rgba_cl, kernel_grbg2rgba_cl_end);
-const PixelFormat PixelFormat::BGR8 = PixelFormat(3, 1, true, CV_8UC3, {}, kernel_bgr2rgba_cl, kernel_bgr2rgba_cl_end);
+const PixelFormat PixelFormat::BGR8 = PixelFormat(3, 1, true, CV_8UC3, {CL_RGB, CL_UNSIGNED_INT8}, kernel_bgr2rgba_cl, kernel_bgr2rgba_cl_end); //Do not use as OpenCL image format, CL_RGB supported by hardware seldom
 
 
 OpenCL::OpenCL() {

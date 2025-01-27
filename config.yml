@@ -103,7 +103,7 @@ stream:
   # If false no network live stream will be encoded and sent
   #active: true
   # Only stream raw camera footage. Useful for recordings.
-  #raw_feed: true
+  #raw_feed: false
 
   # Camera stream ip prefix
   #ip_base_prefix: 224.5.23.

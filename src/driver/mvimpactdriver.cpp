@@ -28,7 +28,7 @@ private:
 };
 
 
-MVImpactDriver::MVImpactDriver(const int id, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double>& wbValues) {
+MVImpactDriver::MVImpactDriver(const unsigned int id, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double>& wbValues) {
 	while(devMgr.deviceCount() <= id) {
 		std::cerr << "[mvIMPACT] Waiting for cam: " << devMgr.deviceCount() << "/" << (id+1) << std::endl;
 		sleep(1);

@@ -35,7 +35,7 @@ private:
 	const Spinnaker::ImagePtr pImage;
 };
 
-SpinnakerDriver::SpinnakerDriver(int id, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double>& wbValues) {
+SpinnakerDriver::SpinnakerDriver(unsigned int id, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double>& wbValues) {
 	pSystem = Spinnaker::System::GetInstance();
 
 	while(true) {

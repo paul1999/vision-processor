@@ -383,14 +383,17 @@ int main(int argc, char* argv[]) {
 			if(r.rawFeed) {
 				r.rtpStreamer->sendFrame(clImg);
 			} else {
-				switch(((long)(startTime/20.0) % 3)) {
+				switch(((long)(startTime/20.0) % 4)) {
 					case 0:
-						r.rtpStreamer->sendFrame(flat);
+						r.rtpStreamer->sendFrame(clImg);
 						break;
 					case 1:
-						r.rtpStreamer->sendFrame(gradDot);
+						r.rtpStreamer->sendFrame(flat);
 						break;
 					case 2:
+						r.rtpStreamer->sendFrame(gradDot);
+						break;
+					case 3:
 						r.rtpStreamer->sendFrame(blobCenter);
 						break;
 				}

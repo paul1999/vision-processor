@@ -104,7 +104,7 @@ def load_geometry(path: Path) -> SSL_WrapperPacket:
 
 if __name__ == '__main__':
     parser = parser_vision_network(argparse.ArgumentParser(prog='Geometry publisher'))
-    parser.add_argument('--config', default='geometry.yml', help='Geometry configuration file')
+    parser.add_argument('config', default='geometry.yml', help='Geometry configuration file')
     args = parser.parse_args()
 
     wrapper = load_geometry(Path(args.config))

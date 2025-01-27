@@ -2,89 +2,95 @@
 A replacement for the aging (ssl-vision)[https://github.com/RoboCup-SSL/ssl-vision].
 The shape based blob detector and decentralized software architecture is intended to
 minimize setup time and improve detection rates in uneven illumination conditions.
+It currently supports Teledyne FLIR (Spinnaker), Matrix Vision (Bluefox3/mvIMPACT) and OpenCV camera backends.
 
-## Usage
+![Software architecture](architecture.png)
 
-1. Compile `vision_processor` on all video data processing computers,
-   setup Python on the computer intended to inspect and configure the vision.
-2. Configure one `config-minimal.yml` for each camera
-   (on the corresponding processing computer, skip the `geometry` section for now) and
-   `geometry.yml` on the configuration computer.
-3. Start `vision_processor` with correct configuration for each camera.
-4. Start `python/cam_viewer.py --cameras <X>` on the configuration computer.
-5. Adjust the orientation and position of the cameras.
-   If blobs are overexposed (more white than colorful) set manual camera exposure and gain values (see `config.yml`). 
-6. Restart `vision_processor` for the generation of a new sample image `img/sample.[X].png`
-   and complete the `geometry` section of each camera config with it.
-7. Restart all `vision_processor`s (to reload the config).
-8. Start the `python/geom_publisher.py`.
+The `vision_processor` is the image processing component that processes a camera feed
+to multicast the detected robot and ball positions and a debug video livestream.
+The geometry publisher `geom_publisher.py` publishes the field geometry
+for all vision_processors, teams and the game controller.
+`cam_viewer.py` the `mpv` video player with the camera streams from the vision_processor instances.
 
 
-## vision_processor setup
-`vision_processor` is the camera data processing program. For each camera one instance is required.
+## Dependency installation and compilation
 
-### General dependencies
-Debian/Ubuntu based distributions: `apt install g++ cmake pkg-config libyaml-cpp-dev ocl-icd-opencl-dev libeigen3-dev libopencv-dev protobuf-compiler libprotobuf-dev ffmpeg libavcodec-dev libavformat-dev libavutil-dev`
+### geom_publisher.py cam_viewer.py
+Required only for the geometry publisher and camera viewer.
+`mpv` is optional and only required for the camera viewer.
 
-Arch based distributions: `pacman -S gcc make cmake pkgconf eigen opencv yaml-cpp opencl-clhpp`
+Debian/Ubuntu based distributions: `apt install protobuf-compiler python3-protobuf python3-yaml mpv`
 
-### OpenCL runtime
-A OpenCL runtime for your GPU or CPU is required.
+Arch based distributions: `pacman -S make python-protobuf python-yaml mpv`
 
-#### Nvidia
-Arch based distributions: `pacman -S opencl-nvidia`
+Installation with PIP: `pip install protobuf pyyaml`
 
-#### Intel
-Ubuntu based distributions: `apt install intel-opencl-icd intel-media-va-driver-non-free`
+### vision_processor automatic
 
-### Camera backends
+1. Install the camera SDK required for your camera type
+   (Arch user repository mvIMPACT: `mvimpact-acquire` Spinnaker: `spinnaker-sdk`)
+2. Debian/Ubuntu/Arch Linux/Manjaro: Run `./setup.sh`.
+   If the script wants to install an OpenCL driver for the wrong GPU (e.g. integrated graphics card)
+   or you want, need or have a different OpenCL driver skip the driver installation with `SKIP_DRIVERS=1 ./setup.sh`.
 
-#### Matrix Vision Bluefox, mvIMPACT
-Arch user repository: `mvimpact-acquire`
 
-#### Teledyne FLIR, Spinnaker
-Arch user repository: `spinnaker-sdk`
+### vision_processor manual
 
-### Compiling
+1. Install the camera SDK required for your camera type
+   (Arch user repository mvIMPACT: `mvimpact-acquire` Spinnaker: `spinnaker-sdk`)
+2. Install the required dependencies:
+
+   - cmake
+   - Eigen3
+   - ffmpeg
+   - gcc
+   - OpenCL (GPU based runtime recommended)
+   - OpenCV
+   - protobuf
+   - yaml-cpp
+
+3. Compile vision_processor:
 
     cmake -B build .
     make -C build vision_processor
 
-### Usage
-Configure `config-minimal.yml` or `config.yml` according to your needs.
-Have a running geometry publisher instance in your network.
 
-Run `build/vision_processor [Config file]`.
-If you have configured `config.yml` in your working directory, you may omit the config file path.
+## Setup
 
-
-## Python setup
-Required to run any of the python scripts.
-
-Debian/Ubuntu based distributions: `apt install cmake python3-protobuf python3-yaml python3-grpc-tools mpv`
-
-Arch based distributions: `pacman -S make cmake python-protobuf python-yaml python-grpcio-tools mpv`
-
-Alternative dependency installation with PIP: `pip install protobuf pyyaml grpcio-tools`
-
-`mpv` is optional and only required for `python/cam_viewer.py`.
-
-### python/geom_publisher.py
-Publishes the field geometry for all vision_processors, teams and the game controller.
-Needs generated protobuf files:
-
-    cmake -B build -DPYTHON_ONLY .
-    make -C build AUTOGENERATE
-
-Configure one of the geometry*.yml files according to your field setup and give that file as first argument of the script.
-
-### python/cam_viewer.py
-Opens the `mpv` video player with the camera streams from the vision_processor instances.
+1. Complete the dependency installation and compilation section.
+2. Configure one `config-minimal.yml` or `config.yml` for each camera, skip the `geometry` section for now.
+   The camera ids are assigned like in ssl-vision:
+   ![Camera id pattern](camera_ids.png)
+3. Start `build/vision_processor config[X].yml` for each camera.
+4. Tune the orientation and position of each camera.
+   You can view the camera feeds with `python/cam_viewer.py --cameras <X>`.
+5. Restart the `vision_processor`s for the generation of a new sample image `img/sample.[X].png`
+   and complete the `geometry` section of each camera config with it.
+   Visual explanation how to determine `line_corners`: ![Line corner example](line_corners.png)
+6. Restart all `vision_processor`s to reload the config.
+7. Modify `geometry[X].yml` to match your field geometry.
+   (for simple use cases configuring the field size, penalty area and goal will suffice)
+8. Start `python/geom_publisher.py geometry[X].yml`.
 
 
 ## Troubleshooting
 
-Look if a config option in the full `config.yml` might fix your issues.
+The video livestream cycles through 4 different views:
+1. **Raw camera data**
+   If the data is very bright, dark or miscolored consider adjusting
+   the camera `gain`, `exposure` and `white_balance` in your `config[X].yml`.
+2. **Reprojected color delta**
+   If the visible reprojected image extent does not match the field boundary the geometry calibration has issues.
+   If color blobs are desaturated in the center your image might be overexposed/too bright (`gain`, `exposure`).
+3. **Gradient dot product**
+   All color blobs should be visible here as black and white checkered rings.
+4. **Blob circularity score**
+   If the blob score of some undetected blobs is too faint consider reducing the `circularity` threshold.
 
-If nothing helps, preserve the problematic scenario (Used `config.yml`, `geometry.yml` and a video of with
-`ffmpeg -protocol_whitelist file,rtp,udp -i python/cam[X].sdp cam[X].mp4`) for remote analysis.
+If blobs are attributed the wrong color (or balls are seemingly undetected despite high blob scores)
+adjust the reference colors under `color`.
+
+If nothing helps:
+Activate `stream: raw_feed: true` in your `config[X].yml` and record the video livestream
+with `ffmpeg -protocol_whitelist file,rtp,udp -i python/cam[X].sdp cam[X].mp4`.
+Publish the resulting video including your `config[X].yml` and `geometry[X].yml` for further remote analysis.
