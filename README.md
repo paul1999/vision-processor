@@ -10,7 +10,7 @@ The `vision_processor` is the image processing component that processes a camera
 to multicast the detected robot and ball positions and a debug video livestream.
 The geometry publisher `geom_publisher.py` publishes the field geometry
 for all vision_processors, teams and the game controller.
-`cam_viewer.py` the `mpv` video player with the camera streams from the vision_processor instances.
+`cam_viewer.py` opens the `mpv` video player with the camera streams from the vision_processor instances.
 
 
 ## Dependency installation and compilation
