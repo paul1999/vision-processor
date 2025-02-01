@@ -19,7 +19,7 @@ OpenCVDriver::OpenCVDriver(const std::string &path, double exposure, double gain
 	std::replace(name.begin(), name.end(), '/', '_');
 
 	// Use compressed data stream on USB2 cameras to unlock the highest resolution - framerate combination
-	capture.set(cv::CAP_PROP_FOURCC, CV_FOURCC('M', 'J', 'P', 'G'));
+	capture.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
 	capture.set(cv::CAP_PROP_FRAME_WIDTH, INT_MAX);
 	capture.set(cv::CAP_PROP_FRAME_HEIGHT, INT_MAX);
 
