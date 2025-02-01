@@ -18,6 +18,11 @@
 OpenCVDriver::OpenCVDriver(const std::string &path, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double> &wbValues): capture(path, cv::CAP_ANY, {cv::CAP_PROP_HW_ACCELERATION, cv::VIDEO_ACCELERATION_ANY}), name(path) {
 	std::replace(name.begin(), name.end(), '/', '_');
 
+	// Use compressed data stream on USB2 cameras to unlock the highest resolution - framerate combination
+	capture.set(cv::CAP_PROP_FOURCC, CV_FOURCC('M', 'J', 'P', 'G'));
+	capture.set(cv::CAP_PROP_FRAME_WIDTH, INT_MAX);
+	capture.set(cv::CAP_PROP_FRAME_HEIGHT, INT_MAX);
+
 	if(exposure == 0.0) {
 		capture.set(cv::CAP_PROP_AUTO_EXPOSURE, 1.0);
 	} else {
