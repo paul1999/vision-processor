@@ -35,7 +35,7 @@ private:
 	const Spinnaker::ImagePtr pImage;
 };
 
-SpinnakerDriver::SpinnakerDriver(unsigned int id, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double>& wbValues) {
+SpinnakerDriver::SpinnakerDriver(unsigned int id, double exposure, double gain, double gamma, WhiteBalanceType wbType, const std::vector<double>& wbValues) {
 	pSystem = Spinnaker::System::GetInstance();
 
 	while(true) {
@@ -57,10 +57,7 @@ SpinnakerDriver::SpinnakerDriver(unsigned int id, double exposure, double gain, 
 	CATCH_SPINNAKER(pCam->TriggerMode.SetValue(Spinnaker::TriggerMode_Off))
 	CATCH_SPINNAKER(pCam->AcquisitionMode.SetValue(Spinnaker::AcquisitionMode_Continuous))
 	CATCH_SPINNAKER(pCam->PixelFormat.SetValue(Spinnaker::PixelFormat_BayerRG8))
-	CATCH_SPINNAKER(pCam->GammaEnable.SetValue(false))
 	CATCH_SPINNAKER(pCam->AcquisitionFrameRateEnable.SetValue(false))
-	/*pCam->GammaEnable.SetValue(true);
-	pCam->Gamma.SetValue(0.45);*/
 
 	if(exposure == 0.0) {
 		CATCH_SPINNAKER(pCam->AutoExposureMeteringMode.SetValue(Spinnaker::AutoExposureMeteringMode_Average))
@@ -79,6 +76,13 @@ SpinnakerDriver::SpinnakerDriver(unsigned int id, double exposure, double gain, 
 
 	if(exposure == 0.0 && gain == 0.0) {
 		CATCH_SPINNAKER(pCam->AutoExposureControlPriority.SetValue(Spinnaker::AutoExposureControlPriority_Gain))
+	}
+
+	if(gamma == 1.0) {
+		CATCH_SPINNAKER(pCam->GammaEnable.SetValue(false))
+	} else {
+		CATCH_SPINNAKER(pCam->GammaEnable.SetValue(true))
+		CATCH_SPINNAKER(pCam->Gamma.SetValue((float)gamma))
 	}
 
 	if(wbType != WhiteBalanceType_Manual) {

@@ -21,7 +21,7 @@
 
 class OpenCVDriver : public CameraDriver {
 public:
-	explicit OpenCVDriver(const std::string& path, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double>& wbValues);
+	explicit OpenCVDriver(const std::string& path, double exposure, double gain, double gamma, WhiteBalanceType wbType, const std::vector<double>& wbValues);
 
 	std::shared_ptr<RawImage> readImage() override;
 

@@ -15,7 +15,7 @@
  */
 #include "opencvdriver.h"
 
-OpenCVDriver::OpenCVDriver(const std::string &path, double exposure, double gain, WhiteBalanceType wbType, const std::vector<double> &wbValues): capture(path, cv::CAP_ANY, {cv::CAP_PROP_HW_ACCELERATION, cv::VIDEO_ACCELERATION_ANY}), name(path) {
+OpenCVDriver::OpenCVDriver(const std::string &path, double exposure, double gain, double gamma, WhiteBalanceType wbType, const std::vector<double> &wbValues): capture(path, cv::CAP_ANY, {cv::CAP_PROP_HW_ACCELERATION, cv::VIDEO_ACCELERATION_ANY}), name(path) {
 	std::replace(name.begin(), name.end(), '/', '_');
 
 	// Use compressed data stream on USB2 cameras to unlock the highest resolution - framerate combination
@@ -32,6 +32,10 @@ OpenCVDriver::OpenCVDriver(const std::string &path, double exposure, double gain
 
 	if(gain != 0.0) {
 		capture.set(cv::CAP_PROP_GAIN, gain);
+	}
+
+	if(gamma != 1.0) {
+		capture.set(cv::CAP_PROP_GAMMA, gamma);
 	}
 
 	if(wbType != WhiteBalanceType_Manual) {

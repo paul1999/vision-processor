@@ -75,12 +75,13 @@ Resources::Resources(const YAML::Node& config) {
 
 	auto driver = cam["driver"].as<std::string>("SPINNAKER");
 	int driver_id = cam["id"].as<int>(0);
-	[[maybe_unused]] auto exposure = cam["exposure"].as<double>(0.0);
-	[[maybe_unused]] auto gain = cam["gain"].as<double>(0.0);
+	auto exposure = cam["exposure"].as<double>(0.0);
+	auto gain = cam["gain"].as<double>(0.0);
+	auto gamma = cam["gamma"].as<double>(0.0);
 
 	YAML::Node wbNode = cam["white_balance"];
-	[[maybe_unused]] WhiteBalanceType wbType = WhiteBalanceType_Manual;
-	[[maybe_unused]] std::vector<double> wbValues;
+	WhiteBalanceType wbType = WhiteBalanceType_Manual;
+	std::vector<double> wbValues;
 	if(wbNode.IsSequence()) {
 		wbValues = wbNode.as<std::vector<double>>();
 	} else {
@@ -90,7 +91,7 @@ Resources::Resources(const YAML::Node& config) {
 
 #ifdef SPINNAKER
 	if(driver == "SPINNAKER")
-		camera = std::make_unique<SpinnakerDriver>(driver_id, exposure, gain, wbType, wbValues);
+		camera = std::make_unique<SpinnakerDriver>(driver_id, exposure, gain, gamma, wbType, wbValues);
 #endif
 
 #ifdef MVIMPACT
@@ -99,7 +100,7 @@ Resources::Resources(const YAML::Node& config) {
 #endif
 
 	if(driver == "OPENCV")
-		camera = std::make_unique<OpenCVDriver>(cam["path"].as<std::string>("/dev/video" + std::to_string(driver_id)), exposure, gain, wbType, wbValues);
+		camera = std::make_unique<OpenCVDriver>(cam["path"].as<std::string>("/dev/video" + std::to_string(driver_id)), exposure, gain, gamma, wbType, wbValues);
 
 	if(camera == nullptr) {
 		std::cerr << "[Resources] Unknown camera/image driver defined: " << driver << std::endl;

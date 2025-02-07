@@ -24,6 +24,9 @@ camera:
   # Camera gain to adjust brightness. Higher values lead to more noise.
   # 0.0 = automatic gain
   #gain: 0.0
+  # Camera gamma as nonlinear brightness adjustment. Only supported on SPINNAKER and OPENCV.
+  # 1.0 = no gamma
+  #gamma: 1.0
   # Camera white balance. OUTDOOR or INDOOR for auto white balance with green or gray carpet respectively.
   # (distinction between OUTDOOR and INDOOR currently only implemented for SPINNAKER backend)
   # [Blue white balance, Red white balance] for manual white balance.
