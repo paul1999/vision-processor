@@ -106,7 +106,15 @@ Resources::Resources(const YAML::Node& config) {
 		exit(1);
 	}
 
-	camId = config["cam_id"].as<int>(0);
+	{
+		int configCamId = config["cam_id"].as<int>(0);
+		if (configCamId < 0 || configCamId > 7) {
+			std::cerr << "[Resources] Invalid camera ID, must be >= 0 and <= 7: " << configCamId << std::endl;
+			exit(1);
+		}
+
+		camId = configCamId;
+	}
 
 	YAML::Node thresholds = getOptional(config["thresholds"]);
 	minCircularity = thresholds["circularity"].as<double>(25.0);
