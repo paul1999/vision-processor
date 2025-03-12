@@ -24,11 +24,20 @@ from google.protobuf.json_format import MessageToDict
 if not os.path.exists('python/proto/ssl_vision_wrapper_pb2.py'):
     print("Compiling Protobuf files...")
     import subprocess
-    subprocess.run([
-        'protoc',
-        '--python_out=python', '--pyi_out=python',
-        *[str(path) for path in pathlib.Path().rglob('proto/*.proto')]
-    ])
+    try:
+        subprocess.run([
+            'protoc',
+            '--python_out=python', '--pyi_out=python',
+            *[str(path) for path in pathlib.Path().rglob('proto/*.proto')]
+        ], check=True)
+    except subprocess.CalledProcessError:
+        # Ubuntu 22.04 protoc can't do pyi
+        subprocess.run([
+            'protoc',
+            '--python_out=python',
+            *[str(path) for path in pathlib.Path().rglob('proto/*.proto')]
+        ], check=True)
+
 
 
 from proto.ssl_vision_wrapper_pb2 import SSL_WrapperPacket

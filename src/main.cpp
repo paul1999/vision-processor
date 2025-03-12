@@ -90,7 +90,8 @@ void generateRadiusSearchTrackedBotHypotheses(const Resources& r, std::list<std:
 			Eigen::Vector3f trackedPosition = Eigen::Vector3f(reprojectedPosition.x(), reprojectedPosition.y(), tracked.w) + Eigen::Vector3f(tracked.vx, tracked.vy, tracked.vw) * timeDelta;
 			Eigen::Rotation2Df rotation(trackedPosition.z());
 
-			timeDelta = std::min(timeDelta, 0.05f); //prevent runtime escalation when FPS drop below 20 FPS (likely due to excessive timeDelta)
+			//prevent runtime escalation due to excessive timeDelta when FPS drop below 20 FPS or times are not synced
+			timeDelta = std::max(std::min(timeDelta, 0.05f), 0.0f);
 			//Double acceleration due to velocity determination from two frame difference
 			float blobSearchRadius = (float)r.maxBotAcceleration * timeDelta * timeDelta + (float)r.minTrackingRadius;
 
@@ -268,14 +269,15 @@ void sig_stop(int sig_num) {
 }
 
 int main(int argc, char* argv[]) {
-	signal(SIGTERM, sig_stop);
-	signal(SIGINT, sig_stop);
 	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
 	cl::Kernel blobList = r.openCl->compile(kernel_blobList_cl, kernel_blobList_cl_end);
 
 	uint32_t frameId = 0;
 	CLArray matchArray(sizeof(CLMatch) * r.maxBlobs);
 	CLArray counter(sizeof(cl_int)*3);
+
+	signal(SIGTERM, sig_stop);
+	signal(SIGINT, sig_stop);
 	while(noSigterm) {
 		frameId++;
 		std::shared_ptr<RawImage> img = r.camera->readImage();
@@ -330,6 +332,8 @@ int main(int argc, char* argv[]) {
 				if(counterMap[0] > r.maxBlobs)
 					std::cerr << "[main] max blob amount reached: " << counterMap[0] << "/" << r.maxBlobs << std::endl;
 			}
+
+			std::cout << "[main] OpenCL time: " << (getRealTime() - realStartTime) * 1000.0 << " ms" << std::endl;
 
 			std::list<std::unique_ptr<BotHypothesis>> botHypotheses;
 			std::list<std::unique_ptr<BallHypothesis>> ballHypotheses;

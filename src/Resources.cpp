@@ -77,7 +77,7 @@ Resources::Resources(const YAML::Node& config) {
 	int driver_id = cam["id"].as<int>(0);
 	auto exposure = cam["exposure"].as<double>(0.0);
 	auto gain = cam["gain"].as<double>(0.0);
-	auto gamma = cam["gamma"].as<double>(0.0);
+	auto gamma = cam["gamma"].as<double>(1.0);
 
 	YAML::Node wbNode = cam["white_balance"];
 	WhiteBalanceType wbType = WhiteBalanceType_Manual;
@@ -107,14 +107,10 @@ Resources::Resources(const YAML::Node& config) {
 		exit(1);
 	}
 
-	{
-		int configCamId = config["cam_id"].as<int>(0);
-		if (configCamId < 0 || configCamId > 7) {
-			std::cerr << "[Resources] Invalid camera ID, must be >= 0 and <= 7: " << configCamId << std::endl;
-			exit(1);
-		}
-
-		camId = configCamId;
+	camId = config["cam_id"].as<int>(0);
+	if (camId < 0 || camId > 7) {
+		std::cerr << "[Resources] Invalid camera ID, must be >= 0 and <= 7: " << camId << std::endl;
+		exit(1);
 	}
 
 	YAML::Node thresholds = getOptional(config["thresholds"]);
