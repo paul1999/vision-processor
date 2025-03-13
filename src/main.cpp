@@ -359,8 +359,6 @@ int main(int argc, char* argv[]) {
 					std::cerr << "[main] max blob amount reached: " << counterMap[0] << "/" << r.maxBlobs << std::endl;
 			}
 
-			std::cout << "[main] OpenCL time: " << (getRealTime() - realStartTime) * 1000.0 << " ms" << std::endl;
-
 			std::list<std::unique_ptr<BotHypothesis>> botHypotheses;
 			std::list<std::unique_ptr<BallHypothesis>> ballHypotheses;
 
