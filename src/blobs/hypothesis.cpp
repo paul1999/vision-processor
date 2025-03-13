@@ -41,9 +41,8 @@ void BallHypothesis::addToDetectionFrame(const Resources& r, SSL_DetectionFrame*
 }
 
 void BallHypothesis::calcColorScore(const Resources& r) {
-	//TODO test center vs color (updateColors as well)
-	int falseOrange = (blob->center - r.field).squaredNorm();
-	int orange = (blob->center - r.orange).squaredNorm();
+	int falseOrange = (blob->color - r.field).squaredNorm();
+	int orange = (blob->color - r.orange).squaredNorm();
 
 	if (falseOrange <= orange) {
 		score = 0;
