@@ -17,14 +17,15 @@ camera:
   # OpenCV camera device, image or video file path (if unset id is used instead)
   #path: /dev/video0
 
-  # Camera exposure time in ms to adjust brightness. Higher values lead to more motion blur.
+  # Camera exposure time in ms to adjust brightness. Higher values lead to more motion blur. Lower values lead to a darker image.
   # Camera frame rate will drop if set equal to or higher than the frame time (1 / fps_cam).
   # 0.0 = automatic exposure
   #exposure: 0.0
-  # Camera gain to adjust brightness. Higher values lead to more noise.
+  # Camera gain to adjust brightness. Higher values lead to more noise. Lower values lead to a darker image.
   # 0.0 = automatic gain
   #gain: 0.0
   # Camera gamma as nonlinear brightness adjustment. Only supported on SPINNAKER and OPENCV.
+  # Low values reduce differences between bright and dark illuminated areas. High values increase the color contrast.
   # 1.0 = no gamma
   #gamma: 1.0
   # Camera white balance. OUTDOOR or INDOOR for auto white balance with green or gray carpet respectively.
@@ -58,6 +59,7 @@ geometry:
 
 thresholds:
   # Minimum mean cosine similarity (not normalized) of the blob border gradient (0 - 195075.0)
+  # High value lead to undetected blobs. Low values lead to an increase in false positive blob detections.
   #circularity: 25.0
   # Minimum circularity/(3*stddev) blob score
   #score: 0.0

@@ -22,8 +22,9 @@
 
 class SpinnakerImage : public RawImage {
 public:
-	// TODO investigate unusable timestamp due to bad time resolution: pImage->GetTimeStamp() / 1e9
-	SpinnakerImage(SpinnakerDriver& source, const Spinnaker::ImagePtr& pImage): RawImage(*source.borrow(pImage)), source(source), pImage(pImage) {}
+	SpinnakerImage(SpinnakerDriver& source, const Spinnaker::ImagePtr& pImage): RawImage(*source.borrow(pImage)), source(source), pImage(pImage) {
+		timestamp = (double)pImage->GetTimeStamp() / 1e9;
+	}
 
 	~SpinnakerImage() override {
 		pImage->Release();

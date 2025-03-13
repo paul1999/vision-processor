@@ -23,12 +23,12 @@
 class RawImage : public CLArray {
 public:
 	RawImage(const RawImage& other) = default;
-	RawImage(const PixelFormat* format, int width, int height): CLArray(width * height * format->pixelSize()), format(format), width(width), height(height), timestamp(0), name() {}
-	RawImage(const PixelFormat* format, int width, int height, std::string name): CLArray(width * height * format->pixelSize()), format(format), width(width), height(height), timestamp(0), name(std::move(name)) {}
+	RawImage(const PixelFormat* format, int width, int height): CLArray(width * height * format->pixelSize()), format(format), width(width), height(height), name() {}
+	RawImage(const PixelFormat* format, int width, int height, std::string name): CLArray(width * height * format->pixelSize()), format(format), width(width), height(height), name(std::move(name)) {}
 	RawImage(const PixelFormat* format, int width, int height, double timestamp): CLArray(width * height * format->pixelSize()), format(format), width(width), height(height), timestamp(timestamp), name() {}
 
 	//Only use these constructors if not possible otherwise due to necessary copy (because of potential alignment mismatch for zero-copy support)
-	RawImage(const PixelFormat* format, int width, int height, unsigned char* data): CLArray(data, width * height * format->pixelSize()), format(format), width(width), height(height), timestamp(0) {}
+	RawImage(const PixelFormat* format, int width, int height, unsigned char* data): CLArray(data, width * height * format->pixelSize()), format(format), width(width), height(height) {}
 	RawImage(const PixelFormat* format, int width, int height, double timestamp, unsigned char* data): CLArray(data, width * height * format->pixelSize()), format(format), width(width), height(height), timestamp(timestamp) {}
 
 	virtual ~RawImage() = default;
@@ -37,6 +37,6 @@ public:
 	const int width;
 	const int height;
 	// timestamp of 0 indicates unavailability
-	const double timestamp;
+	double timestamp = 0;
 	const std::string name;
 };
