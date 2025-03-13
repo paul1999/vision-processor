@@ -50,7 +50,7 @@ public:
 	double minScore;
 	double minCamEdgeDistance;
 	int maxBlobs;
-	float minBotConfidence;
+	float minConfidence;
 
 	float referenceForce;
 	float historyForce;

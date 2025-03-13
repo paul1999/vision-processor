@@ -117,7 +117,7 @@ Resources::Resources(const YAML::Node& config) {
 	minCircularity = thresholds["circularity"].as<double>(25.0);
 	minScore = thresholds["score"].as<double>(0.0);
 	maxBlobs = thresholds["blobs"].as<int>(2000);
-	minBotConfidence = thresholds["min_bot_confidence"].as<float>(0.1f);
+	minConfidence = thresholds["min_confidence"].as<float>(0.1f);
 	minCamEdgeDistance = thresholds["min_cam_edge_distance"].as<double>(170.0);
 
 	YAML::Node tracking = getOptional(config["tracking"]);

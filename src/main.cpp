@@ -369,7 +369,7 @@ int main(int argc, char* argv[]) {
 
 				generateRadiusSearchTrackedBotHypotheses(r, botHypotheses, matches, blobs, startTime);
 				generateAngleSortedBotHypotheses(r, botHypotheses, matches, blobs);
-				filterHypothesesScore(botHypotheses, r.minBotConfidence);
+				filterHypothesesScore(botHypotheses, r.minConfidence);
 				filterClippingBotBotHypotheses(botHypotheses);
 				generateNonclippingBallHypotheses(r, botHypotheses, matches, ballHypotheses);
 			}
@@ -380,7 +380,7 @@ int main(int argc, char* argv[]) {
 			for (auto& ball : ballHypotheses)
 				ball->recalcPostColorCalib(r);
 
-			filterHypothesesScore(ballHypotheses, 0.0);
+			filterHypothesesScore(ballHypotheses, r.minConfidence);
 			filterBallsAtCamEdge(r, ballHypotheses);
 
 			SSL_WrapperPacket wrapper;

@@ -65,8 +65,8 @@ thresholds:
   # Maximum amount of blobs processed per frame. Should not be necessary to adjust this value.
   #blobs: 2000
 
-  # Minimum bot confidence (0.0 - 1.0)
-  #min_bot_confidence: 0.1
+  # Minimum confidence (0.0 - 1.0)
+  #min_confidence: 0.1
 
   # Min ball camera edge distance in mm
   #min_cam_edge_distance: 170.0
