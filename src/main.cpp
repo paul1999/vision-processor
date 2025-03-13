@@ -151,6 +151,32 @@ void filterHypothesesScore(std::list<std::unique_ptr<T>>& bots, float threshold)
 	}
 }
 
+void filterBallsAtCamEdge(const Resources& r, std::list<std::unique_ptr<BallHypothesis>>& balls) {
+	const SSL_GeometryFieldSize& field = r.perspective->field;
+	const float halfLength = (float)field.field_length()/2.0f + (float)field.boundary_width();
+	const float halfWidth = (float)field.field_width()/2.0f + (float)field.boundary_width();
+
+	const Eigen::Vector4f& visibleFieldExtent = r.perspective->visibleFieldExtent; // xmin, xmax, ymin, ymax
+	bool xMinIsEdge = visibleFieldExtent[0] != -halfLength;
+	bool xMaxIsEdge = visibleFieldExtent[1] != halfLength;
+	bool yMinIsEdge = visibleFieldExtent[2] != -halfWidth;
+	bool yMaxIsEdge = visibleFieldExtent[3] != halfWidth;
+
+	for(auto it = balls.cbegin(); it != balls.cend(); ) {
+		const Eigen::Vector2f& pos = (*it)->pos;
+		if(
+				(xMinIsEdge && abs(pos.x() - visibleFieldExtent[0]) <= r.minCamEdgeDistance) ||
+				(xMaxIsEdge && abs(pos.x() - visibleFieldExtent[1]) <= r.minCamEdgeDistance) ||
+				(yMinIsEdge && abs(pos.y() - visibleFieldExtent[2]) <= r.minCamEdgeDistance) ||
+				(yMaxIsEdge && abs(pos.y() - visibleFieldExtent[3]) <= r.minCamEdgeDistance)
+		) {
+			it = balls.erase(it);
+		} else {
+			it++;
+		}
+	}
+}
+
 void filterClippingBotBotHypotheses(std::list<std::unique_ptr<BotHypothesis>>& bots) {
 	for (auto it1 = bots.cbegin(); it1 != bots.cend(); ) {
 		const auto& bot1 = *it1;
@@ -357,6 +383,7 @@ int main(int argc, char* argv[]) {
 				ball->recalcPostColorCalib(r);
 
 			filterHypothesesScore(ballHypotheses, 0.0);
+			filterBallsAtCamEdge(r, ballHypotheses);
 
 			SSL_WrapperPacket wrapper;
 			SSL_DetectionFrame* detection = wrapper.mutable_detection();

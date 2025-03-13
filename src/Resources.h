@@ -48,6 +48,7 @@ public:
 
 	double minCircularity;
 	double minScore;
+	double minCamEdgeDistance;
 	int maxBlobs;
 	float minBotConfidence;
 

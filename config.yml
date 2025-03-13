@@ -68,6 +68,9 @@ thresholds:
   # Minimum bot confidence (0.0 - 1.0)
   #min_bot_confidence: 0.1
 
+  # Min ball camera edge distance in mm
+  #min_cam_edge_distance: 170.0
+
 color:
   # Strength of the reference color during color updates (0.0 - 0.5-history_force/2)
   #reference_force: 0.1
