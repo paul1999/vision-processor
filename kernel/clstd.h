@@ -48,6 +48,7 @@ int4 read_imagei(image2d_t, sampler_t, int2);
 float4 read_imagef(image2d_t, sampler_t, int2);
 float4 read_imagef(image2d_t, sampler_t, float2);
 void write_imageui(image2d_t, int2, uint4);
+void write_imageui(image2d_t, int2, uint);
 void write_imagei(image2d_t, int2, int4);
 void write_imagef(image2d_t, int2, float4);
 void write_imagef(image2d_t, int2, float);

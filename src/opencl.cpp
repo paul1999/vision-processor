@@ -23,6 +23,7 @@
 
 
 const PixelFormat PixelFormat::RGBA8 = PixelFormat(4, 1, true, CV_8UC4, {CL_RGBA, CL_UNSIGNED_INT8});
+const PixelFormat PixelFormat::U8 = PixelFormat(1, 1, false, CV_8UC1, {CL_R, CL_UNSIGNED_INT8});
 const PixelFormat PixelFormat::F32 = PixelFormat(4, 1, false, CV_32FC1, {CL_R, CL_FLOAT});
 
 const PixelFormat PixelFormat::RGGB8 = PixelFormat(2, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}, kernel_rggb2rgba_cl, kernel_rggb2rgba_cl_end);

@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
 
 	std::shared_ptr<RawImage> img = r.camera->readImage();
 	r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
-	std::shared_ptr<CLImage> clImg = r.raw2rgba(*img);
+	std::shared_ptr<CLImage> clImg = r.raw2quad(*img);
 
 	cv::Mat gray;
 	cv::cvtColor(clImg->read<RGBA>().cv, gray, cv::COLOR_RGBA2GRAY);

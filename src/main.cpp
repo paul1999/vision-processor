@@ -326,13 +326,17 @@ int main(int argc, char* argv[]) {
 
 		r.socket->geometryCheck();
 		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
-		std::shared_ptr<CLImage> clImg = r.raw2rgba(*img);
+		std::shared_ptr<CLImage> topleft;
+		std::shared_ptr<CLImage> topright;
+		std::shared_ptr<CLImage> bottomleft;
+		std::shared_ptr<CLImage> bottomright;
+		r.raw2quad(*img, topleft, topright, bottomleft, bottomright);
 
 		if(r.perspective->geometryVersion) {
 			std::shared_ptr<CLImage> flat;
 			std::shared_ptr<CLImage> gradDot;
 			std::shared_ptr<CLImage> blobCenter;
-			r.rgba2blobCenter(*clImg, flat, gradDot, blobCenter);
+			r.rgba2blobCenter(*topleft, *topright, *bottomleft, *bottomright, flat, gradDot, blobCenter);
 
 			{
 				CLMap<int> counterMap = counter.write<int>();
@@ -422,11 +426,11 @@ int main(int argc, char* argv[]) {
 				std::cout << "[main] frame time overrun: " << processingTime * 1000.0 << " ms " << matches.size() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
 
 			if(r.rawFeed) {
-				r.rtpStreamer->sendFrame(clImg);
+				//r.rtpStreamer->sendFrame(clImg);
 			} else {
 				switch(((long)(startTime/20.0) % 4)) {
 					case 0:
-						r.rtpStreamer->sendFrame(clImg);
+						//r.rtpStreamer->sendFrame(clImg);
 						break;
 					case 1:
 						r.rtpStreamer->sendFrame(flat);
@@ -440,12 +444,12 @@ int main(int argc, char* argv[]) {
 				}
 			}
 		} else if(r.socket->getGeometryVersion()) {
-			geometryCalibration(r, *clImg);
+			//geometryCalibration(r, *clImg);
 		} else {
-			r.rtpStreamer->sendFrame(clImg);
+			//r.rtpStreamer->sendFrame(clImg);
 
 			if(frameId == 100) {  // Wait for automatic gain, exposure and white balance adjustments
-				clImg->save(".sample." + std::to_string(r.camId) + ".png");
+				//clImg->save(".sample." + std::to_string(r.camId) + ".png");
 				std::cout << "[main] Saved sample image" << std::endl;
 			}
 		}

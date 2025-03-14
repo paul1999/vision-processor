@@ -27,6 +27,7 @@ class PixelFormat {
 public:
 	// CLImage formats
 	static const PixelFormat RGBA8;
+	static const PixelFormat U8;
 	static const PixelFormat F32;
 
 	// Raw Bayer formats

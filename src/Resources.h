@@ -85,13 +85,13 @@ public:
 	std::shared_ptr<OpenCL> openCl;
 	std::shared_ptr<RTPStreamer> rtpStreamer;
 
-	cl::Kernel raw2rgbaKernel;
-	cl::Kernel resampling;
+	cl::Kernel raw2quadKernel;
+	cl::Kernel quadResampling;
 	cl::Kernel gradientDot;
 	cl::Kernel satHorizontal;
 	cl::Kernel satVertical;
 	cl::Kernel satBlobCenter;
 
-	std::shared_ptr<CLImage> raw2rgba(const RawImage& img);
-	void rgba2blobCenter(const CLImage& rgba, std::shared_ptr<CLImage>& flat, std::shared_ptr<CLImage>& gradDot, std::shared_ptr<CLImage>& blobCenter);
+	void raw2quad(const RawImage& img, std::shared_ptr<CLImage>& topleft, std::shared_ptr<CLImage>& topright, std::shared_ptr<CLImage>& bottomleft, std::shared_ptr<CLImage>& bottomright);
+	void rgba2blobCenter(const CLImage& topleft, const CLImage& topright, const CLImage& bottomleft, const CLImage& bottomright, std::shared_ptr<CLImage>& flat, std::shared_ptr<CLImage>& gradDot, std::shared_ptr<CLImage>& blobCenter);
 };

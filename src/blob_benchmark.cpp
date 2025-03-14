@@ -145,7 +145,7 @@ int main(int argc, char* argv[]) {
 
 		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
 
-		std::shared_ptr<CLImage> clImg = r.raw2rgba(*img);
+		std::shared_ptr<CLImage> clImg = r.raw2quad(*img);
 		std::shared_ptr<CLImage> flat;
 		std::shared_ptr<CLImage> gradDot;
 		std::shared_ptr<CLImage> blobCenter;
