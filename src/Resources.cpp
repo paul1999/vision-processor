@@ -197,5 +197,5 @@ void Resources::rgba2blobCenter(const CLImage& topleft, const CLImage& topright,
 	cl::Event e2 = OpenCL::run(gradientDot, cl::EnqueueArgs(e1, visibleFieldRange), flat->image, gradDot->image, (int)ceilf(perspective->maxBlobRadius / perspective->fieldScale) / 3);
 	cl::Event e3 = OpenCL::run(satHorizontal, cl::EnqueueArgs(e2, cl::NDRange(perspective->reprojectedFieldSize[1])), gradDot->image, gradDotHor->image);
 	cl::Event e4 = OpenCL::run(satVertical, cl::EnqueueArgs(e3, cl::NDRange(perspective->reprojectedFieldSize[0])), gradDotHor->image, gradDotSat->image);
-	OpenCL::await(satBlobCenter, cl::EnqueueArgs(e4, visibleFieldRange), gradDotSat->image, blobCenter->image, (int)ceilf(perspective->maxBlobRadius / perspective->fieldScale));
+	OpenCL::await(satBlobCenter, cl::EnqueueArgs(e4, visibleFieldRange), gradDotSat->image, blobCenter->image, (int)ceilf(perspective->minBlobRadius / perspective->fieldScale));
 }
