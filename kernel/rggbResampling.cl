@@ -53,9 +53,9 @@ kernel void rggbResampling(read_only image2d_t topleft, read_only image2d_t topr
 	float2 pos = field2image(model, (float3)(get_global_id(0)*fieldScale + fieldOffsetX, get_global_id(1)*fieldScale + fieldOffsetY, maxRobotHeight));
 
 	uint4 color = (uint4)(
-			read_imageui(topleft, sampler, (float2)(pos.x - 0.25f, pos.y - 0.25f)).x,
-			read_imageui(topright, sampler, (float2)(pos.x + 0.25f, pos.y - 0.25f)).x/2 + read_imageui(bottomleft, sampler, (float2)(pos.x - 0.25f, pos.y + 0.25f)).x/2,
-			read_imageui(bottomright, sampler, (float2)(pos.x + 0.25f, pos.y + 0.25f)).x,
+			read_imageui(topleft, sampler, (float2)(pos.x + 0.25f, pos.y + 0.25f)).x,
+			read_imageui(topright, sampler, (float2)(pos.x - 0.25f, pos.y + 0.25f)).x/2 + read_imageui(bottomleft, sampler, (float2)(pos.x + 0.25f, pos.y - 0.25f)).x/2,
+			read_imageui(bottomright, sampler, (float2)(pos.x - 0.25f, pos.y - 0.25f)).x,
 			255
 	);
 
