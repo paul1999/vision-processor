@@ -54,8 +54,8 @@ kernel void rggbResampling(read_only image2d_t topleft, read_only image2d_t topr
 
 	uint4 color = (uint4)(
 			read_imageui(topleft, sampler, (float2)(pos.x - 0.5f, pos.y - 0.5f)).x,
-			read_imageui(topright, sampler, (float2)(pos.x + 0.5f, pos.y - 0.5f)).x/2 + read_imageui(bottomright, sampler, (float2)(pos.x - 0.5f, pos.y + 0.5f)).x/2,
-			read_imageui(bottomleft, sampler, (float2)(pos.x + 0.5f, pos.y + 0.5f)).x,
+			read_imageui(topright, sampler, (float2)(pos.x + 0.5f, pos.y - 0.5f)).x/2 + read_imageui(bottomleft, sampler, (float2)(pos.x - 0.5f, pos.y + 0.5f)).x/2,
+			read_imageui(bottomright, sampler, (float2)(pos.x + 0.5f, pos.y + 0.5f)).x,
 			255
 	);
 
