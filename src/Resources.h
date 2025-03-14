@@ -51,6 +51,7 @@ public:
 	double minCamEdgeDistance;
 	int maxBlobs;
 	float minConfidence;
+	float resamplingFactor;
 
 	float referenceForce;
 	float historyForce;

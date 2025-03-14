@@ -31,7 +31,7 @@ static void updateExtent(Eigen::Vector4f& visibleFieldExtent, const Eigen::Vecto
 		visibleFieldExtent[3] = point.y();
 }
 
-void Perspective::geometryCheck(const int width, const int height, const double maxBotHeight) {
+void Perspective::geometryCheck(const int width, const int height, const double maxBotHeight, const float resamplingFactor) {
 	Eigen::Vector2i size(width, height);
 	if(socket->getGeometryVersion() == geometryVersion && model.size == size)
 		return;
@@ -82,7 +82,7 @@ void Perspective::geometryCheck(const int width, const int height, const double 
 			}
 		}
 	}
-	fieldScale = fieldScaleSum / (float)n;
+	fieldScale = fieldScaleSum / (float)n * resamplingFactor;
 	std::cout << "[Perspective] Field scale: " << minFieldScale << "mm/px < " << fieldScale << "mm/px < " << maxFieldScale << "mm/px" << std::endl;
 
 	//update visibleFieldExtent

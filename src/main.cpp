@@ -325,7 +325,7 @@ int main(int argc, char* argv[]) {
 		double realStartTime = getRealTime(); // Just for realtime performance measurements
 
 		r.socket->geometryCheck();
-		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
+		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight, r.resamplingFactor);
 		std::shared_ptr<CLImage> topleft;
 		std::shared_ptr<CLImage> topright;
 		std::shared_ptr<CLImage> bottomleft;
