@@ -579,6 +579,7 @@ void geometryCalibration(const Resources& r, const CLImage& rgba) {
 
 	SSL_WrapperPacket wrapper;
 	wrapper.mutable_geometry()->CopyFrom(r.socket->getGeometry());
+	wrapper.mutable_geometry()->clear_calib();
 	wrapper.mutable_geometry()->add_calib()->CopyFrom(model.getProto(r.camId));
 	r.socket->send(wrapper);
 

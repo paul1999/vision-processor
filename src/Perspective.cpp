@@ -45,6 +45,7 @@ void Perspective::geometryCheck(const int width, const int height, const double 
 				socket->send(model.getProto(camId));
 				SSL_WrapperPacket wrapper;
 				wrapper.mutable_geometry()->CopyFrom(socket->getGeometry());
+				wrapper.mutable_geometry()->clear_calib();
 				wrapper.mutable_geometry()->add_calib()->CopyFrom(model.getProto(camId));
 				socket->send(wrapper);
 			}
