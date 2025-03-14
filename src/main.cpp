@@ -151,6 +151,17 @@ void filterHypothesesScore(std::list<std::unique_ptr<T>>& bots, float threshold)
 	}
 }
 
+template<typename T>
+void filterStddevScore(std::list<std::unique_ptr<T>>& bots, float threshold) {
+	for(auto it = bots.cbegin(); it != bots.cend(); ) {
+		if((*it)->blob->score <= threshold) {
+			it = bots.erase(it);
+		} else {
+			it++;
+		}
+	}
+}
+
 void filterBallsAtCamEdge(const Resources& r, std::list<std::unique_ptr<BallHypothesis>>& balls) {
 	const SSL_GeometryFieldSize& field = r.perspective->field;
 	const float halfLength = (float)field.field_length()/2.0f + (float)field.boundary_width();
@@ -329,7 +340,7 @@ int main(int argc, char* argv[]) {
 				counterMap[1] = 0;
 				counterMap[2] = 0;
 			}
-			OpenCL::await(blobList, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1])), flat->image, blobCenter->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, (float)r.minScore, (int)floorf(r.perspective->minBlobRadius / r.perspective->fieldScale), r.maxBlobs);
+			OpenCL::await(blobList, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1])), flat->image, blobCenter->image, matchArray.buffer, counter.buffer, (float)r.minCircularity, (float)0.0f, (int)floorf(r.perspective->minBlobRadius / r.perspective->fieldScale), r.maxBlobs);
 
 			if(r.debugImages && frameId == 1) {
 				flat->save(".flat." + std::to_string(frameId) + ".png");
@@ -382,6 +393,7 @@ int main(int argc, char* argv[]) {
 
 			filterHypothesesScore(ballHypotheses, r.minConfidence);
 			filterBallsAtCamEdge(r, ballHypotheses);
+			filterStddevScore(ballHypotheses, (float)r.minScore);
 
 			SSL_WrapperPacket wrapper;
 			SSL_DetectionFrame* detection = wrapper.mutable_detection();
