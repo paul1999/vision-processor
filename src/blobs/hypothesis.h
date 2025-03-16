@@ -19,7 +19,7 @@
 #include "match.h"
 #include "Resources.h"
 
-inline float atan2_fast(const float y, const float x);
+float atan2_fast(float y, float x);
 
 
 class BallHypothesis {

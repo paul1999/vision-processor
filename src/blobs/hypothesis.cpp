@@ -32,7 +32,7 @@ static inline float atan_fma_approximation(float x) {
 	return x * fmaf(x_sq, fmaf(x_sq, fmaf(x_sq, fmaf(x_sq, fmaf(x_sq, a11, a9), a7), a5), a3), a1);
 }
 
-inline float atan2_fast(const float y, const float x) {
+float atan2_fast(const float y, const float x) {
 	const float pi = M_PI;
 	const float pi_2 = M_PI_2;
 
