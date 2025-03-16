@@ -56,7 +56,7 @@ void generateAngleSortedBotHypotheses(const Resources& r, std::list<std::unique_
 		std::sort(botBlobs.begin(), botBlobs.end(), [&](const Match* a, const Match* b) -> bool {
 			Eigen::Vector2f aDiff = a->pos - blob.pos;
 			Eigen::Vector2f bDiff = b->pos - blob.pos;
-			return atan2f(aDiff.y(), aDiff.x()) < atan2f(bDiff.y(), bDiff.x());
+			return atan2_fast(aDiff.y(), aDiff.x()) < atan2_fast(bDiff.y(), bDiff.x());
 		});
 
 		const int size = (int)botBlobs.size();

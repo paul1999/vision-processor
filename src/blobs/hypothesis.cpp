@@ -18,6 +18,42 @@
 #include "pattern.h"
 
 
+//atan2 implementation adapted from: https://mazzo.li/posts/vectorized-atan2.html https://gist.github.com/bitonic/d0f5a0a44e37d4f0be03d34d47acb6cf
+static inline float atan_fma_approximation(float x) {
+	float a1  =  0.99997726f;
+	float a3  = -0.33262347f;
+	float a5  =  0.19354346f;
+	float a7  = -0.11643287f;
+	float a9  =  0.05265332f;
+	float a11 = -0.01172120f;
+
+	// Compute approximation using Horner's method
+	float x_sq = x*x;
+	return x * fmaf(x_sq, fmaf(x_sq, fmaf(x_sq, fmaf(x_sq, fmaf(x_sq, a11, a9), a7), a5), a3), a1);
+}
+
+inline float atan2_fast(const float y, const float x) {
+	const float pi = M_PI;
+	const float pi_2 = M_PI_2;
+
+	// Ensure input is in [-1, +1]
+	bool swap = fabsf(x) < fabsf(y);
+	float atan_input = (swap ? x : y) / (swap ? y : x);
+
+	// Approximate atan
+	float res = atan_fma_approximation(atan_input);
+
+	// If swapped, adjust atan output
+	res = swap ? copysignf(pi_2, atan_input) - res : res;
+	// Adjust the result depending on the input quadrant
+	if (x < 0.0f) {
+		res = copysignf(pi, y) + res;
+	}
+
+	return res;
+}
+
+
 BallHypothesis::BallHypothesis(const Resources& r, const Match* blob): blob(blob), pos(blob->pos) {
 	calcColorScore(r);
 }
@@ -68,7 +104,7 @@ bool BotHypothesis::isClipping(const BotHypothesis& other) const {
 	if(sqDistance >= (2*MIN_ROBOT_RADIUS)*(2*MIN_ROBOT_RADIUS)) //Early rejection for faster calculation (simple circle - circle clipping)
 		return false;
 
-	float diffAngle = atan2f(diff.y(), diff.x());
+	float diffAngle = atan2_fast(diff.y(), diff.x());
 	float selfAngle = remainderf(diffAngle - orientation, 2.0f * M_PI);
 	float otherAngle = remainderf(diffAngle - other.orientation, 2.0f * M_PI);
 
@@ -87,7 +123,7 @@ bool BotHypothesis::isClipping(const Resources& r, const BallHypothesis& ball) c
 	if(sqDistance >= minDistance*minDistance)
 		return false;
 
-	float angle = remainderf(atan2f(diff.y(), diff.x()) - orientation, 2.0f * M_PI);
+	float angle = remainderf(atan2_fast(diff.y(), diff.x()) - orientation, 2.0f * M_PI);
 	if(abs(angle) >= MIN_ROBOT_OPENING_ANGLE)
 		return true;
 
@@ -124,7 +160,7 @@ void BotHypothesis::calcPos() {
 				continue;
 
 			Eigen::Vector2f diff = blobs[b]->pos - blobs[a]->pos;
-			float angleDelta = atan2f(diff.y(), diff.x()) - patternAnglesb2b[b*5 + a];
+			float angleDelta = atan2_fast(diff.y(), diff.x()) - patternAnglesb2b[b*5 + a];
 			oSin += sinf(angleDelta);
 			oCos += cosf(angleDelta);
 		}
@@ -133,7 +169,7 @@ void BotHypothesis::calcPos() {
 		return;
 
 	if(blobAmount > 1)
-		orientation = atan2f(oSin, oCos);
+		orientation = atan2_fast(oSin, oCos);
 
 	Eigen::Rotation2Df rotation(orientation);
 	pos.x() = 0;
