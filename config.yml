@@ -22,6 +22,7 @@ camera:
   # 0.0 = automatic exposure
   #exposure: 0.0
   # Camera gain to adjust brightness. Higher values lead to more noise. Lower values lead to a darker image.
+  # Frequently changing bot identities or team colors indicate an image that is too bright (all colors becoming nearly white).
   # 0.0 = automatic gain
   #gain: 0.0
   # Camera gamma as nonlinear brightness adjustment. Only supported on SPINNAKER and OPENCV.

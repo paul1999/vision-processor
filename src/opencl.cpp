@@ -26,9 +26,9 @@ const PixelFormat PixelFormat::RGBA8 = PixelFormat(4, 1, true, CV_8UC4, {CL_RGBA
 const PixelFormat PixelFormat::U8 = PixelFormat(1, 1, false, CV_8UC1, {CL_R, CL_UNSIGNED_INT8});
 const PixelFormat PixelFormat::F32 = PixelFormat(4, 1, false, CV_32FC1, {CL_R, CL_FLOAT});
 
-const PixelFormat PixelFormat::RGGB8 = PixelFormat(2, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}, kernel_rggb2rgba_cl, kernel_rggb2rgba_cl_end);
-const PixelFormat PixelFormat::GRBG8 = PixelFormat(2, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}, kernel_grbg2rgba_cl, kernel_grbg2rgba_cl_end);
-const PixelFormat PixelFormat::BGR8 = PixelFormat(3, 1, true, CV_8UC3, {CL_RGB, CL_UNSIGNED_INT8}, kernel_bgr2rgba_cl, kernel_bgr2rgba_cl_end); //Do not use as OpenCL image format, CL_RGB supported by hardware seldom
+const PixelFormat PixelFormat::RGGB8 = PixelFormat(2, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}, "-DRGGB");
+const PixelFormat PixelFormat::GRBG8 = PixelFormat(2, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}, "-DGRBG");
+const PixelFormat PixelFormat::BGR8 = PixelFormat(3, 1, true, CV_8UC3, {CL_RGB, CL_UNSIGNED_INT8}, "-DBGR"); //Do not use as OpenCL image format, CL_RGB seldomly supported by hardware
 
 
 OpenCL::OpenCL() {
@@ -67,9 +67,9 @@ bool OpenCL::searchDevice(const std::vector<cl::Platform>& platforms, cl_device_
 	return false;
 }
 
-cl::Kernel OpenCL::compile(const char *code, const char* codeEnd, const std::string &options) {
+cl::Kernel OpenCL::compile(const char *code, const std::string &options) {
 	cl::Program::Sources sources;
-	sources.emplace_back(code, codeEnd - code);
+	sources.emplace_back(code);
 
 	cl::Program program(context, sources);
 	if (program.build({device}, options.c_str()) != CL_SUCCESS) {

@@ -38,7 +38,11 @@ float atan2_fast(const float y, const float x) {
 
 	// Ensure input is in [-1, +1]
 	bool swap = fabsf(x) < fabsf(y);
-	float atan_input = (swap ? x : y) / (swap ? y : x);
+	float divisor = (swap ? y : x);
+	if(divisor == 0.0) //TODO look further why this extra check is necessary (why both arguments are 0)
+		return (swap ? x : y);
+
+	float atan_input = (swap ? x : y) / divisor;
 
 	// Approximate atan
 	float res = atan_fma_approximation(atan_input);

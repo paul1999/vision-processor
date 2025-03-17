@@ -87,7 +87,7 @@ public:
 	std::shared_ptr<RTPStreamer> rtpStreamer;
 
 	cl::Kernel raw2quadKernel;
-	cl::Kernel quadResampling;
+	cl::Kernel resampling;
 	cl::Kernel gradientDot;
 	cl::Kernel satHorizontal;
 	cl::Kernel satVertical;

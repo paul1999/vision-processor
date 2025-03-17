@@ -44,11 +44,10 @@ public:
 	const int cvType;
 	const cl::ImageFormat clFormat;
 
-	const char* toRgbaKernel;
-	const char* toRgbaKernelEnd;
+	const char* kernelOptions;
 private:
-	PixelFormat(int stride, int rowStride, bool color, int cvType, const cl::ImageFormat& clFormat, const char* toRgbaKernel, const char* toRgbakernelEnd): stride(stride), rowStride(rowStride), color(color), cvType(cvType), clFormat(clFormat), toRgbaKernel(toRgbaKernel), toRgbaKernelEnd(toRgbakernelEnd) {}
-	PixelFormat(int stride, int rowStride, bool color, int cvType, const cl::ImageFormat& clFormat): PixelFormat(stride, rowStride, color, cvType, clFormat, nullptr, nullptr) {}
+	PixelFormat(int stride, int rowStride, bool color, int cvType, const cl::ImageFormat& clFormat, const char* kernelOptions): stride(stride), rowStride(rowStride), color(color), cvType(cvType), clFormat(clFormat), kernelOptions(kernelOptions) {}
+	PixelFormat(int stride, int rowStride, bool color, int cvType, const cl::ImageFormat& clFormat): PixelFormat(stride, rowStride, color, cvType, clFormat, "") {}
 };
 
 
@@ -66,7 +65,7 @@ class OpenCL {
 public:
 	OpenCL();
 
-	cl::Kernel compile(const char* code, const char* codeEnd, const std::string& options = "");
+	cl::Kernel compile(const char* code, const std::string& options = "");
 
 	template<typename... Ts>
 	static cl::Event run(cl::Kernel kernel, const cl::EnqueueArgs& args, Ts... ts) {

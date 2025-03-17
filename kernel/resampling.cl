@@ -49,8 +49,36 @@ inline float2 field2image(const CameraModel m, float3 fieldpos) {
 
 const sampler_t sampler = CLK_FILTER_LINEAR | CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE;
 
-kernel void perspective(read_only image2d_t in, write_only image2d_t out, const CameraModel model, const float maxRobotHeight, const float fieldScale, const float fieldOffsetX, const float fieldOffsetY) {
-	uint4 color = read_imageui(in, sampler, field2image(model, (float3)(get_global_id(0)*fieldScale + fieldOffsetX, get_global_id(1)*fieldScale + fieldOffsetY, maxRobotHeight)));
+kernel void resampling(read_only image2d_t channel0, read_only image2d_t channel1, read_only image2d_t channel2, read_only image2d_t channel3, write_only image2d_t out, const CameraModel model, const float maxRobotHeight, const float fieldScale, const float fieldOffsetX, const float fieldOffsetY) {
+	float2 pos = field2image(model, (float3)(get_global_id(0)*fieldScale + fieldOffsetX, get_global_id(1)*fieldScale + fieldOffsetY, maxRobotHeight));
+
+#ifdef BGR
+	uint4 color = (uint4)(
+			read_imageui(channel2, sampler, (float2)(pos.x, pos.y)).x,
+			read_imageui(channel1, sampler, (float2)(pos.x, pos.y)).x,
+			read_imageui(channel0, sampler, (float2)(pos.x, pos.y)).x,
+			255
+	);
+#endif
+
+#ifdef RGGB
+	uint4 color = (uint4)(
+			read_imageui(channel0, sampler, (float2)(pos.x + 0.25f, pos.y + 0.25f)).x,
+			read_imageui(channel1, sampler, (float2)(pos.x - 0.25f, pos.y + 0.25f)).x/2 + read_imageui(channel2, sampler, (float2)(pos.x + 0.25f, pos.y - 0.25f)).x/2,
+			read_imageui(channel3, sampler, (float2)(pos.x - 0.25f, pos.y - 0.25f)).x,
+			255
+	);
+#endif
+
+#ifdef GRBG
+	uint4 color = (uint4)(
+			read_imageui(channel1, sampler, (float2)(pos.x - 0.25f, pos.y + 0.25f)).x,
+			read_imageui(channel0, sampler, (float2)(pos.x + 0.25f, pos.y + 0.25f)).x/2 + read_imageui(channel3, sampler, (float2)(pos.x - 0.25f, pos.y - 0.25f)).x/2,
+			read_imageui(channel2, sampler, (float2)(pos.x + 0.25f, pos.y - 0.25f)).x,
+			255
+	);
+#endif
+
 	// RGB
 	//write_imageui(out, (int2)(get_global_id(0), get_global_id(1)), color);
 

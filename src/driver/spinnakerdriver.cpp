@@ -118,6 +118,7 @@ SpinnakerDriver::SpinnakerDriver(unsigned int id, double exposure, double gain, 
 
 	pCam->SetBufferOwnership(Spinnaker::SPINNAKER_BUFFER_OWNERSHIP_USER);
 	pCam->SetUserBuffers(bufferPtrs.data(), buffers.size(), width*height);
+	//pCam->Timestamp.SetValue();
 
 	if (IsWritable(pCam->GevSCPSPacketSize)) {
 		CATCH_SPINNAKER(pCam->GevSCPSPacketSize.SetValue(9000));

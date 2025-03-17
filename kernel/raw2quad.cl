@@ -18,13 +18,22 @@
 #endif
 
 
-kernel void raw2quad(global const uchar* img, write_only image2d_t topleft, write_only image2d_t topright, write_only image2d_t bottomleft, write_only image2d_t bottomright) {
+kernel void raw2quad(global const uchar* img, write_only image2d_t channel0, write_only image2d_t channel1, write_only image2d_t channel2, write_only image2d_t channel3) {
 	const int2 pos = (int2)(get_global_id(0), get_global_id(1));
-	const int row_size = 2*get_global_size(0);
 
+#ifdef BGR
+	const int imgpos = 3*(pos.x + pos.y*get_global_size(0));
+
+	write_imageui(channel0, pos, img[imgpos]);
+	write_imageui(channel1, pos, img[imgpos+1]);
+	write_imageui(channel2, pos, img[imgpos+2]);
+#elif defined RGGB || defined GRBG
+	const int row_size = 2*get_global_size(0);
 	const int imgpos = 2*pos.x + 2*pos.y*row_size;
-	write_imageui(topleft, pos, img[imgpos]);
-	write_imageui(topright, pos, img[imgpos+1]);
-	write_imageui(bottomleft, pos, img[imgpos+row_size]);
-	write_imageui(bottomright, pos, img[imgpos+1+row_size]);
+
+	write_imageui(channel0, pos, img[imgpos]);
+	write_imageui(channel1, pos, img[imgpos+1]);
+	write_imageui(channel2, pos, img[imgpos+row_size]);
+	write_imageui(channel3, pos, img[imgpos+1+row_size]);
+#endif
 }

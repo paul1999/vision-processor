@@ -307,7 +307,7 @@ void sig_stop(int sig_num) {
 
 int main(int argc, char* argv[]) {
 	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
-	cl::Kernel blobList = r.openCl->compile(kernel_blobList_cl, kernel_blobList_cl_end);
+	cl::Kernel blobList = r.openCl->compile(kernel_blobList_cl);
 
 	uint32_t frameId = 0;
 	CLArray matchArray(sizeof(CLMatch) * r.maxBlobs);
@@ -326,17 +326,14 @@ int main(int argc, char* argv[]) {
 
 		r.socket->geometryCheck();
 		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight, r.resamplingFactor);
-		std::shared_ptr<CLImage> topleft;
-		std::shared_ptr<CLImage> topright;
-		std::shared_ptr<CLImage> bottomleft;
-		std::shared_ptr<CLImage> bottomright;
-		r.raw2quad(*img, topleft, topright, bottomleft, bottomright);
+		std::shared_ptr<CLImage> channel[4];
+		r.raw2quad(*img, channel[0], channel[1], channel[2], channel[3]);
 
 		if(r.perspective->geometryVersion) {
 			std::shared_ptr<CLImage> flat;
 			std::shared_ptr<CLImage> gradDot;
 			std::shared_ptr<CLImage> blobCenter;
-			r.rgba2blobCenter(*topleft, *topright, *bottomleft, *bottomright, flat, gradDot, blobCenter);
+			r.rgba2blobCenter(*channel[0], *channel[1], *channel[2], *channel[3], flat, gradDot, blobCenter);
 
 			{
 				CLMap<int> counterMap = counter.write<int>();
