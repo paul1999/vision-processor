@@ -55,11 +55,12 @@ int main(int argc, char* argv[]) {
 	Resources r(YAML::LoadFile(argc > 1 ? argv[1] : "config.yml"));
 
 	std::shared_ptr<RawImage> img = r.camera->readImage();
-	r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
-	std::shared_ptr<CLImage> clImg = r.raw2quad(*img);
+	r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight, r.resamplingFactor);
+	std::shared_ptr<CLImage> channels[4];
+	r.raw2quad(*img, channels);
 
 	cv::Mat gray;
-	cv::cvtColor(clImg->read<RGBA>().cv, gray, cv::COLOR_RGBA2GRAY);
+	cv::cvtColor(r.quad2rgba(channels)->read<RGBA>().cv, gray, cv::COLOR_RGBA2GRAY);
 	cv::Mat thresholded(gray.rows, gray.cols, CV_8UC1);
 	thresholdImage(r, gray, halfLineWidthEstimation(r, gray), thresholded);
 	r.perspective->model.ensureSize({thresholded.cols, thresholded.rows});

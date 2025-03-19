@@ -14,7 +14,6 @@
      limitations under the License.
  */
 #include "rtpstreamer.h"
-#include "cl_kernels.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -27,10 +26,8 @@ extern "C" {
 }
 
 
-RTPStreamer::RTPStreamer(bool active, std::shared_ptr<OpenCL> openCl, std::string uri, int framerate): active(active), openCl(std::move(openCl)), uri(std::move(uri)), framerate(framerate), frametime_us(1000000 / framerate) {
+RTPStreamer::RTPStreamer(bool active, std::string uri, int framerate): active(active), uri(std::move(uri)), framerate(framerate), frametime_us(1000000 / framerate) {
 	encoder = std::thread(&RTPStreamer::encoderRun, this);
-	rgb2nv12 = this->openCl->compile(kernel_rgba2nv12_cl);
-	f2nv12 = this->openCl->compile(kernel_f2nv12_cl);
 }
 
 RTPStreamer::~RTPStreamer() {
@@ -46,7 +43,7 @@ RTPStreamer::~RTPStreamer() {
 }
 
 //Adopted from CC BY-SA 4.0 https://stackoverflow.com/a/61988145 Dmitrii Zabotlin
-void RTPStreamer::sendFrame(std::shared_ptr<CLImage> image) {
+void RTPStreamer::sendFrame(std::shared_ptr<RawImage> image) {
 	if(!active)
 		return;
 
@@ -118,8 +115,6 @@ void RTPStreamer::allocResources() {
 		exit(1);
 	}
 
-	buffer = std::make_unique<CLArray>(width * height * 3 / 2);
-
 	frame = av_frame_alloc();
 	frame->format = codecCtx->pix_fmt;
 	frame->width  = codecCtx->width;
@@ -154,7 +149,7 @@ void RTPStreamer::freeResources() {
 
 void RTPStreamer::encoderRun() {
 	while(!stopEncoding) {
-		std::shared_ptr<CLImage> image;
+		std::shared_ptr<RawImage> image;
 		{
 			std::unique_lock<std::mutex> lock(queueMutex);
 			while(queue == nullptr && !stopEncoding)
@@ -178,23 +173,15 @@ void RTPStreamer::encoderRun() {
 		allocResources();
 
 		auto startTime = std::chrono::high_resolution_clock::now();
-		if(image->format == &PixelFormat::RGBA8) {
-			OpenCL::await(rgb2nv12, cl::EnqueueArgs(cl::NDRange(width, height)), image->image, buffer->buffer);
-		} else if(image->format == &PixelFormat::F32) {
-			OpenCL::await(f2nv12, cl::EnqueueArgs(cl::NDRange(width, height)), image->image, buffer->buffer);
-		} else {
-			std::cerr << "[RtpStreamer] Unsupported pixel format" << std::endl;
-			exit(1);
-		}
-		image = nullptr;
 
 		{
-			CLMap<uint8_t> data = buffer->read<uint8_t>();
+			CLMap<uint8_t> data = image->read<uint8_t>();
 			frame->pts = currentFrameId++;
 			frame->data[0] = *data;
 			frame->data[1] = *data + width*height;
 			avcodec_send_frame(codecCtx, frame);
 		}
+		image = nullptr;
 
 		int status = avcodec_receive_packet(codecCtx, pkt);
 		if(status == 0) {

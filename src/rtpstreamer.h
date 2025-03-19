@@ -35,9 +35,9 @@ typedef struct AVPacket AVPacket;
 
 class RTPStreamer {
 public:
-	explicit RTPStreamer(bool active, std::shared_ptr<OpenCL> openCl, std::string uri, int framerate = 30);
+	explicit RTPStreamer(bool active, std::string uri, int framerate = 30);
 	~RTPStreamer();
-	void sendFrame(std::shared_ptr<CLImage> image);
+	void sendFrame(std::shared_ptr<RawImage> image);
 private:
 	void encoderRun();
 
@@ -45,7 +45,6 @@ private:
 	void freeResources();
 
 	const bool active;
-	const std::shared_ptr<OpenCL> openCl;
 	const std::string uri;
 	const int framerate;
 	const int frametime_us;
@@ -55,7 +54,7 @@ private:
 	bool stopEncoding = false;
 	std::thread encoder;
 
-	std::shared_ptr<CLImage> queue = nullptr;
+	std::shared_ptr<RawImage> queue = nullptr;
 	std::mutex queueMutex = std::mutex();
 	std::condition_variable queueSignal = std::condition_variable();
 	long currentFrameId = 0;
@@ -65,8 +64,4 @@ private:
 	AVStream* stream = nullptr;
 	AVFrame* frame = nullptr;
 	AVPacket* pkt = nullptr;
-
-	std::unique_ptr<CLArray> buffer = nullptr;
-	cl::Kernel rgb2nv12;
-	cl::Kernel f2nv12;
 };

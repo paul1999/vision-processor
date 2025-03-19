@@ -54,9 +54,9 @@ kernel void resampling(read_only image2d_t channel0, read_only image2d_t channel
 
 #ifdef BGR
 	uint4 color = (uint4)(
-			read_imageui(channel2, sampler, (float2)(pos.x, pos.y)).x,
-			read_imageui(channel1, sampler, (float2)(pos.x, pos.y)).x,
-			read_imageui(channel0, sampler, (float2)(pos.x, pos.y)).x,
+			read_imageui(channel2, sampler, pos).x,
+			read_imageui(channel1, sampler, pos).x,
+			read_imageui(channel0, sampler, pos).x,
 			255
 	);
 #endif

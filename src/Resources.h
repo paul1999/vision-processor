@@ -92,7 +92,15 @@ public:
 	cl::Kernel satHorizontal;
 	cl::Kernel satVertical;
 	cl::Kernel satBlobCenter;
+	cl::Kernel quad2rgbaKernel;
+	cl::Kernel quad2nv12;
+	cl::Kernel rgba2nv12;
+	cl::Kernel f2nv12;
 
-	void raw2quad(const RawImage& img, std::shared_ptr<CLImage>& topleft, std::shared_ptr<CLImage>& topright, std::shared_ptr<CLImage>& bottomleft, std::shared_ptr<CLImage>& bottomright);
-	void rgba2blobCenter(const CLImage& topleft, const CLImage& topright, const CLImage& bottomleft, const CLImage& bottomright, std::shared_ptr<CLImage>& flat, std::shared_ptr<CLImage>& gradDot, std::shared_ptr<CLImage>& blobCenter);
+	void raw2quad(const RawImage& img, std::shared_ptr<CLImage>* channels);
+	std::shared_ptr<CLImage> quad2rgba(std::shared_ptr<CLImage>* channels);
+	void rgba2blobCenter(const std::shared_ptr<CLImage>* channels, std::shared_ptr<CLImage>& flat, std::shared_ptr<CLImage>& gradDot, std::shared_ptr<CLImage>& blobCenter);
+
+	void streamQuad(std::shared_ptr<CLImage>* channels);
+	void streamImage(CLImage& img);
 };

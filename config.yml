@@ -61,15 +61,15 @@ geometry:
 thresholds:
   # Minimum mean cosine similarity (not normalized) of the blob border gradient (0 - 195075.0)
   # High value lead to undetected blobs. Low values lead to an increase in false positive blob detections.
-  #circularity: 25.0
-  # Minimum circularity/(3*stddev) blob score
-  #score: 0.0
+  #circularity: 15.0
+  # Minimum circularity/(3*stddev) ball blob score
+  #score: 5.0
 
   # Maximum amount of blobs processed per frame. Should not be necessary to adjust this value.
   #blobs: 2000
 
   # Minimum confidence (0.0 - 1.0)
-  #min_confidence: 0.1
+  #min_confidence: 0.2
 
   # Min ball camera edge distance in mm
   #min_cam_edge_distance: 170.0
@@ -81,7 +81,7 @@ color:
   #history_force: 0.7
 
   # Reference colors used for ball determination
-  #orange: [255, 128, 0]
+  #orange: [192, 128, 64]
   #field: [128, 128, 128]
   # Reference colors used for center blob determination
   #yellow: [255, 128, 0]

@@ -326,14 +326,14 @@ int main(int argc, char* argv[]) {
 
 		r.socket->geometryCheck();
 		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight, r.resamplingFactor);
-		std::shared_ptr<CLImage> channel[4];
-		r.raw2quad(*img, channel[0], channel[1], channel[2], channel[3]);
+		std::shared_ptr<CLImage> channels[4];
+		r.raw2quad(*img, channels);
 
 		if(r.perspective->geometryVersion) {
 			std::shared_ptr<CLImage> flat;
 			std::shared_ptr<CLImage> gradDot;
 			std::shared_ptr<CLImage> blobCenter;
-			r.rgba2blobCenter(*channel[0], *channel[1], *channel[2], *channel[3], flat, gradDot, blobCenter);
+			r.rgba2blobCenter(channels, flat, gradDot, blobCenter);
 
 			{
 				CLMap<int> counterMap = counter.write<int>();
@@ -423,30 +423,30 @@ int main(int argc, char* argv[]) {
 				std::cout << "[main] frame time overrun: " << processingTime * 1000.0 << " ms " << matches.size() << " blobs " << detection->balls().size() << " balls " << (detection->robots_yellow_size() + detection->robots_blue_size()) << " bots" << std::endl;
 
 			if(r.rawFeed) {
-				//r.rtpStreamer->sendFrame(clImg);
+				r.streamQuad(channels);
 			} else {
 				switch(((long)(startTime/20.0) % 4)) {
 					case 0:
-						//r.rtpStreamer->sendFrame(clImg);
+						r.streamQuad(channels);
 						break;
 					case 1:
-						r.rtpStreamer->sendFrame(flat);
+						r.streamImage(*flat);
 						break;
 					case 2:
-						r.rtpStreamer->sendFrame(gradDot);
+						r.streamImage(*gradDot);
 						break;
 					case 3:
-						r.rtpStreamer->sendFrame(blobCenter);
+						r.streamImage(*blobCenter);
 						break;
 				}
 			}
 		} else if(r.socket->getGeometryVersion()) {
-			//geometryCalibration(r, *clImg);
+			geometryCalibration(r, *r.quad2rgba(channels));
 		} else {
-			//r.rtpStreamer->sendFrame(clImg);
+			r.streamQuad(channels);
 
 			if(frameId == 100) {  // Wait for automatic gain, exposure and white balance adjustments
-				//clImg->save(".sample." + std::to_string(r.camId) + ".png");
+				r.quad2rgba(channels)->save(".sample." + std::to_string(r.camId) + ".png");
 				std::cout << "[main] Saved sample image" << std::endl;
 			}
 		}

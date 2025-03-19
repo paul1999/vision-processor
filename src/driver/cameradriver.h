@@ -16,7 +16,7 @@
 #pragma once
 
 #include <memory>
-#include "rawimage.h"
+#include "opencl.h"
 
 double getRealTime();
 

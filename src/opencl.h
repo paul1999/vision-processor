@@ -29,6 +29,7 @@ public:
 	static const PixelFormat RGBA8;
 	static const PixelFormat U8;
 	static const PixelFormat F32;
+	static const PixelFormat NV12;
 
 	// Raw Bayer formats
 	static const PixelFormat RGGB8;
@@ -59,6 +60,7 @@ typedef struct __attribute__ ((packed)) RGBA {
 } RGBA;
 
 class CLImage;
+class RawImage;
 
 
 class OpenCL {
@@ -88,6 +90,8 @@ public:
 
 	std::shared_ptr<CLImage> acquire(const PixelFormat* format, int width, int height, const std::string& name);
 
+	std::shared_ptr<RawImage> acquireNV12(int width, int height);
+
 private:
 	bool searchDevice(const std::vector<cl::Platform>& platforms, cl_device_type type);
 
@@ -96,6 +100,7 @@ private:
 	cl::CommandQueue queue;
 
 	std::map<const PixelFormat*, std::vector<std::shared_ptr<CLImage>>> pool;
+	std::vector<std::shared_ptr<RawImage>> nv12pool;
 };
 
 template<typename T>
@@ -150,6 +155,28 @@ public:
 
 	const cl::Buffer buffer;
 	const int size;
+};
+
+
+class RawImage : public CLArray {
+public:
+	RawImage(const RawImage& other) = default;
+	RawImage(const PixelFormat* format, int width, int height): CLArray(width * height * format->pixelSize()), format(format), width(width), height(height), name() {}
+	RawImage(const PixelFormat* format, int width, int height, std::string name): CLArray(width * height * format->pixelSize()), format(format), width(width), height(height), name(std::move(name)) {}
+	RawImage(const PixelFormat* format, int width, int height, double timestamp): CLArray(width * height * format->pixelSize()), format(format), width(width), height(height), timestamp(timestamp), name() {}
+
+	//Only use these constructors if not possible otherwise due to necessary copy (because of potential alignment mismatch for zero-copy support)
+	RawImage(const PixelFormat* format, int width, int height, unsigned char* data): CLArray(data, width * height * format->pixelSize()), format(format), width(width), height(height) {}
+	RawImage(const PixelFormat* format, int width, int height, double timestamp, unsigned char* data): CLArray(data, width * height * format->pixelSize()), format(format), width(width), height(height), timestamp(timestamp) {}
+
+	virtual ~RawImage() = default;
+
+	const PixelFormat* format;
+	const int width;
+	const int height;
+	// timestamp of 0 indicates unavailability
+	double timestamp = 0;
+	const std::string name;
 };
 
 

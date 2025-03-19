@@ -25,6 +25,7 @@
 const PixelFormat PixelFormat::RGBA8 = PixelFormat(4, 1, true, CV_8UC4, {CL_RGBA, CL_UNSIGNED_INT8});
 const PixelFormat PixelFormat::U8 = PixelFormat(1, 1, false, CV_8UC1, {CL_R, CL_UNSIGNED_INT8});
 const PixelFormat PixelFormat::F32 = PixelFormat(4, 1, false, CV_32FC1, {CL_R, CL_FLOAT});
+const PixelFormat PixelFormat::NV12 = PixelFormat(1, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}); //Do not use as OpenCL image format or with OpenCV, intended for usage with RTPStreamer (TODO overallocated, actual necessary size is just 3/2)
 
 const PixelFormat PixelFormat::RGGB8 = PixelFormat(2, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}, "-DRGGB");
 const PixelFormat PixelFormat::GRBG8 = PixelFormat(2, 2, true, CV_8UC1, {CL_R, CL_UNSIGNED_INT8}, "-DGRBG");
@@ -112,6 +113,19 @@ std::shared_ptr<CLImage> OpenCL::acquire(const PixelFormat* format, int width, i
 
 	auto array = std::make_shared<CLImage>(format, width, height, name);
 	formatPool.push_back(array);
+	return array;
+}
+
+std::shared_ptr<RawImage> OpenCL::acquireNV12(int width, int height) {
+	auto iterator = std::find_if(nv12pool.begin(), nv12pool.end(), [&](const std::shared_ptr<RawImage>& i){
+		return i.use_count() == 1 && i->width == width && i->height == height;
+	});
+	if(iterator != nv12pool.end()) {
+		return *iterator;
+	}
+
+	auto array = std::make_shared<RawImage>(&PixelFormat::NV12, width, height);
+	nv12pool.push_back(array);
 	return array;
 }
 

@@ -115,7 +115,7 @@ int main(int argc, char* argv[]) {
 	YAML::Node configFile = YAML::LoadFile(argc > 1 ? argv[1] : "config.yml");
 	Resources r(configFile);
 	std::vector<SSL_DetectionFrame> groundTruth = parseGroundTruth(r.groundTruth);
-	cl::Kernel scoreKernel = r.openCl->compile(kernel_blobScore_cl, kernel_blobScore_cl_end);
+	cl::Kernel scoreKernel = r.openCl->compile(kernel_blobScore_cl);
 
 	int frameId = 0;
 	double imageTime = 0.0;
@@ -143,13 +143,14 @@ int main(int argc, char* argv[]) {
 		imageTime += getRealTime() - startTime;
 		startTime = getRealTime();
 
-		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight);
+		r.perspective->geometryCheck(img->width, img->height, r.gcSocket->maxBotHeight, r.resamplingFactor);
 
-		std::shared_ptr<CLImage> clImg = r.raw2quad(*img);
+		std::shared_ptr<CLImage> channels[4];
+		r.raw2quad(*img, channels);
 		std::shared_ptr<CLImage> flat;
 		std::shared_ptr<CLImage> gradDot;
 		std::shared_ptr<CLImage> blobCenter;
-		r.rgba2blobCenter(*clImg, flat, gradDot, blobCenter);
+		r.rgba2blobCenter(channels, flat, gradDot, blobCenter);
 
 		//std::shared_ptr<CLImage> score = r.openCl->acquire(&PixelFormat::F32, r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1], img->name);
 		//OpenCL::await(scoreKernel, cl::EnqueueArgs(cl::NDRange(r.perspective->reprojectedFieldSize[0], r.perspective->reprojectedFieldSize[1])), flat->image, blobCenter->image, score->image, (float)r.minCircularity, (int)floor(r.minBlobRadius/r.perspective->fieldScale));

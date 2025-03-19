@@ -15,7 +15,6 @@
  */
 #pragma once
 
-#include "driver/rawimage.h"
 #include "Resources.h"
 
 float dist(const cv::Vec2f& v1, const cv::Vec2f& v2);
