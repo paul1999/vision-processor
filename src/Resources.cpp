@@ -170,7 +170,7 @@ Resources::Resources(const YAML::Node& config) {
 	satHorizontal = openCl->compile(kernel_satHorizontal_cl);
 	satVertical = openCl->compile(kernel_satVertical_cl);
 	satBlobCenter = openCl->compile(kernel_satBlobCenter_cl);
-	quad2rgbaKernel = openCl->compile(kernel_quad2rgba_cl);
+	quad2rgbaKernel = openCl->compile(kernel_quad2rgba_cl, camera->format().kernelOptions);
 	quad2nv12 = openCl->compile(kernel_quad2nv12_cl, camera->format().kernelOptions);
 	rgba2nv12 = openCl->compile(kernel_rgba2nv12_cl);
 	f2nv12 = openCl->compile(kernel_f2nv12_cl);

@@ -76,8 +76,8 @@ double OpenCVDriver::expectedFrametime() {
 double OpenCVDriver::getTime() {
 	double pos = capture.get(cv::CAP_PROP_POS_FRAMES);
 
-	if(pos == 0.0) // Not a video file, use real time
-		return CameraDriver::getTime();
+	if(pos == -1) // Not a video file, use real time
+		return getRealTime();
 
 	return pos / capture.get(cv::CAP_PROP_FPS);
 }
