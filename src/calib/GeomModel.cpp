@@ -335,7 +335,7 @@ bool isClockwiseConvexQuadrilateral(const std::vector<Eigen::Vector2f>& vertexli
 	return clockwise < 0;
 }
 
-static void directMixedCalibration(const Resources& r, const std::vector<std::vector<Eigen::Vector2f>>& mergedPixels, const std::vector<Eigen::Vector2f>& linePixels, bool calibHeight, CameraModel& model) {
+static void directCalibrationRefinement(const Resources& r, const std::vector<std::vector<Eigen::Vector2f>>& mergedPixels, const std::vector<Eigen::Vector2f>& linePixels, bool calibHeight, CameraModel& model) {
 	DirectGeometryFit functor(r, linePixels, mergedPixels, model, calibHeight);
 	Eigen::NumericalDiff<DirectGeometryFit> numDiff(functor);
 	Eigen::LevenbergMarquardt<Eigen::NumericalDiff<DirectGeometryFit>> lm(numDiff);
@@ -421,7 +421,7 @@ struct PointGeometryFit : public Eigen::DenseFunctor<float> {
 	}
 };
 
-static bool cornerCalibration(const Resources& r, const std::vector<std::vector<Eigen::Vector2f>>& mergedPixels, const cv::Mat& thresholded, bool calibHeight, CameraModel& basicModel, const bool calibDistortion) {
+static bool cornerCalibration(const Resources& r, const std::vector<std::vector<Eigen::Vector2f>>& mergedPixels, const cv::Mat& thresholded, bool calibHeight, CameraModel& basicModel) {
 	std::vector<Eigen::Vector2f> edges = r.lineCorners;
 	std::sort(edges.begin(), edges.end(), [](const auto& l, const auto& r){ return r.y() > l.y() || (r.y() == l.y() && r.x() > l.x()); });
 	if(edges.size() != 4) {
@@ -447,8 +447,7 @@ static bool cornerCalibration(const Resources& r, const std::vector<std::vector<
 		CameraModel model = basicModel;
 
 		for(int i = 0; i < 10; i++) {
-			if(calibDistortion)
-				calibrateDistortion(mergedPixels, model);
+			calibrateDistortion(mergedPixels, model);
 
 			PointGeometryFit functor(r, edges, mergedPixels, model, calibHeight, false); //calibDistortion
 			Eigen::NumericalDiff<PointGeometryFit> numDiff(functor);
@@ -518,6 +517,8 @@ void geometryCalibration(const Resources& r, const CLImage& rgba) {
 	thresholdImage(r, gray, halfLineWidth, thresholded);
 	cv::imwrite("img/" + rgba.name + ".pixels.png", thresholded);
 
+	const std::vector<Eigen::Vector2f> linePixels = getLinePixels(thresholded);
+
 	cv::Ptr<cv::LineSegmentDetector> detector = cv::createLineSegmentDetector();
 	cv::Mat4f linesMat;
 	detector->detect(thresholded, linesMat);
@@ -569,11 +570,12 @@ void geometryCalibration(const Resources& r, const CLImage& rgba) {
 	//drawModel(r, thresholded, linePixels, model);
 	//thresholded.save(".initial.png");
 
-	cornerCalibration(r, mergedPixels, thresholded, calibHeight, model, true);
-	//directMixedCalibration(r, mergedPixels, linePixels, calibHeight, model);
+	cornerCalibration(r, mergedPixels, thresholded, calibHeight, model);
+	drawModel(r, thresholded, linePixels, model);
+	cv::imwrite("img/" + rgba.name + ".pixels.corner.png", thresholded);
+	directCalibrationRefinement(r, mergedPixels, linePixels, calibHeight, model);
 
 	model.updateDerived();
-	const std::vector<Eigen::Vector2f> linePixels = getLinePixels(thresholded);
 	int error = modelError(r, model, linePixels);
 	std::cout << "[Geometry calibration] Best model: " << model << " error " << (error/(float)linePixels.size()) << std::endl;
 
@@ -584,5 +586,5 @@ void geometryCalibration(const Resources& r, const CLImage& rgba) {
 	r.socket->send(wrapper);
 
 	drawModel(r, thresholded, linePixels, model);
-	cv::imwrite("img/" + rgba.name + ".pixels.png", thresholded);
+	cv::imwrite("img/" + rgba.name + ".pixels.refined.png", thresholded);
 }
