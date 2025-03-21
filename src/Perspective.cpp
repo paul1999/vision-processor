@@ -53,8 +53,12 @@ void Perspective::geometryCheck(const int width, const int height, const double 
 		}
 	}
 
-	if(!calibFound)
+	if(!calibFound) {
+		if(socket->getGeometry().calib_size() == 0) // Don't recalibrate when its just another vision_processor instance sending it's camera calibration
+			geometryVersion = 0; // Camera calibration has been cleared, recalibrate
+
 		return;
+	}
 
 	model.ensureSize(size);
 	geometryVersion = socket->getGeometryVersion();
