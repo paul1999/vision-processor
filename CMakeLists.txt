@@ -34,17 +34,28 @@ pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET libavformat libavcodec libavuti
 
 find_package(Eigen3 REQUIRED)
 find_package(mvIMPACT)
-find_package(Protobuf REQUIRED)
 find_package(OpenCL REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio)
 find_package(Spinnaker)
 find_package(yaml-cpp REQUIRED)
 
+# Protobuf links to Abseil starting with 4.22.0. The FindProtobuf module does
+# not yet account for this, so we need to use Config mode instead. However,
+# Protobuf does not provide a Config CMake script on old versions, so we need
+# to fallback to Module mode in that case.
+find_package(Protobuf CONFIG QUIET)
+if (Protobuf_FOUND)
+    message(STATUS "Found Protobuf ${Protobuf_VERSION} via Config mode")
+else()
+    find_package(Protobuf REQUIRED)
+    message(STATUS "Found Protobuf ${Protobuf_VERSION} via Module mode")
+endif()
+
 
 add_compile_definitions(CL_HPP_TARGET_OPENCL_VERSION=300)
 # m (c math) and stdc++ (c++ standard library) explicitly required by LLD
-link_libraries("m" "stdc++" ${YAML_CPP_LIBRARIES} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL ${Protobuf_LIBRARIES} ${mvIMPACT_LIBS})
-include_directories(SYSTEM ${YAML_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_INCLUDE_DIRS} ${Protobuf_INCLUDE_DIRS} Eigen3::Eigen ${mvIMPACT_INCLUDE_DIRS})
+link_libraries("m" "stdc++" ${YAML_CPP_LIBRARIES} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL protobuf::libprotobuf ${mvIMPACT_LIBS})
+include_directories(SYSTEM ${YAML_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_INCLUDE_DIRS} Eigen3::Eigen ${mvIMPACT_INCLUDE_DIRS})
 
 include_directories(src)
 file(GLOB PROTO_FILES proto/*.proto)
