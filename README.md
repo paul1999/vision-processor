@@ -28,7 +28,7 @@ Installation with PIP: `pip install protobuf pyyaml`
 ### vision_processor automatic
 
 1. Install the camera SDK required for your camera type
-   (Arch user repository mvIMPACT: `mvimpact-acquire` Spinnaker: `spinnaker-sdk`)
+   (Arch user repository mvIMPACT: `mvimpact-acquire` Spinnaker: `spinnaker-sdk`, DC1394 (Firewire): `libdc1394`)
 2. Debian/Ubuntu/Arch Linux/Manjaro: Run `./setup.sh`.
    If the script wants to install an OpenCL driver for the wrong GPU (e.g. integrated graphics card)
    or you want, need or have a different OpenCL driver skip the driver installation with `SKIP_DRIVERS=1 ./setup.sh`.
@@ -37,7 +37,7 @@ Installation with PIP: `pip install protobuf pyyaml`
 ### vision_processor manual
 
 1. Install the camera SDK required for your camera type
-   (Arch user repository mvIMPACT: `mvimpact-acquire` Spinnaker: `spinnaker-sdk`)
+   (Arch user repository mvIMPACT: `mvimpact-acquire` Spinnaker: `spinnaker-sdk`, DC1394 (Firewire): `libdc1394`)
 2. Install the required dependencies:
 
    - cmake

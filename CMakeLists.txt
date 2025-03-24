@@ -18,6 +18,12 @@ enable_language(ASM)
 
 option(WITH_SPINNAKER "Build with Spinnaker support (if library available)" ON)
 option(WITH_MVIMPACT "Build with mvIMPACT/Bluefox support (if library available)" ON)
+option(WITH_DC1394 "Build with libdc1394-2 support (if library available)" OFF)
+
+# According to SSL-Vision, this is a problem
+if(WITH_MVIMPACT AND WITH_DC1394)
+    message(FATAL_ERROR "DC1394 and mvImpact are not compatible: mvImpact crashes when creating device manager")
+endif()
 
 # Adapted from https://stackoverflow.com/a/48832234 CC BY-SA 4.0 by einpoklum
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
@@ -38,6 +44,7 @@ find_package(OpenCL REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio)
 find_package(Spinnaker)
 find_package(yaml-cpp REQUIRED)
+include(CheckDC1394)
 
 # Protobuf links to Abseil starting with 4.22.0. The FindProtobuf module does
 # not yet account for this, so we need to use Config mode instead. However,
@@ -54,7 +61,7 @@ endif()
 
 add_compile_definitions(CL_HPP_TARGET_OPENCL_VERSION=300)
 # m (c math) and stdc++ (c++ standard library) explicitly required by LLD
-link_libraries("m" "stdc++" ${YAML_CPP_LIBRARIES} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL protobuf::libprotobuf ${mvIMPACT_LIBS})
+link_libraries("m" "stdc++" ${YAML_CPP_LIBRARIES} ${OpenCV_LIBS} PkgConfig::LIBAV ${SPINNAKER_LIBS} OpenCL::OpenCL protobuf::libprotobuf ${mvIMPACT_LIBS} ${DC1394_LIBRARIES})
 include_directories(SYSTEM ${YAML_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${SPINNAKER_INCLUDE_DIRS} Eigen3::Eigen ${mvIMPACT_INCLUDE_DIRS})
 
 include_directories(src)
