@@ -32,7 +32,7 @@ namespace {
 	constexpr dc1394color_coding_t COLOR_CODING = DC1394_COLOR_CODING_RAW8;
 	constexpr dc1394framerate_t FRAMERATE = DC1394_FRAMERATE_60;
 	constexpr uint32_t IMAGE_WIDTH = 780;
-	constexpr uint32_t IMAGE_HEIGHT = 582;
+	constexpr uint32_t IMAGE_HEIGHT = 580;
 
 	struct CameraList {
 		CameraList(dc1394_t* dc1394) {
@@ -202,8 +202,22 @@ DC1394Driver::~DC1394Driver() {
 }
 
 std::shared_ptr<RawImage> DC1394Driver::readImage() {
-	throw std::runtime_error { "[DC1394] Not implemented" };
-	return nullptr;
+	dc1394video_frame_t* frame;
+	if (auto error = dc1394_capture_dequeue(camera.get(), DC1394_CAPTURE_POLICY_WAIT, &frame); error != DC1394_SUCCESS) {
+		throw std::runtime_error {
+			"[DC1394] Could not dequeue frame: "s + dc1394_error_get_string(error)
+		};
+	}
+
+	auto img = std::make_shared<RawImage>(&PixelFormat::RGGB8, frame->size[0], frame->size[1], frame->image);
+
+	if (auto error = dc1394_capture_enqueue(camera.get(), frame); error != DC1394_SUCCESS) {
+		throw std::runtime_error {
+			"[DC1394] Could not enqueue frame: "s + dc1394_error_get_string(error)
+		};
+	}
+
+	return img;
 }
 
 const PixelFormat DC1394Driver::format() {
