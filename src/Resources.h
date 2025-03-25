@@ -71,6 +71,7 @@ public:
 	int cameraAmount;
 	double cameraHeight; // Just for calibration, do not use elsewhere (0.0 as special value for automatic calibration)
 	std::vector<Eigen::Vector2f> lineCorners;
+	bool geometryRefinement;
 	uint8_t fieldLineThreshold;
 	double minLineSegmentLength;
 	double maxLineSegmentOffset;

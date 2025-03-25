@@ -573,7 +573,9 @@ void geometryCalibration(const Resources& r, const CLImage& rgba) {
 	cornerCalibration(r, mergedPixels, thresholded, calibHeight, model);
 	drawModel(r, thresholded, linePixels, model);
 	cv::imwrite("img/" + rgba.name + ".pixels.corner.png", thresholded);
-	directCalibrationRefinement(r, mergedPixels, linePixels, calibHeight, model);
+
+	if(r.geometryRefinement)
+		directCalibrationRefinement(r, mergedPixels, linePixels, calibHeight, model);
 
 	model.updateDerived();
 	int error = modelError(r, model, linePixels);

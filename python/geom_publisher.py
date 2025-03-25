@@ -76,10 +76,10 @@ def _generate_default_lines(wrapper, config):
     if config_bool(default_lines, 'penalty'):
         add_line(           'LeftPenaltyStretch', -penalty_length, -half_penalty, -penalty_length,  half_penalty)
         add_line(          'RightPenaltyStretch',  penalty_length, -half_penalty,  penalty_length,  half_penalty)
-        add_line(  'LeftFieldLeftPenaltyStretch',    -half_length,  half_penalty, -penalty_length,  half_penalty)
-        add_line( 'LeftFieldRightPenaltyStretch',    -half_length, -half_penalty, -penalty_length, -half_penalty)
-        add_line( 'RightFieldLeftPenaltyStretch',  penalty_length, -half_penalty,     half_length, -half_penalty)
-        add_line('RightFieldRightPenaltyStretch',  penalty_length,  half_penalty,     half_length,  half_penalty)
+        add_line(  'LeftFieldLeftPenaltyStretch',    -half_length, -half_penalty, -penalty_length, -half_penalty)
+        add_line( 'LeftFieldRightPenaltyStretch',    -half_length,  half_penalty, -penalty_length,  half_penalty)
+        add_line( 'RightFieldLeftPenaltyStretch',  penalty_length,  half_penalty,     half_length,  half_penalty)
+        add_line('RightFieldRightPenaltyStretch',  penalty_length, -half_penalty,     half_length, -half_penalty)
 
     if config_bool(default_lines, 'centercircle'):
         arcs = wrapper.geometry.field.field_arcs
