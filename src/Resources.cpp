@@ -17,6 +17,7 @@
 
 #include "cl_kernels.h"
 #include "Resources.h"
+#include "driver/dc1394driver.h"
 #include "driver/spinnakerdriver.h"
 #include "driver/mvimpactdriver.h"
 #include "driver/cameradriver.h"
@@ -97,6 +98,11 @@ Resources::Resources(const YAML::Node& config) {
 #ifdef MVIMPACT
 	if(driver == "MVIMPACT")
 		camera = std::make_unique<MVImpactDriver>(driver_id, exposure, gain, wbType, wbValues);
+#endif
+
+#ifdef DC1394
+	if(driver == "DC1394")
+		camera = std::make_unique<DC1394Driver>(driver_id);
 #endif
 
 	if(driver == "OPENCV")
