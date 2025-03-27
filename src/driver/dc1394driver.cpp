@@ -22,6 +22,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <fstream>
 
 using namespace std::string_literals;
 
@@ -206,6 +207,69 @@ std::shared_ptr<RawImage> DC1394Driver::readImage() {
 	if (auto error = dc1394_capture_dequeue(camera.get(), DC1394_CAPTURE_POLICY_WAIT, &frame); error != DC1394_SUCCESS) {
 		throw std::runtime_error {
 			"[DC1394] Could not dequeue frame: "s + dc1394_error_get_string(error)
+		};
+	}
+
+	static int counter = 0;
+	counter++;
+
+	if (counter == 100) {
+		std::cout << "[DC1394] Writing Pixmap" << std::endl;
+
+		{
+			std::ofstream ppm { "pixmap.ppm" };
+
+			ppm << "P3\n" << frame->size[0] << " " << frame->size[1] << "\n255\n";
+
+			// Assuming we use a RGGB bayer pattern, the first row contains
+			// RGRGRGRG... and the second row contains GBGBGBGB...
+			bool is_rg_row = true;
+			bool alternate = true;
+
+			for (size_t x = 0; x < frame->size[1]; ++x) {
+				for (size_t y = 0; y < frame->size[0]; ++y) {
+					const uint8_t value_8 = frame->image[y + x * frame->size[0]];
+					const int value = value_8;
+
+					if (!alternate) {
+						// Green
+						ppm << "0 " << value << " 0\n";
+					} else {
+						if (is_rg_row) {
+							// Red
+							ppm << value << " 0 0\n";
+						} else {
+							// Blue
+							ppm << "0 0 " << value << "\n";
+						}
+					}
+
+					alternate = !alternate;
+				}
+
+				is_rg_row = !is_rg_row;
+				alternate = is_rg_row;
+			}
+		}
+		{
+			std::ofstream pgm { "pixmap.pgm" };
+
+			pgm << "P2\n" << frame->size[0] << " " << frame->size[1] << "\n255\n";
+
+			for (size_t x = 0; x < frame->size[1]; ++x) {
+				for (size_t y = 0; y < frame->size[0]; ++y) {
+					const uint8_t value_8 = frame->image[y + x * frame->size[0]];
+					const int value = value_8;
+
+					pgm << value << " ";
+				}
+
+				pgm << "\n";
+			}
+		}
+
+		throw std::runtime_error {
+			"Done"
 		};
 	}
 
